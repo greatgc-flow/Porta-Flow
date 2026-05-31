@@ -55,7 +55,7 @@ $state = @{ SUBST_DRIVE_LETTER = $null; MENU_REG_KEY = $null }
 if (Test-Path -LiteralPath $configPath) {
     $content = Get-Content -LiteralPath $configPath -Raw
     if ($content -match 'SUBST_DRIVE_LETTER=([A-Z])') { $state.SUBST_DRIVE_LETTER = $Matches[1] }
-    if ($content -match 'MENU_REG_KEY=(SandboxRun_[A-Za-z0-9_]+)') { $state.MENU_REG_KEY = $Matches[1] }
+    if ($content -match 'MENU_REG_KEY=([^"\r\n]+)') { $state.MENU_REG_KEY = $Matches[1].TrimEnd() }
 }
 
 # ----------------------------------------------------------------
