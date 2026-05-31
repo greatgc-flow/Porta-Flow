@@ -1,0 +1,22 @@
+<Configuration>
+  <!-- Windows Sandbox: Porta-Flow Unit Test Environment            -->
+  <!-- NOTE: Do NOT launch this template directly.                  -->
+  <!-- Use: run-sandbox-test.bat (generates path-correct .wsb)      -->
+  <VGpu>Disable</VGpu>
+  <Networking>Disable</Networking>
+  <MappedFolders>
+    <MappedFolder>
+      <HostFolder>__PORTABLE_ROOT__</HostFolder>
+      <SandboxFolder>C:\PortableDev</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>__PORTABLE_ROOT__\_archive\test-results</HostFolder>
+      <SandboxFolder>C:\TestResults</SandboxFolder>
+      <ReadOnly>false</ReadOnly>
+    </MappedFolder>
+  </MappedFolders>
+  <LogonCommand>
+    <Command>cmd.exe /c "C:\PortableDev\_sys\test\sandbox-test.bat" &amp; pause</Command>
+  </LogonCommand>
+</Configuration>

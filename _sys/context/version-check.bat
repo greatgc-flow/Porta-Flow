@@ -77,6 +77,7 @@ if not errorlevel 1 (
     exit /b 1
 )
 
+call "%~dp0raw-log.bat" "Axis-B" "%OUT_FILE%"
 echo [version-check] Done: %OUT_FILE%
 echo [version-check] Compare with setup.ps1 version section to find updates.
 call "%~dp0collab-log-append.bat" "Axis-B" "version-check.bat" "OK" "Output: %OUT_FILE%"

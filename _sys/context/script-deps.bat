@@ -107,6 +107,7 @@ if not errorlevel 1 (
     exit /b 1
 )
 
+call "%~dp0raw-log.bat" "Axis-F" "%OUT_FILE%" "%TEMP_MERGED%"
 del "%TEMP_MERGED%" > nul 2>&1
 
 echo [script-deps] Done: %OUT_FILE%

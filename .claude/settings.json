@@ -1,12 +1,16 @@
-﻿{
-  "permissions": {
-    "allow": [
-      "Write(.claude/agents/**)",
-      "Write(.claude/skills/**)",
-      "Write(_workspace/**)",
-      "Write(_archive/**)",
-      "Write(_sys/claude/agent/CONTEXT.md)",
-      "Bash(_sys/context/*.bat)"
-    ]
-  }
+{
+    "permissions":  {
+                        "allow":  [
+                                      "Write(.claude/agents/**)",
+                                      "Write(.claude/skills/**)",
+                                      "Write(_workspace/**)",
+                                      "Write(_archive/**)",
+                                      "Write(_sys/claude/agent/CONTEXT.md)",
+                                      "Bash(_sys/context/*.bat)"
+                                  ]
+                    },
+    "defaultShell":  "powershell",
+    "env":  {
+                "CLAUDE_CODE_PACKAGE_MANAGER_AUTO_UPDATE":  "false"
+            }
 }

@@ -92,6 +92,7 @@ if not errorlevel 1 (
     exit /b 0
 )
 
+call "%~dp0raw-log.bat" "Axis-I" "%_OUTPUT%"
 :: --- Validate JSON output ---
 powershell -NoProfile -Command ^
     "$f='%_OUTPUT%'; try { $j=Get-Content $f -Raw | ConvertFrom-Json; $risk=$j.overall_risk; Write-Host \"[risk-scan] overall_risk=$risk\" } catch { Write-Host '[risk-scan] WARNING: Output is not valid JSON - check %_OUTPUT%' }"

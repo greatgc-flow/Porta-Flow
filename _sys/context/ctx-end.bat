@@ -104,6 +104,7 @@ if "%GEMINI_MODE%"=="ON" (
     echo [ctx-end] Generating Gemini summary...
     type "!SES_FILE!" | gemini -p "Read the session log below and write a concise summary with exactly 5 bullet points: 1) What was accomplished 2) Key decisions made 3) Files changed 4) Known issues remaining 5) Next actions. Be specific, not generic." -o text -y > "!_SUM!" 2>&1
     if not errorlevel 1 (
+        call "%~dp0raw-log.bat" "Axis-C" "!_SUM!" "!SES_FILE!"
         echo [ctx-end] Summary: !_SUM!
         call "%~dp0collab-log-append.bat" "Axis-C" "ctx-end.bat" "OK" "Summary: !_SUM!"
     ) else (

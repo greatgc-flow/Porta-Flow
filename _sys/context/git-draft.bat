@@ -91,6 +91,7 @@ if not errorlevel 1 (
 
 :: Print commit message draft to console
 type "!TEMP_OUT!"
+call "%~dp0raw-log.bat" "Axis-G" "!TEMP_OUT!" "%TEMP_DIFF%"
 del "!TEMP_OUT!" > nul 2>&1
 
 del "%TEMP_DIFF%" > nul 2>&1

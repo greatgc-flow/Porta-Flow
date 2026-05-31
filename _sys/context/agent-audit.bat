@@ -92,6 +92,7 @@ if not errorlevel 1 (
     exit /b 1
 )
 
+call "%~dp0raw-log.bat" "Axis-E" "%OUT_FILE%" "%TEMP_MERGED%"
 del "%TEMP_MERGED%" > nul 2>&1
 
 :: Clean output: extract JSON block (strip YOLO messages, routing errors, code fences)
