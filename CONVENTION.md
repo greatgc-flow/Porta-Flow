@@ -164,7 +164,23 @@ Thresholds:
 
 Applies to: agent-audit.bat (merged agent file), portability-auditor corpus scan, any manual call.
 
-### §3-4-B — Gemini Refusal Detection Pattern (MANDATORY in Axis scripts)
+### §3-4-B — Hub Script Protection (DO NOT RENAME OR DELETE)
+
+The following scripts are called by ALL Axis bat files. Renaming or deleting them silently breaks all Axis logging:
+
+| File | Called by |
+|------|-----------|
+| `_sys\context\collab-log-append.bat` | ctx-save, ctx-end, version-check, agent-audit, script-deps, git-draft |
+| `_sys\context\raw-log.bat` | same set |
+
+Rules:
+- Never rename or move these files without updating ALL callers simultaneously.
+- Before any cleanup of `_sys\context\`, verify neither file is in scope.
+- Confirmed via Axis-F (script-deps.bat) on 2026-06-01.
+
+Known issue: Gemini CLI may emit `API returned invalid content after all retries` (NumericalClassifierStrategy failure) before producing valid output. This is an internal routing bug — does NOT indicate auth failure. If Axis output is valid JSON, proceed normally. Error files logged to `_sys\data\temp\gemini-client-error-generateJson-*.json`.
+
+### §3-4-C — Gemini Refusal Detection Pattern (MANDATORY in Axis scripts)
 
 After any gemini call (exit code 0) and before the success path, add:
   findstr /i "\[REFUSAL:" "%_OUTPUT%" > nul 2>&1
@@ -177,7 +193,7 @@ After any gemini call (exit code 0) and before the success path, add:
 Axis scripts requiring this pattern: agent-audit.bat, context-health.bat, version-check.bat,
 script-deps.bat, git-draft.bat, risk-scan.bat (risk-scan uses exit /b 0 — non-blocking).
 
-### §3-4-C — Axis Token Budget
+### §3-4-D — Axis Token Budget
 
 | Axis | Script | Max tokens | Claude cost | Trigger |
 |------|--------|-----------|-------------|---------|
@@ -572,8 +588,8 @@ ZONE B — Delegate to agent via harness (no Claude inline analysis):
   • Folder structure → organizer → folder-tidier
   • Doc sync → organizer → docs-writer
   • Pre-flight risk → risk-scanner (Axis-I)
-  • Portability audit → validator → portability-auditor
-  • Scenario audit → validator → scenario-auditor
+  • Portability audit → verifier → portability-auditor
+  • Scenario audit → verifier → scenario-auditor
   • Agent consistency → verifier (Axis-E, conditional)
   • ROI analysis → proposer (after verifier PASS)
 
