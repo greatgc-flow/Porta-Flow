@@ -11,7 +11,10 @@ if "%NO_GEMINI%"=="1" (
     goto :GMC_DONE
 )
 where gemini > nul 2>&1
-if not errorlevel 1 (set "GEMINI_MODE=ON") else (
+if not errorlevel 1 (
+    set "GEMINI_MODE=ON"
+    set "GEMINI_OFF_REASON="
+) else (
     set "GEMINI_MODE=OFF"
     set "GEMINI_OFF_REASON=not_installed"
 )
