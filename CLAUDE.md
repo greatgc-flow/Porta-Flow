@@ -135,6 +135,11 @@ with all tools (Python, Node.js, FFmpeg, Git, etc.) pre-configured.
 
 7. **`for /f` wmic in for-loop block with `!VAR!`**: needed `setlocal EnableDelayedExpansion`.
 
+## Gemini Consultation (Axis-Q)
+
+이 프로젝트에서 Gemini consult 스크립트 위치: `_sys\context\gemini-consult.bat`
+복잡한 작업 전 Gemini를 먼저 호출하고 응답을 기다린 후 진행할 것. (전역 CLAUDE.md 참조)
+
 ## Current State
 Last ctx-save: 2026-06-01 16:35 -- see _archive/sessions/ for snapshot
 Last ctx-save: 2026-05-31 (see _archive/sessions/ for snapshot)

@@ -6,10 +6,12 @@
                                       "Write(_workspace/**)",
                                       "Write(_archive/**)",
                                       "Write(_sys/claude/agent/CONTEXT.md)",
-                                      "Bash(_sys/context/*.bat)"
+                                      "Bash(_sys/context/*.bat)",
+                                      "Bash(_sys/gemini/*.bat)",
+                                      "Write(_archive/gemini-reviews/**)"
                                   ]
                     },
-    "defaultShell": "powershell",
+    "defaultShell":  "powershell",
     "env":  {
                 "CLAUDE_CODE_PACKAGE_MANAGER_AUTO_UPDATE":  "false"
             }

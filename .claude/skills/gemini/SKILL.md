@@ -1,6 +1,6 @@
 ---
 name: gemini
-description: "Gemini CLI 통합 관리 — 상태 확인, 사용량 모니터링(토큰 0), 협업 로그 조회, ON/OFF 토글, Axis 실행. Use for: gemini 상태, gemini usage, gemini on/off, axis 실행, 제미나이 모니터링, 사용량 확인, collab-log 조회."
+description: "Gemini CLI 통합 관리 — 상태 확인, 사용량 모니터링(토큰 0), 협업 로그 조회, ON/OFF 토글, Axis 실행, ratio 조절. Use for: gemini 상태, gemini usage, gemini on/off, axis 실행, 제미나이 모니터링, 사용량 확인, collab-log 조회, gemini rate, gemini ratio, 비율 변경."
 ---
 
 # Gemini 통합 관리 스킬
@@ -14,6 +14,7 @@ description: "Gemini CLI 통합 관리 — 상태 확인, 사용량 모니터링
 | "협업 로그", "collab log", "오늘 axis 내역" | → COLLAB |
 | "gemini 켜기/끄기", "on", "off", "disable/enable gemini" | → TOGGLE |
 | "axis A 실행", "run axis B", "axis-H" | → AXIS |
+| "gemini rate", "gemini ratio", "ratio N", "rate N", "비율 변경" | → RATIO |
 
 ---
 
@@ -102,7 +103,39 @@ Axis 실행 전 **항상** STATUS 확인 (`GEMINI_MODE=ON`인지).
 | F | `_sys\context\script-deps.bat` | 제한 없음 | 스크립트 의존성 맵 |
 | G | `_sys\context\git-draft.bat` | 제한 없음 | 커밋 메시지 초안 |
 | H | `_sys\context\context-health.bat` | 제한 없음 | 컨텍스트 건강 확인 |
+| Q | `_sys\context\gemini-consult.bat` | 제한 없음 | 동기 consult — 응답 전 Gemini 먼저 (ratio 5+) |
+| R | `_sys\context\gemini-batch-review.bat` | 수동 실행 | 미커밋 diff 일괄 리뷰 |
 
 **Axis-A 일일 한도 초과 시**: "오늘 Axis-A 3회 이미 사용. 내일 실행 권장."
 
 실행 후 `collab-log-append.bat`가 자동으로 `_archive\collab-log\{date}.md`에 기록.
+
+---
+
+## ACTION: RATIO
+
+GEMINI_RATIO 조회 또는 변경. (`_sys\gemini\config.json` 기준)
+
+**인자 없음** (`/gemini ratio`): 현재 ratio와 레벨 설명 표시
+**인자 있음** (`/gemini ratio 7`): ratio를 N(0~10)으로 변경
+
+### 조회 (인자 없음)
+1. Read `_sys\gemini\config.json`
+2. 현재 ratio 값과 아래 표 기준으로 현재 레벨 설명 출력
+
+### 변경 (인자 = N)
+1. PowerShell (timeout 10000):
+   ```
+   cmd /c "P:\_sys\gemini\gemini-set-ratio.bat {N}"
+   ```
+2. 변경 결과 보고
+
+### Ratio 레벨 표
+
+| ratio | 의미 |
+|-------|------|
+| 0 | Gemini OFF — 자동 호출 없음 |
+| 1–4 | 수동 요청 시에만 |
+| 5–6 | 복잡한 분석·설계 결정에만 consult |
+| 7–9 | 비trivial 작업(멀티파일·리팩토링·버그분석) 전 필수 consult |
+| 10 | 전면 위임 — 모든 읽기·쓰기·분석 전에 Gemini 먼저 |
