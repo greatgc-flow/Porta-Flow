@@ -230,6 +230,17 @@ Run-Component "Git" {
     } else {
         Write-Skip "Git"
     }
+    # Patch system gitconfig: replace hardcoded credential helper path with 'manager'
+    # (PortableGit installer writes an absolute path that breaks when drive letter changes)
+    $sysCfg = Join-Path $gitDir "etc\gitconfig"
+    if (Test-Path $sysCfg) {
+        $content = Get-Content $sysCfg -Raw
+        if ($content -match 'helper\s*=\s*!.*git-credential') {
+            $patched = $content -replace '(?m)^\s*helper\s*=\s*!.*git-credential.*$', "`thelper = manager"
+            Set-Content $sysCfg $patched -Encoding UTF8 -NoNewline
+            Write-OK "Git credential helper patched -> manager"
+        }
+    }
 }
 
 # ── 6. VS Code ─────────────────────────────────────────────────

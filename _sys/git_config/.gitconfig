@@ -33,6 +33,11 @@
     conflictstyle = diff3
 
 # ── 자주 쓰는 별칭 ──────────────────────────────────────────────
+# ── 인증 (드라이브 문자 변경 대비 system gitconfig override) ────
+[credential]
+    helper =
+    helper = manager
+
 [alias]
     # 그래프 형태의 커밋 로그
     lg  = log --oneline --graph --decorate --all
