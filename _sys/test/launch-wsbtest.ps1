@@ -63,11 +63,13 @@ Write-Host "[WSB Test] Launching Windows Sandbox..."
 Write-Host "[WSB Test] Sandbox will auto-shutdown when tests finish."
 Write-Host "[WSB Test] Waiting for results in: $ResultsDir"
 
+$ResultFile = Join-Path $ResultsDir "result.txt"
+if (Test-Path $ResultFile) { Remove-Item $ResultFile -Force }
+
 Start-Process $TempWsb
 Write-Host "[WSB Test] Waiting for result file (timeout 3 min)..."
 
 $Deadline = (Get-Date).AddMinutes(3)
-$ResultFile = Join-Path $ResultsDir "result.txt"
 while (-not (Test-Path $ResultFile) -and (Get-Date) -lt $Deadline) {
     Start-Sleep -Seconds 5
     Write-Host "  ...waiting"
