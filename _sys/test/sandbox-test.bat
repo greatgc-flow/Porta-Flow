@@ -703,17 +703,12 @@ call "%TW%\context\gemini-session-read.bat"
 call :E "gemini-session-read: serial 2nd call succeeds" 0 !ERRORLEVEL!
 
 :: valid session-id.txt -> _GEMINI_SESSION_FLAG=--resume <uuid>
-:: Skip in WSB: repeated PowerShell WriteAllText calls cause instability
-if "!_IN_WSB!"=="1" (
-    call :SK "gemini-session-read: active session -> flag set" "WSB: PowerShell instability on repeated calls"
-) else (
-    powershell -NoProfile -Command "[IO.File]::WriteAllText('%TW%\_sys\gemini\session-id.txt','mock-uuid-1234',(New-Object System.Text.UTF8Encoding($false)))"
-    set "_GEMINI_SESSION_FLAG="
-    call "%TW%\context\gemini-session-read.bat"
-    if "!_GEMINI_SESSION_FLAG!"=="--resume mock-uuid-1234" (call :OK "gemini-session-read: active session -> flag set") else (call :NG "gemini-session-read: active session -> flag set" "was !_GEMINI_SESSION_FLAG!")
-    del "%TW%\_sys\gemini\session-id.txt" > nul 2>&1
-    set "_GEMINI_SESSION_FLAG="
-)
+echo mock-uuid-1234> "%TW%\_sys\gemini\session-id.txt"
+set "_GEMINI_SESSION_FLAG="
+call "%TW%\context\gemini-session-read.bat"
+if "!_GEMINI_SESSION_FLAG!"=="--resume mock-uuid-1234" (call :OK "gemini-session-read: active session -> flag set") else (call :NG "gemini-session-read: active session -> flag set" "was !_GEMINI_SESSION_FLAG!")
+del "%TW%\_sys\gemini\session-id.txt" > nul 2>&1
+set "_GEMINI_SESSION_FLAG="
 
 :: ================================================================
 :: GROUP 17: Document Content Integrity

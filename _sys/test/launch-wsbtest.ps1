@@ -52,7 +52,7 @@ $WsbXml = @"
     </MappedFolder>
   </MappedFolders>
   <LogonCommand>
-    <Command>cmd /c "C:\PortableDev\_sys\test\sandbox-test.bat &amp; echo WSB_DONE > C:\TestResults\result.txt &amp; shutdown /s /t 3"</Command>
+    <Command>cmd /c "C:\PortableDev\_sys\test\sandbox-test.bat &amp; echo WSB_DONE > C:\TestResults\result.txt &amp; shutdown /s /t 5"</Command>
   </LogonCommand>
 </Configuration>
 "@
