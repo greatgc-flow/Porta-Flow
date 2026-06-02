@@ -4,6 +4,11 @@
 :: IMPORTANT: Do NOT add setlocal/endlocal - env vars must propagate.
 :: ================================================================
 
+:: Ensure gemini.cmd is findable regardless of caller environment
+if exist "%~dp0..\env\nodejs\npm-global\gemini.cmd" (
+    set "PATH=%~dp0..\env\nodejs\npm-global;%PATH%"
+)
+
 if defined GEMINI_DIR (
     set "_STATUS_FILE=%GEMINI_DIR%\status.json"
 ) else (
