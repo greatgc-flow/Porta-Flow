@@ -52,7 +52,7 @@ $WsbXml = @"
     </MappedFolder>
   </MappedFolders>
   <LogonCommand>
-    <Command>cmd /c "C:\PortableDev\_sys\test\sandbox-test.bat > C:\TestResults\result.txt 2>&amp;1 &amp; shutdown /s /t 3"</Command>
+    <Command>cmd /c "C:\PortableDev\_sys\test\sandbox-test.bat &amp; echo WSB_DONE > C:\TestResults\result.txt &amp; shutdown /s /t 3"</Command>
   </LogonCommand>
 </Configuration>
 "@
@@ -75,12 +75,16 @@ while (-not (Test-Path $ResultFile) -and (Get-Date) -lt $Deadline) {
 }
 
 if (Test-Path $ResultFile) {
-    $Content = Get-Content $ResultFile -Raw
+    # Find the detailed report written by sandbox-test.bat
+    $ReportFile = Get-ChildItem $ResultsDir -Filter "test_*.txt" |
+                  Sort-Object LastWriteTime -Descending |
+                  Select-Object -First 1
     Write-Host "`n========== WSB TEST RESULTS =========="
-    Write-Host $Content
-    # Archive result
-    $Archive = Join-Path $ResultsDir "result_$Timestamp.txt"
-    Copy-Item $ResultFile $Archive
+    if ($ReportFile) {
+        Get-Content $ReportFile.FullName | Write-Host
+    } else {
+        Write-Host "(no detailed report found)"
+    }
     Remove-Item $TempWsb -Force -ErrorAction SilentlyContinue
 } else {
     Write-Host "[WSB Test] TIMEOUT — no result file received."
