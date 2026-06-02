@@ -1,9 +1,9 @@
-@echo off
+﻿@echo off
 setlocal EnableDelayedExpansion
 :: ================================================================
 :: sandbox-test.bat  -  Porta-Flow Comprehensive Unit Test Suite
 ::
-:: Coverage: ALL _sys/context/*.bat + gemini-status.bat (all options)
+:: Coverage: ALL _sys/cli/ + hooks/ + scans/ + tools/ + gemini-status.bat (all options)
 ::   Groups: File Presence / Tool CLI / raw-log / collab-log-append /
 ::           risk-scan / context-health / gemini-status / version-check /
 ::           agent-audit / script-deps / git-draft / ctx-save /
@@ -102,15 +102,15 @@ echo. >> "!_REPORT!"
 echo [GROUP 1] File Presence >> "!_REPORT!"
 echo ---- >> "!_REPORT!"
 
-call :F "context scripts: ctx-save.bat"       "%PD%\_sys\context\ctx-save.bat"
-call :F "context scripts: ctx-end.bat"        "%PD%\_sys\context\ctx-end.bat"
-call :F "context scripts: version-check.bat"  "%PD%\_sys\context\version-check.bat"
-call :F "context scripts: agent-audit.bat"    "%PD%\_sys\context\agent-audit.bat"
-call :F "context scripts: risk-scan.bat"      "%PD%\_sys\context\risk-scan.bat"
-call :F "context scripts: script-deps.bat"    "%PD%\_sys\context\script-deps.bat"
-call :F "context scripts: git-draft.bat"      "%PD%\_sys\context\git-draft.bat"
-call :F "context scripts: context-health.bat" "%PD%\_sys\context\context-health.bat"
-call :F "context scripts: collab-log-append.bat" "%PD%\_sys\context\collab-log-append.bat"
+call :F "context scripts: ctx-save.bat"       "%PD%\_sys\hooks\ctx-save.bat"
+call :F "context scripts: ctx-end.bat"        "%PD%\_sys\hooks\ctx-end.bat"
+call :F "context scripts: version-check.bat"  "%PD%\_sys\scans\scan-env.bat"
+call :F "context scripts: agent-audit.bat"    "%PD%\_sys\scans\scan-audit.bat"
+call :F "context scripts: risk-scan.bat"      "%PD%\_sys\scans\scan-risk.bat"
+call :F "context scripts: script-deps.bat"    "%PD%\_sys\scans\scan-deps.bat"
+call :F "context scripts: git-draft.bat"      "%PD%\_sys\tools\git-draft.bat"
+call :F "context scripts: context-health.bat" "%PD%\_sys\scans\scan-health.bat"
+call :F "context scripts: collab-log-append.bat" "%PD%\_sys\hooks\collab-log-append.bat"
 call :F "context scripts: raw-log.bat"        "%PD%\_sys\context\raw-log.bat"
 call :F "context scripts: gemini-session-read.bat" "%PD%\_sys\context\gemini-session-read.bat"
 call :F "gemini-status.bat"                   "%PD%\_sys\gemini\gemini-status.bat"
@@ -590,10 +590,10 @@ call :E "start.bat: CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS set" 0 !ERRORLEVEL!
 
 :: ---- 2026-06-01 session + tool fixes ----
 :: gemini-consult.bat: CRLF
-powershell -NoProfile -Command "if([IO.File]::ReadAllText('%PD%\_sys\context\gemini-consult.bat').Contains([char]13)){exit 0}else{exit 1}" > nul 2>&1
+powershell -NoProfile -Command "if([IO.File]::ReadAllText('%PD%\_sys\tools\consult-ai.bat').Contains([char]13)){exit 0}else{exit 1}" > nul 2>&1
 call :E "gemini-consult.bat: CRLF endings" 0 !ERRORLEVEL!
 
-findstr /c:"approval-mode plan" "%PD%\_sys\context\gemini-consult.bat" > nul 2>&1
+findstr /c:"approval-mode plan" "%PD%\_sys\tools\consult-ai.bat" > nul 2>&1
 call :E "gemini-consult.bat: --approval-mode plan" 0 !ERRORLEVEL!
 
 :: Functional test: session-id.txt and session-map.json
@@ -636,26 +636,26 @@ call :E "usage.json: valid content" 0 !ERRORLEVEL!
 
 set "PATH=!ORIG_PATH!"
 
-findstr /c:"_SID_FILE and _GUSAGE must be set here" "%PD%\_sys\context\gemini-consult.bat" > nul 2>&1
+findstr /c:"_SID_FILE and _GUSAGE must be set here" "%PD%\_sys\tools\consult-ai.bat" > nul 2>&1
 call :E "gemini-consult.bat: _SID_FILE before gate" 0 !ERRORLEVEL!
 
-findstr /c:"_GUSAGE" "%PD%\_sys\context\gemini-consult.bat" > nul 2>&1
+findstr /c:"_GUSAGE" "%PD%\_sys\tools\consult-ai.bat" > nul 2>&1
 call :E "gemini-consult.bat: _GUSAGE var" 0 !ERRORLEVEL!
 
-findstr /c:"tools\\ripgrep" "%PD%\_sys\context\gemini-consult.bat" > nul 2>&1
+findstr /c:"tools\\ripgrep" "%PD%\_sys\tools\consult-ai.bat" > nul 2>&1
 call :E "gemini-consult.bat: ripgrep in PATH" 0 !ERRORLEVEL!
 
-findstr /c:"session-map" "%PD%\_sys\context\gemini-consult.bat" > nul 2>&1
+findstr /c:"session-map" "%PD%\_sys\tools\consult-ai.bat" > nul 2>&1
 call :E "gemini-consult.bat: session-map update" 0 !ERRORLEVEL!
 
-findstr /c:"gemini-usage.bat" "%PD%\_sys\context\gemini-consult.bat" > nul 2>&1
+findstr /c:"gemini-usage.bat" "%PD%\_sys\tools\consult-ai.bat" > nul 2>&1
 call :E "gemini-consult.bat: usage auto-update" 0 !ERRORLEVEL!
 
 :: ctx-end.bat: CRLF + session-map
-powershell -NoProfile -Command "if([IO.File]::ReadAllText('%PD%\_sys\context\ctx-end.bat').Contains([char]13)){exit 0}else{exit 1}" > nul 2>&1
+powershell -NoProfile -Command "if([IO.File]::ReadAllText('%PD%\_sys\hooks\ctx-end.bat').Contains([char]13)){exit 0}else{exit 1}" > nul 2>&1
 call :E "ctx-end.bat: CRLF endings" 0 !ERRORLEVEL!
 
-findstr /c:"session-map" "%PD%\_sys\context\ctx-end.bat" > nul 2>&1
+findstr /c:"session-map" "%PD%\_sys\hooks\ctx-end.bat" > nul 2>&1
 call :E "ctx-end.bat: session-map archive" 0 !ERRORLEVEL!
 
 :: gemini-usage.bat: Axis-Q

@@ -1,4 +1,4 @@
----
+﻿---
 name: portable-env
 description: "Orchestrates the Portable Dev Environment agent team. Use for: _sys/ script fixes, tool integration, portability audits, folder structure cleanup, documentation sync, scenario loop review, ROI proposals. Also use for: re-run, update, supplement, fix previous results, harness check, agent team re-run, structure cleanup, scenario audit."
 ---
@@ -45,7 +45,7 @@ Called via Axis scripts A-I. Separate token pool. Stateless per call.
   "status": "in_progress",
   "caution_flag": false,
   "artifacts": {
-    "risk_scan": "_archive/risk-scan.json",
+    "risk_scan": "_archive/scan-risk-latest.json",
     "session_primer": "_workspace/session-primer.md",
     "scenario_audit": null,
     "portability_audit": null,
@@ -80,9 +80,9 @@ Phase 1:  Request analysis
            coordinator writes _workspace/session-primer.md (max 10 lines, current task context)
 
 Phase 1.5: Risk scan [Axis-I]
-           risk-scanner agent → _sys\context\risk-scan.bat
+           risk-scanner agent → _sys\scans\scan-risk.bat
            reads: collab-log last 20 entries + affected files from state.json
-           outputs: _archive/risk-scan.json
+           outputs: _archive/scan-risk-latest.json
            HIGH → coordinator asks user (Zone C, §8)
            MED  → caution_flag = true in state.json, proceed
            LOW / UNKNOWN → proceed normally
@@ -131,7 +131,7 @@ Fast path: Single-file change, no structural/scenario impact → skip Phase 1.5 
 
 ## Data Flow
 ```
-Phase 1.5: risk-scan.bat → _archive/risk-scan.json
+Phase 1.5: risk-scan.bat → _archive/scan-risk-latest.json
 Phase 3 Dev: (edit files) → _workspace/02_*.md
 Phase 3 Audit: portability-auditor → 03_portability_audit.json
                scenario-auditor → 03_scenario_audit.json

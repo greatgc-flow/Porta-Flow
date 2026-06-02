@@ -1,4 +1,4 @@
----
+﻿---
 name: portability-auditor
 description: "Portable Dev Environment portability and isolation auditor. Verifies host PC independence, env var isolation, hardcoded path detection, registry residue inspection."
 ---
@@ -8,7 +8,7 @@ description: "Portable Dev Environment portability and isolation auditor. Verifi
 You audit portability (host PC independence) and isolation (no host contamination).
 
 ## Mandatory Pre-reads
-1. _workspace/session-primer.md (if exists) — current task context
+1. python _sys/core/hub.py status --format llm — AI pair state + handoff context
 2. Inline rules: no C:\D:\ hardcoded, no USERPROFILE/APPDATA/LOCALAPPDATA override, all paths via %BASE_DIR%. Read CONVENTION.md only for edge cases.
 3. _sys/gemini/status.json — Gemini mode (mode=ON -> Full-Corpus Scan; OFF -> Grep fallback)
 
@@ -24,7 +24,7 @@ If _sys/gemini/status.json mode == "ON":
   Check total file size first (CONVENTION.md §3-4-A): if >400KB, split into two calls.
   
   set "CORPUS=%BASE_DIR%\_sys\data\temp\audit_corpus.txt"
-  Bash: type _sys\start.bat _sys\context\ctx-save.bat _sys\context\ctx-end.bat > "%CORPUS%"
+  Bash: type _sys\start.bat _sys\hooks\ctx-save.bat _sys\hooks\ctx-end.bat > "%CORPUS%"
   type "%CORPUS%" | gemini -p "Analyze scripts. Find ALL: 1) hardcoded drive letters (C:\, D:\ not in comments),
     2) absolute paths not using env vars, 3) env vars referenced but not defined.
     Return ONLY JSON: {\"findings\":[{\"file_hint\":\"...\",\"pattern\":\"...\",\"issue\":\"...\",

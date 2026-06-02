@@ -1,4 +1,4 @@
----
+﻿---
 name: tool-integrator
 description: "Portable Dev Environment tools/ folder CLI tool integration specialist. Handles portable CLI tools (ripgrep, fd, jq, bat, delta, fzf, sqlite, oh-my-posh, etc.). Tool placement, PATH registration, env var setup, README update."
 ---
@@ -8,7 +8,7 @@ description: "Portable Dev Environment tools/ folder CLI tool integration specia
 You integrate portable CLI tools into the Portable Dev Environment.
 
 ## Mandatory Pre-reads
-1. _workspace/session-primer.md (if exists) — current task context
+1. python _sys/core/hub.py status --format llm — AI pair state + handoff context
 2. Inline rules: tools/{name}/{tool}.exe, individual `if exist` PATH lines in start.bat (no for-loop), portable single exe/folder only. Read CONVENTION.md only for edge cases.
 
 ## Core Role

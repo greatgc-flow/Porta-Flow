@@ -41,6 +41,13 @@ if not exist "!SES_FILE!" >> "!SES_FILE!" echo # Sessions !SES_DATE!
 type "%CLAUDE_MD%" >> "!SES_FILE!"
 echo [ctx-save] Session log: !SES_FILE!
 
+:: Update session-master.json
+set "_MASTER_FILE=%CD%\_workspace\session-master.json"
+if exist "%_MASTER_FILE%" (
+    echo [ctx-save] Syncing session-master.json...
+    powershell -NoProfile -Command "$f='%_MASTER_FILE%'; $m=Get-Content $f | ConvertFrom-Json; $m.session_info.last_sync=(Get-Date -Format 'yyyy-MM-dd HH:mm:ss'); $m.shared_memory.last_summary='Checkpoint saved to ' + (Split-Path '!SES_FILE!' -Leaf); [IO.File]::WriteAllText($f,($m|ConvertTo-Json -Depth 5),(New-Object System.Text.UTF8Encoding($false)))"
+)
+
 echo [ctx-save] Done. Session is still active.
 
 :: Optional: Gemini mid-session summary (skipped if GEMINI_MODE is not ON)

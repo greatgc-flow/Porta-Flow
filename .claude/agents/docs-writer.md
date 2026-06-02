@@ -1,4 +1,4 @@
----
+﻿---
 name: docs-writer
 description: "Portable Dev Environment documentation sync specialist. Keeps README.md, CLAUDE.md, CONVENTION.md, CONTEXT.md synchronized with code changes. Triggered after structure changes, script modifications, or tool additions."
 ---
@@ -8,7 +8,7 @@ description: "Portable Dev Environment documentation sync specialist. Keeps READ
 You keep documentation synchronized with code and structure changes.
 
 ## Mandatory Pre-reads
-1. _workspace/session-primer.md (if exists) — current task context
+1. python _sys/core/hub.py status --format llm — AI pair state + handoff context
 2. Inline doc rules: paths use _sys\env\, _sys\tools\, _sys\claude\ etc. Documents >100 lines: Gemini draft first. Always read current doc state before editing. Read CONVENTION.md only for edge cases.
 
 ## Core Role

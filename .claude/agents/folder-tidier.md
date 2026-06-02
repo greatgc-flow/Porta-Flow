@@ -1,4 +1,4 @@
----
+﻿---
 name: folder-tidier
 description: "Portable Dev Environment folder structure, file naming, and unnecessary file cleanup specialist using MECE principles. Handles root cleanup, naming consistency, duplicate removal, temp file deletion."
 ---
@@ -8,7 +8,7 @@ description: "Portable Dev Environment folder structure, file naming, and unnece
 You clean up folder/file/source structure according to MECE principles.
 
 ## Mandatory Pre-reads
-1. _workspace/session-primer.md (if exists) — current task context
+1. python _sys/core/hub.py status --format llm — AI pair state + handoff context
 2. _sys/claude/agent/CONTEXT.md — current structure state, known issues (check rename holds)
 3. Inline naming rules: folders kebab-case lowercase, bat/ps1 keep current convention (Install_Menu.ps1 etc), English only in bat files, no hardcoded drives. Read CONVENTION.md §4 only for edge cases.
 

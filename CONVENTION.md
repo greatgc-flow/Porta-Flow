@@ -1,4 +1,4 @@
-# Portable Dev Environment — Coding Conventions
+﻿# Portable Dev Environment — Coding Conventions
 
 모든 소스 코드는 이 파일의 규칙을 준수해야 한다.
 verifier 에이전트는 이 파일을 기준으로 PASS/FAIL을 판정한다.
@@ -170,13 +170,13 @@ The following scripts are called by ALL Axis bat files. Renaming or deleting the
 
 | File | Called by |
 |------|-----------|
-| `_sys\context\collab-log-append.bat` | ctx-save, ctx-end, version-check, agent-audit, script-deps, git-draft |
-| `_sys\context\raw-log.bat` | same set |
-| `_sys\context\gemini-mode-check.bat` | all Axis bat files (ctx-save, ctx-end, context-health, version-check, agent-audit, script-deps, git-draft, risk-scan) |
+| `_sys\hooks\collab-log-append.bat` | ctx-save, ctx-end, version-check, agent-audit, script-deps, git-draft |
+| `_sys\hooks\raw-log.bat` | same set |
+| `_sys\hooks\check-gate.bat` | all Axis bat files (ctx-save, ctx-end, context-health, version-check, agent-audit, script-deps, git-draft, risk-scan) |
 
 Rules:
 - Never rename or move these files without updating ALL callers simultaneously.
-- Before any cleanup of `_sys\context\`, verify neither file is in scope.
+- Before any script move/rename in `_sys\hooks\`, verify all callers are updated simultaneously.
 - Confirmed via Axis-F (script-deps.bat) on 2026-06-01.
 
 Known issue: Gemini CLI may emit `API returned invalid content after all retries` (NumericalClassifierStrategy failure) before producing valid output. This is an internal routing bug — does NOT indicate auth failure. If Axis output is valid JSON, proceed normally. Error files logged to `_sys\data\temp\gemini-client-error-generateJson-*.json`.
@@ -308,3 +308,21 @@ Local temp directory simulation (PortaFlowTest_*) is DEPRECATED as primary metho
 ### WSB Prerequisites
 - Windows Sandbox optional feature: `optionalfeatures.exe → Windows Sandbox`
 - Requires Win11 Pro / Enterprise / Pro for Workstations (this system qualifies)
+
+## §10 — Parallel ^& Multi-Instance Safety (2026-06-02)
+
+To prevent "Vertical" (multi-instance) and "Horizontal" (parallel execution) conflicts:
+
+### 10-1. Session Isolation
+- Each `start.bat` instance MUST generate a unique `SESSION_UUID` (or `%RANDOM%`).
+- All agent-transient data must reside in `_thoughts/session-%SESSION_UUID%/`.
+- `session-master.json` should be synchronized via a lock-protected central file, but active work-in-progress must be isolated.
+
+### 10-2. Axis Script Safety
+- ALL scan scripts in `_sys/scans/` writing output MUST use a unique filename.
+- Pattern: `%_OUTPUT_DIR%/%AXIS_NAME%-%RANDOM%.json`.
+- Never use static filenames like `temp-audit.json` for shared analysis results.
+
+### 10-3. File Naming
+- ALL system scripts (.bat) must use `lowercase-kebab-case.bat`.
+- No uppercase or mixed-case for system-level automation.

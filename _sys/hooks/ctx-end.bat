@@ -76,6 +76,13 @@ type "%CLAUDE_MD%" >> "!SES_FILE!"
 >> "!SES_FILE!" echo ---
 echo [ctx-end] Session log: !SES_FILE!
 
+:: Update session-master.json
+set "_MASTER_FILE=%CD%\_workspace\session-master.json"
+if exist "%_MASTER_FILE%" (
+    echo [ctx-end] Finalizing session-master.json...
+    powershell -NoProfile -Command "$f='%_MASTER_FILE%'; $m=Get-Content $f | ConvertFrom-Json; $m.session_info.last_sync=(Get-Date -Format 'yyyy-MM-dd HH:mm:ss'); $m.current_mission.status='completed'; $m.shared_memory.last_summary='Session finalized and archived.'; [IO.File]::WriteAllText($f,($m|ConvertTo-Json -Depth 5),(New-Object System.Text.UTF8Encoding($false)))"
+)
+
 echo.
 echo [ctx-end] Session saved. Safe to close.
 if "%GLOBAL_UPDATE%"=="0" echo         Tip: ctx-end --global  also updates global preferences.

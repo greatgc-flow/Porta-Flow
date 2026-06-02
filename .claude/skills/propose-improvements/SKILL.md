@@ -1,4 +1,4 @@
----
+﻿---
 name: propose-improvements
 description: "ROI analysis, efficiency proposals, and component version update evaluation for the Portable Dev Environment. Use for: improvement proposals, ROI review, version update check."
 ---
@@ -20,7 +20,7 @@ description: "ROI analysis, efficiency proposals, and component version update e
 
 ## Version Update Check
 
-With Gemini ON: Run `_sys\context\version-check.bat` -> read `_archive/version-check.json`
+With Gemini ON: Run `_sys\scans\scan-env.bat` -> read `_archive/scan-env-latest.json`
   -> compare with setup.ps1 $V section -> list items needing update
 
 With Gemini OFF: Manual WebFetch to each tool's GitHub releases page:

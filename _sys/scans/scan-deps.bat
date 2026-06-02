@@ -1,4 +1,4 @@
-@echo off
+﻿@echo off
 setlocal
 
 :: ================================================================
@@ -22,7 +22,9 @@ if defined BASE_DIR (
 )
 
 set "SYS_DIR=%_BASE%\_sys"
-set "CTX_DIR=%SYS_DIR%\context"
+set "HOOKS_DIR=%SYS_DIR%\hooks"
+set "SCANS_DIR=%SYS_DIR%\scans"
+set "TOOLS_DIR=%SYS_DIR%\tools"
 set "GEM_DIR=%SYS_DIR%\gemini"
 set "OUT_DIR=%_BASE%\_archive"
 if not exist "%OUT_DIR%" mkdir "%OUT_DIR%"
@@ -33,7 +35,7 @@ set "TEMP_MERGED=%TEMP%\script_deps_merged_%RANDOM%.txt"
 for /f "delims=" %%I in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMddHHmmss"') do set "_DT=%%I"
 
 :: --- Check Gemini mode ---
-call "%~dp0gemini-mode-check.bat"
+call "%~dp0..\hooks\check-gate.bat"
 if not "%GEMINI_MODE%"=="ON" (
     echo [script-deps] ERROR: Gemini not available. Reason: %GEMINI_OFF_REASON%
     echo               Run start.bat first, or check _sys\gemini\status.json
@@ -43,15 +45,15 @@ if not "%GEMINI_MODE%"=="ON" (
 :: --- Merge target scripts into single temp file ---
 echo [script-deps] Merging script files for analysis...
 powershell -NoProfile -Command ^
-    "$base='%SYS_DIR:\=\\%'; $ctx='%CTX_DIR:\=\\%'; $gem='%GEM_DIR:\=\\%'; $root='%_BASE:\=\\%';" ^
+    "$base='%SYS_DIR:\=\\%'; $hooks='%HOOKS_DIR:\=\\%'; $scans='%SCANS_DIR:\=\\%'; $tools='%TOOLS_DIR:\=\\%'; $gem='%GEM_DIR:\=\\%'; $root='%_BASE:\=\\%';" ^
     "$targets = @(" ^
     "  [pscustomobject]@{ path=Join-Path $root 'start.bat' }," ^
-    "  [pscustomobject]@{ path=Join-Path $ctx 'ctx-save.bat' }," ^
-    "  [pscustomobject]@{ path=Join-Path $ctx 'ctx-end.bat' }," ^
-    "  [pscustomobject]@{ path=Join-Path $ctx 'version-check.bat' }," ^
-    "  [pscustomobject]@{ path=Join-Path $ctx 'agent-audit.bat' }," ^
-    "  [pscustomobject]@{ path=Join-Path $ctx 'script-deps.bat' }," ^
-    "  [pscustomobject]@{ path=Join-Path $ctx 'git-draft.bat' }," ^
+    "  [pscustomobject]@{ path=Join-Path $hooks 'ctx-save.bat' }," ^
+    "  [pscustomobject]@{ path=Join-Path $hooks 'ctx-end.bat' }," ^
+    "  [pscustomobject]@{ path=Join-Path $scans 'scan-env.bat' }," ^
+    "  [pscustomobject]@{ path=Join-Path $scans 'scan-audit.bat' }," ^
+    "  [pscustomobject]@{ path=Join-Path $scans 'scan-deps.bat' }," ^
+    "  [pscustomobject]@{ path=Join-Path $tools 'git-draft.bat' }," ^
     "  [pscustomobject]@{ path=Join-Path $gem 'gemini-status.bat' }," ^
     "  [pscustomobject]@{ path=Join-Path $base 'manage.ps1' }," ^
     "  [pscustomobject]@{ path=Join-Path $base 'launch.ps1' }," ^
@@ -76,7 +78,7 @@ if errorlevel 1 (
     echo [script-deps] ERROR: gemini returned non-zero. Check auth or network.
     del "%OUT_FILE%" > nul 2>&1
     del "%TEMP_MERGED%" > nul 2>&1
-    call "%~dp0collab-log-append.bat" "Axis-F" "script-deps.bat" "FAIL" "Error: api_error"
+    call "%~dp0..\hooks\collab-log-append.bat" "Axis-F" "script-deps.bat" "FAIL" "Error: api_error"
     if defined GEMINI_DIR (
         powershell -NoProfile -Command "$f='%GEMINI_DIR%\status.json'; if (Test-Path $f) { $j=Get-Content $f -Raw | ConvertFrom-Json; $j.last_error='script_deps_failed_%_DT%'; $j.mode='OFF'; $j.reason='api_error'; [System.IO.File]::WriteAllText($f, ($j | ConvertTo-Json), (New-Object System.Text.UTF8Encoding($false))) }"
     )
@@ -86,16 +88,18 @@ if errorlevel 1 (
 :: Check for Gemini refusal in output
 findstr /i "\[REFUSAL:" "%OUT_FILE%" > nul 2>&1
 if not errorlevel 1 (
-    call "%~dp0collab-log-append.bat" "Axis-F" "script-deps.bat" "REFUSED" "Gemini refused request"
+    call "%~dp0..\hooks\collab-log-append.bat" "Axis-F" "script-deps.bat" "REFUSED" "Gemini refused request"
     del "%OUT_FILE%" > nul 2>&1
     del "%TEMP_MERGED%" > nul 2>&1
     exit /b 1
 )
 
-call "%~dp0raw-log.bat" "Axis-F" "%OUT_FILE%" "%TEMP_MERGED%"
+call "%~dp0..\hooks\raw-log.bat" "Axis-F" "%OUT_FILE%" "%TEMP_MERGED%"
 del "%TEMP_MERGED%" > nul 2>&1
 
 echo [script-deps] Done: %OUT_FILE%
 echo [script-deps] Review edges for unexpected or missing call chains.
-call "%~dp0collab-log-append.bat" "Axis-F" "script-deps.bat" "OK" "Output: %OUT_FILE%"
+call "%~dp0..\hooks\collab-log-append.bat" "Axis-F" "script-deps.bat" "OK" "Output: %OUT_FILE%"
+call "%~dp0..\tools\archive-data.bat" --name scan-deps --file "%OUT_FILE%" || echo [WARN] Archive failed (non-blocking)
+
 endlocal

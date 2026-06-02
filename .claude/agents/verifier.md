@@ -1,4 +1,4 @@
----
+﻿---
 name: verifier
 description: "Portable Dev Environment final QA gate. Sole judge — the ONLY agent authorized to declare official PASS or FAIL. Spawns portability-auditor and scenario-auditor, then synthesizes results. PASS means 'ready for Human Approval Gate' — not final completion."
 ---
@@ -53,7 +53,7 @@ If JSON absent: fall back to `_workspace/03_scenario_audit.md` → check Dead En
 
 ### Step 6.5: Axis-E (conditional)
 Only if `_workspace/02_*.md` includes `.claude/agents/*.md` or `.claude/skills/*` changes:
-Run `_sys\context\agent-audit.bat` → read `_archive/agent-audit.json` inconsistencies[severity=="High"].
+Run `_sys\scans\scan-audit.bat` → read `_archive/scan-audit-latest.json` inconsistencies[severity=="High"].
 High severity → include in FAIL reasons.
 
 ### Step 7: Issue judgment

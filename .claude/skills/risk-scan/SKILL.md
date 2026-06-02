@@ -1,4 +1,4 @@
----
+﻿---
 name: risk-scan
 description: "Trigger procedure for pre-flight risk assessment. Coordinator calls this skill at Phase 1.5 to spawn risk-scanner agent. Required when task affects > 1 file or touches system scripts or agent/skill definitions."
 ---
@@ -13,13 +13,13 @@ description: "Trigger procedure for pre-flight risk assessment. Coordinator call
 ## Steps
 1. coordinator creates risk-scanner agent task (TaskCreate)
 2. risk-scanner reads state.json + collab-log
-3. risk-scanner calls Axis-I (_sys\context\risk-scan.bat)
-4. risk-scanner writes _archive/risk-scan.json
-5. coordinator reads overall_risk field from _archive/risk-scan.json
+3. risk-scanner calls Axis-I (_sys\scans\scan-risk.bat)
+4. risk-scanner writes _archive/scan-risk-latest.json
+5. coordinator reads overall_risk field from _archive/scan-risk-latest.json
 6. Route per CONVENTION.md §8 Zone C (HIGH → ask user, MED → caution_flag=true, LOW → proceed)
 
 ## Output Check
-Read _archive/risk-scan.json → overall_risk field only for routing decision.
+Read _archive/scan-risk-latest.json → overall_risk field only for routing decision.
 Full risks[] array is available for user presentation if HIGH.
 
 ## Gemini OFF behavior

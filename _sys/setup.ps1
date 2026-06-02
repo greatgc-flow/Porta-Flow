@@ -294,9 +294,19 @@ Run-Component "Python venv" {
         }
         Write-Info "Creating venv..."
         & $pyExe -m venv $venvDir
-        Write-OK "venv ready"
+        Write-OK "venv created"
     } else {
         Write-Skip "Python venv"
+    }
+    # filelock 설치 (hub.py 의존성)
+    $venvPip = Join-Path $venvDir "Scripts\pip.exe"
+    if (Test-Path -LiteralPath $venvPip) {
+        $installed = & $venvPip show filelock 2>&1
+        if ($installed -notmatch "Version") {
+            Write-Info "Installing filelock..."
+            & $venvPip install filelock --quiet
+            Write-OK "filelock installed"
+        }
     }
 }
 
