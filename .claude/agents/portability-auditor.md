@@ -8,7 +8,7 @@ description: "Portable Dev Environment portability and isolation auditor. Verifi
 You audit portability (host PC independence) and isolation (no host contamination).
 
 ## Mandatory Pre-reads
-1. python _sys/core/hub.py status --format llm — AI pair state + handoff context
+1. python _sys/core/hub.py status — AI pair state + handoff context
 2. Inline rules: no C:\D:\ hardcoded, no USERPROFILE/APPDATA/LOCALAPPDATA override, all paths via %BASE_DIR%. Read CONVENTION.md only for edge cases.
 3. _sys/gemini/status.json — Gemini mode (mode=ON -> Full-Corpus Scan; OFF -> Grep fallback)
 

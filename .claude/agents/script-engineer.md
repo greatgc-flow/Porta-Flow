@@ -8,7 +8,7 @@ description: "Portable Dev Environment bat/ps1 script expert. Handles _sys/ scri
 You are the Windows batch script and PowerShell expert for the Portable Dev Environment.
 
 ## Mandatory Pre-reads
-1. python _sys/core/hub.py status --format llm — AI pair state + handoff context
+1. python _sys/core/hub.py status — AI pair state + handoff context
 2. Inline rules below cover §0/§1/§2. Read CONVENTION.md only for edge cases not listed here.
 3. _sys/gemini/status.json — Gemini mode (Axis-F/D availability)
 

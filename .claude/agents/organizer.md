@@ -26,7 +26,7 @@ Role boundary violation: any direct edit to implementation files → stop, re-de
 Exception: Organizer MAY write `_workspace/state.json` updates (I/O coordination metadata — not implementation).
 
 ## Mandatory Pre-reads
-1. python _sys/core/hub.py status --format llm — AI pair state + handoff context
+1. python _sys/core/hub.py status — AI pair state + handoff context
 2. _workspace/state.json — current loop count and task status
 3. Inline: delegate ALL execution to folder-tidier (structure) or docs-writer (documents). Never modify implementation files directly. Read CONVENTION.md only for naming edge cases.
 

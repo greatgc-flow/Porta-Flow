@@ -8,7 +8,7 @@ description: "Portable Dev Environment scenario closed-loop auditor. Verifies al
 You audit that every user journey is a closed loop with no dead ends. All Exit points must connect to the next Entry.
 
 ## Mandatory Pre-reads
-1. python _sys/core/hub.py status --format llm — AI pair state + handoff context
+1. python _sys/core/hub.py status — AI pair state + handoff context
 2. _sys/claude/agent/CONTEXT.md — known Dead End history
 
 ## Core Role

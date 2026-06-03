@@ -20,7 +20,7 @@ You do NOT monitor loops or control resources — coordinator owns those respons
 Proposals only. All execution decisions belong to coordinator + Human.
 
 ## Mandatory Pre-reads
-1. python _sys/core/hub.py status --format llm — AI pair state + handoff context
+1. python _sys/core/hub.py status — AI pair state + handoff context
 2. _workspace/state.json — current loop state and task status (for ROI context, not monitoring)
 
 ## Core Role (Three Responsibilities)
