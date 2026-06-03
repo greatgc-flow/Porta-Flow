@@ -210,19 +210,19 @@ script-deps.bat, git-draft.bat, risk-scan.bat (risk-scan uses exit /b 0 — non-
 | I | risk-scan.bat | ≤10k | ~0 | Phase 1.5 |
 
 ### 3-5. Claude-Gemini 협업 프로토콜 v2
-→ **COLLAB.md §C-1** 참조. (역할 구조, 통신 형식, 거절 코드, 교착 규칙, 의무 목록)
+→ **PROTOCOL.md §C-1** 참조. (역할 구조, 통신 형식, 거절 코드, 교착 규칙, 의무 목록)
 
 ### 3-6. 3-Tier R&R
-→ **COLLAB.md §C-2** 참조. (Tier 구조, 작업 라우팅 테이블, Passthrough Rule)
+→ **PROTOCOL.md §C-2** 참조. (Tier 구조, 작업 라우팅 테이블, Passthrough Rule)
 
 ## §3-7 — Gemini-first Analysis Rule
-→ **COLLAB.md §C-3** 참조. (Axis 선택 테이블, 대형 문서 초안 패턴)
+→ **PROTOCOL.md §C-3** 참조. (Axis 선택 테이블, 대형 문서 초안 패턴)
 
 ## §3-8 — Collaboration Health Check
-→ **COLLAB.md §C-4** 참조. (Phase 0 검증, 협업 장애 프로토콜)
+→ **PROTOCOL.md §C-4** 참조. (Phase 0 검증, 협업 장애 프로토콜)
 
 ## §3-9 — Session Transition Triggers
-→ **COLLAB.md §C-5** 참조. (YELLOW/RED 임계값, Gemini Mode 전환)
+→ **PROTOCOL.md §C-5** 참조. (YELLOW/RED 임계값, Gemini Mode 전환)
 
 ## 4. 폴더/파일 네이밍 규칙
 
@@ -241,7 +241,7 @@ script-deps.bat, git-draft.bat, risk-scan.bat (risk-scan uses exit /b 0 — non-
 예: `tools/ripgrep/rg.exe`, `tools/jq/jq.exe`
 
 ## 5. CONTEXT.md and State Update Rules
-→ **COLLAB.md §C-6** 참조.
+→ **PROTOCOL.md §C-6** 참조.
 
 ## 6. local.config.bat — PC별 설정 패턴
 
@@ -273,12 +273,12 @@ if exist "%SYS_DIR%\local.config.bat" call "%SYS_DIR%\local.config.bat"
 - 도구별 격리 변수(`PIP_CACHE_DIR` 등)는 변경 시 격리가 깨질 수 있으므로 신중하게.
 
 ## 7. 에이전트 경로 정책
-→ **COLLAB.md §C-7** 참조.
+→ **PROTOCOL.md §C-7** 참조.
 
 ---
 
 ## §8 — Decision Delegation Policy
-→ **COLLAB.md §C-8** 참조.
+→ **PROTOCOL.md §C-8** 참조.
 
 ## §9 — Testing Environment Policy (2026-06-01)
 

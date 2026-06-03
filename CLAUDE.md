@@ -157,68 +157,64 @@ with all tools (Python, Node.js, FFmpeg, Git, etc.) pre-configured.
 복잡한 작업 전 Gemini를 먼저 호출하고 응답을 기다린 후 진행할 것. (전역 CLAUDE.md 참조)
 
 ## Current State
-Last updated: 2026-06-03 (Phase 0~4 MVP 완료)
-2026-06-03 Phase 0~4 MVP 완료:
+Last updated: 2026-06-03 (3TCP v1 완료)
+2026-06-03 3TCP v1 완료:
 - Phase 0: _workspace/ 구 산출물 12개 삭제
 - Phase 1: _sys/core/hub.py 작성 (10 액션, filelock 3.29.0, Token-Zero)
-- Phase 2: _sys/cli/ (cla/gem/msg.bat) + _sys/hooks/ (session-end/append-log/check-gate.bat) 작성
-- Phase 3: _workspace/*.json 아카이빙, agents/*.md session-primer 교체, .ai/ .gitignore 추가
-- Phase 4: CLAUDE.md hard rules 추가 (settings.json 수동 업데이트 필요)
+- Phase 2: _sys/cli/ (cla/gem/msg.bat) + _sys/hooks/ 작성
+- Phase 3~4: .ai/ 초기화, agents/*.md session-primer, CLAUDE.md hard rules
+- 3TCP v1: hub.py Phase A~D (timeout=None, 메시지 봉투, N-node, consensus)
+- PROTOCOL.md 신규 생성 (COLLAB.md 흡수 및 삭제, 3TCP v1 §P-0~P-7 추가)
+- CONVENTION.md, GEMINI.md 참조 COLLAB.md → PROTOCOL.md 업데이트
 
 ## Next Steps
 
 1. **settings.json 수동 업데이트** (자동 차단): .claude/settings.json cli/hooks/scans/tools 권한 추가
-2. **Phase 5**: context/ → scans/ + tools/ 이동·통폐합 (scan-env.bat 개명 포함)
-3. **Phase 6**: context/ 폐기, _workspace/ 폴더 삭제, 참조 경로 전체 업데이트
-4. **Phase 7**: Axis MD -latest.json 경로 + archive-data.bat 연결
-5. **Phase 8**: 테스트 3계층 (unit+integration+e2e) 작성
-6. **Phase 9**: WORKLOG.md, SYSTEM_ARCHITECTURE.md, CONVENTION.md, COLLAB.md 업데이트
-7. **Fresh PC setup**: INSTALL.bat (double-click) → _sys\setup.ps1
+2. **bridge/ 삭제**: _sys/bridge/ (orchestrator.py 없음, hub.py로 대체됨)
+3. **ctx-save.bat 수정**: session-master.json 블록 제거, gemini-mode-check.bat → check-gate.bat
+4. **ctx-end.bat 수정**: ctx-save.bat과 동일 + _sys\context → _sys\docs 경로 수정
+5. **marketplace 처리**: claude-plugins-official/.git/ 삭제 후 일반 폴더로 커밋
+6. **Fresh PC setup**: INSTALL.bat (double-click) → _sys\setup.ps1
 
 ---
-## Gemini CLI ??뽰뒠 ?袁り텕??우퓗
+## Gemini CLI Collaboration Model (3TCP v1)
 
-Gemini CLI??Claude ??롪퐬??쇱벥 **癰귣똻???袁㏓럡**嚥???덉삂??뺣뼄. ?????쎈뱜??됱뵠?怨? ?袁⑤빒 ??쎈뻬??
+Gemini CLI operates as a **Tier 3 Sensor** and Domain Specialist within the 3-Tier architecture.
+Protocol details → **PROTOCOL.md §P-0, §C-1, §C-2**
 
-```
-[??????遺욧퍕]
-     ??     ??[Claude Code ??Orchestrator + ??롪퐬??  ??雅??룐뫂遊? 筌롫뗀?덄뵳? Human Gate, ???씩??亦낅슣??     ?? ??     ?? ?? ??Gemini??[REQUEST_TO_CLAUDE: TYPE]??곗쨮 ???귨㎗?揶쎛??(??묐즸 ?臾먯젾)
-     ?? ??[Gemini CLI ?????源딅립 ?臾먯젾??
-     ????? Axis-A: ????몄쎗 ?브쑴苑?   ??portability-auditor (??쇱뒠 ??볧?500k ?醫뤾쿃)
-     ????? Axis-B: 甕곌쑴??URL 野꺜筌? ??version-check.bat (Google Search grounding)
-     ????? Axis-C: ?紐꾨??遺용튋      ??ctx-end ?袁⑹퓗??(?醫뤾문?? Flash)
-     ????? Axis-D: ?????얜챶苡?野꺜???????袁る퓮 癰궰野???쥓??pass
-     ????? Axis-D+: 餓λ쵌而??遺용튋     ??ctx-save ??     ????? Axis-E: ?癒?뵠?袁る뱜 揶쏅Ŋ沅? ??agent-audit.bat ??_archive/agent-audit.json
-     ????? Axis-F: ??쎄쾿?깆?????뤵????script-deps.bat ??_archive/script-deps.json
-     ????? Axis-G: ?뚣끇而??λ뜆釉?     ??git-draft.bat (?꾩꼷???곗뮆?? ?????野꺜?????뚣끇而?
-     ????? Axis-H: Context health ??context-health.bat (JSONL size ??status.json + session-handoff.json)
-     ?遺??? Axis-I: Pre-flight risk ??risk-scan.bat (Phase 1.5, collab-log patterns ??_archive/risk-scan.json)
-```
+**Axes (GC Specializations):**
+- **Axis-A**: Full codebase analysis — portability-auditor (up to 500k tokens)
+- **Axis-B**: External version checks — version-check.bat (Google Search grounding)
+- **Axis-C**: Session summarization — ctx-end.bat (optional, Flash model)
+- **Axis-D**: Script syntax pre-check — inline pass
+- **Axis-D+**: Mid-session checkpoint — ctx-save
+- **Axis-E**: Agent consistency audit — agent-audit.bat → _archive/agent-audit.json
+- **Axis-F**: Script dependency map — script-deps.bat → _archive/script-deps.json
+- **Axis-G**: Commit message draft — git-draft.bat (user reviews before commit)
+- **Axis-H**: Context health — context-health.bat (JSONL size → status.json + session-handoff.json)
+- **Axis-I**: Pre-flight risk — risk-scan.bat (Phase 1.5, collab-log patterns → _archive/risk-scan.json)
 
-**??묐즸 ?臾먯젾 ?癒?뒅**: ?臾믩????遺욧퍕??랁?椰꾧퀣???????덈뼄. Claude?????씩????釉??類ㅼ퐠 ???뵬夷똆EMINI_MODE夷똇uman Gate)?癒?퐣筌?筌ㅼ뮇伊?野껉퀣?숁쾮??뱽 揶쎛筌욊쑬?? ?癒?쉭?????뻿 ?類ㅻ뻼?? `CONVENTION.md 吏?-5` 筌〓챷??
+**Constraints:**
+| Constraint | Detail |
+|-----------|--------|
+| No direct edit of `_sys/` or `*.bat/*.ps1` | Use `[REQUEST_TO_CLAUDE: WRITE_FILE]` instead |
+| 1,000 req/day quota | Axis-A max 3/day; others as needed |
+| No cron/hook auto-invocation | Auth expiry causes silent failure |
+| `GEMINI_CONFIG_DIR` not supported | v0.44.1 limitation |
+| No PASS/FAIL authority | Sensor only; verifier (CA) is the sole judge |
 
-### 疫뀀뜆? ??鍮?| 疫뀀뜆? | ??곸? |
-|------|------|
-| Gemini????롪퐬???????쎈뱜??됱뵠?怨뺤쨮 ????| CLAUDE.md夷똲tate.json ?紐꾨뻼 ?븍뜃?, 筌롫뗀?덄뵳???곸벉 |
-| ??롪퐬???룐뫂遊???獄쏆꼶???紐꾪뀱 | 1,000 req/day ???춭, ?룐뫂遊?餓λ쵎???袁る퓮 |
-| ?얜똻???癒?짗 ??쎈뻬 (cron/hook) | ?紐꾩쵄 ??쑴???밴쉐 ??筌띾슢利???鈺곌퀣?????쎈솭 |
-| GEMINI_CONFIG_DIR ??쇱젟 | v0.44.1 沃섎챷???|
-| Flash 筌뤴뫀?썸에?PASS/FAIL ?癒?젟 | Claude verifier揶쎛 ??μ뵬 筌욊쑴?????뮞 |
-
-### ?온?????뵬
-- `_sys/scans/scan-env.bat` ??Gemini 甕곌쑴??野꺜????`_archive/version-check.json`
-- `_sys/hooks/ctx-end.bat` ???紐꾨??ル굝利???Gemini ?遺용튋 hook (??곸몵筌?椰꾨?瑗??)
-- `_sys/scans/scan-health.bat` ??Axis-H: JSONL ??由?筌β돦????status.json + session-handoff.json
-- `.claude/agents/portability-auditor.md` ??Gemini Full-Corpus Scan ??ｍ???釉?- `.claude/agents/proposer.md` ??version-check.bat ?紐꾪뀱 + ??롫짗 ??媛?筌왖??- `CONVENTION.md 吏?-4` ??Gemini ?紐꾪뀱 ???쉘 獄?疫뀀뜆? ???쉘
+**Related files:**
+- `_sys/scans/scan-env.bat` → version check → `_archive/version-check.json`
+- `_sys/hooks/ctx-end.bat` → session summary hook (optional, Flash)
+- `_sys/scans/scan-health.bat` → Axis-H: JSONL size → status.json + session-handoff.json
+- `.claude/agents/portability-auditor.md` → Gemini Full-Corpus Scan agent
+- `.claude/agents/proposer.md` → version-check.bat trigger + improvement proposal
+- `CONVENTION.md §3-4` → Gemini call patterns and constraints
 
 ---
 
-## ??롪퐬?? Portable Dev Environment
+## Portable Dev Environment
 
-**筌뤴뫚紐?** `_sys/` ??쎄쾿?깆?????륁젟夷?袁㏓럡 ?곕떽?夷??곷뻼??揶쏅Ŋ沅쀬쮯?닌듼??類ｂ봺夷??뺢돌?귐딆궎 野꺜?醫? 4揶???釉?+ 7揶??袁ⓓ??癒?뵠?袁る뱜 ??(??11筌???곗쨮 筌ｌ꼶??
-**?紐꺿봺椰?** Portable Dev Environment ?온??筌뤴뫀諭??臾믩씜 ??`portable-env` ??쎄텢 ????
-??λ떄 筌욌뜄揆(??쎄쾿?깆?????살구, ?닌듼????툢 ???? 筌욊낯???臾먮뼗 揶쎛??
-
-**??롪퐬????쎄텢 筌뤴뫖以?** portable-env, bat-ps1-engineer, add-tool, tidy-structure, audit-portability, scenario-review, propose-improvements, risk-scan, context-health
-
-**癰궰野?????** `_archive/CHANGELOG.md` 筌〓챷??(筌ㅼ뮇伊???낅쑓??꾨뱜: 2026-06-01)
+**Summary:** `_sys/` system files are centralized; architecture supports multi-instance parallel execution; test coverage is 4 layers + 7 agents with full audit/task tracking (89 tests total).
+**Tag:** Portable Dev Environment work is tagged `portable-env`.
+See `_archive/CHANGELOG.md` for full change history (last updated: 2026-06-03).

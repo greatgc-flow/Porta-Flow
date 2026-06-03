@@ -17,6 +17,7 @@ def ai_dir(tmp_path):
     ai = tmp_path / ".ai"
     (ai / ".lock").mkdir(parents=True)
     (ai / "sessions").mkdir()
+    (ai / "consensus").mkdir()
     (ai / "mailbox.json").write_text(
         json.dumps({"messages": [], "unread_count": 0}), encoding="utf-8"
     )
@@ -24,6 +25,19 @@ def ai_dir(tmp_path):
         json.dumps({
             "pair": None, "claude_sid": None, "gemini_sid": None,
             "mission": None, "blocked": None, "phase": None, "updated_at": None
+        }), encoding="utf-8"
+    )
+    (ai / "nodes.json").write_text(
+        json.dumps({
+            "version": "1",
+            "nodes": {
+                "cc": {"tier": 1, "type": "orchestrator", "invoke": "claude",
+                       "invoke_args": ["-p", "{query}"], "timeout": 0, "memory": "persistent"},
+                "ca": {"tier": 2, "type": "agent", "invoke": "claude",
+                       "invoke_args": ["-p", "{query}"], "timeout": 0, "memory": "short-term"},
+                "gc": {"tier": 3, "type": "sensor", "invoke": "gemini",
+                       "invoke_args": ["-p", "{query}", "-o", "text", "-y"], "timeout": 0, "memory": "session"},
+            }
         }), encoding="utf-8"
     )
     return ai

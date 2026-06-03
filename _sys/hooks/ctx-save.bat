@@ -41,23 +41,22 @@ if not exist "!SES_FILE!" >> "!SES_FILE!" echo # Sessions !SES_DATE!
 type "%CLAUDE_MD%" >> "!SES_FILE!"
 echo [ctx-save] Session log: !SES_FILE!
 
-:: Update session-master.json
-set "_MASTER_FILE=%CD%\_workspace\session-master.json"
-if exist "%_MASTER_FILE%" (
-    echo [ctx-save] Syncing session-master.json...
-    powershell -NoProfile -Command "$f='%_MASTER_FILE%'; $m=Get-Content $f | ConvertFrom-Json; $m.session_info.last_sync=(Get-Date -Format 'yyyy-MM-dd HH:mm:ss'); $m.shared_memory.last_summary='Checkpoint saved to ' + (Split-Path '!SES_FILE!' -Leaf); [IO.File]::WriteAllText($f,($m|ConvertTo-Json -Depth 5),(New-Object System.Text.UTF8Encoding($false)))"
-)
 
 echo [ctx-save] Done. Session is still active.
 
-:: Optional: Gemini mid-session summary (skipped if GEMINI_MODE is not ON)
-call "%~dp0gemini-mode-check.bat"
-if not "%GEMINI_MODE%"=="ON" goto :SKIP_GEMINI_SUM
+:: Optional: Gemini mid-session summary (skipped if Gemini unavailable)
+for %%I in ("%~dp0..\..") do set "_PORTABLE_ROOT=%%~fI"
+set "PYTHONUTF8=1"
+set "PATH=!_PORTABLE_ROOT!\_sys\env\venv\Scripts;%PATH%"
+call "%~dp0check-gate.bat" >nul 2>&1
+if errorlevel 1 goto :SKIP_GEMINI_SUM
 set "_SUM=!SES_FILE!.midsummary.md"
+set "_QF=%TEMP%\ctx-save-query-%RANDOM%.txt"
+echo Read the checkpoint log below and write a 3-bullet summary: 1) What was done since last checkpoint 2) Current state 3) Immediate next steps. > "!_QF!"
+echo. >> "!_QF!"
+type "!SES_FILE!" >> "!_QF!" 2>nul
 echo [ctx-save] Generating Gemini mid-session summary...
-call "%~dp0gemini-session-read.bat"
-type "!SES_FILE!" | gemini %_GEMINI_SESSION_FLAG% -p "Read the checkpoint log and write a 3-bullet summary: 1) What was done since last checkpoint 2) Current state 3) Immediate next steps." -o text -y > "!_SUM!" 2>&1
-:: Check by file existence/size — Gemini may return non-zero even on success (routing errors)
+cmd /c "!_PORTABLE_ROOT!\_sys\cli\msg.bat" ask --to gc --query-file "!_QF!" > "!_SUM!" 2>&1
 if not exist "!_SUM!" goto :CTX_SAVE_GEMINI_FAIL
 for /f "delims=" %%Z in ('powershell -NoProfile -Command "(Get-Item -LiteralPath '!_SUM!').Length"') do set "_SZ=%%Z"
 if "!_SZ!"=="0" goto :CTX_SAVE_GEMINI_FAIL

@@ -1,4 +1,4 @@
-﻿# ================================================================
+# ================================================================
 # setup.ps1  -  Portable Dev Environment Bootstrapper
 #
 # Location : [PortableDev]\_sys\setup.ps1
@@ -364,7 +364,7 @@ Write-Host ""
 Write-Host "  Next steps:" -ForegroundColor White
 Write-Host "  1. Right-click any folder -> 'Open in Sandbox ($((Split-Path $BASE_DIR -Leaf)))'" -ForegroundColor Gray
 Write-Host "  2. In VS Code terminal: claude  (log in to Anthropic)" -ForegroundColor Gray
-Write-Host "  3. Copy _sys\context\CLAUDE_global.md -> _sys\claude\config\CLAUDE.md" -ForegroundColor Gray
+Write-Host "  3. Copy _sys\docs\CLAUDE_global.md -> _sys\claude\config\CLAUDE.md" -ForegroundColor Gray
 Write-Host "======================================================" -ForegroundColor $(if ($failures.Count -eq 0) { "Green" } else { "Yellow" })
 Write-Host ""
 

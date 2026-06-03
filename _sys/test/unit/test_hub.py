@@ -56,8 +56,7 @@ class TestSendCheck:
         hub.action_send(ai_dir, "claude", "gemini", "full message content")
         hub.action_check(ai_dir, "gemini")
         out = capsys.readouterr().out
-        assert "INBOX" in out
-        assert "1개 미읽음" in out
+        assert "1 messages for gemini" in out   # 3TCP v1 [HUB] READ 형식
         assert "full message content" in out  # 전문 출력 확인
 
     def test_check_empty(self, ai_dir, capsys):
@@ -70,7 +69,7 @@ class TestSendCheck:
             hub.action_send(ai_dir, "gemini", "claude", f"msg content {i}")
         hub.action_check(ai_dir, "claude")
         out = capsys.readouterr().out
-        assert "3개 미읽음" in out
+        assert "3 messages for claude" in out  # 3TCP v1 [HUB] READ 형식
         for i in range(3):
             assert f"msg content {i}" in out  # 전문 모두 출력
 
@@ -216,7 +215,7 @@ class TestAsk:
              patch("subprocess.run", return_value=mock_result):
             hub.action_ask("gemini", "test")
         out, err = capsys.readouterr()
-        assert "[WARN] gemini exited 1" in err
+        assert "[HUB:WARN] gemini exited 1" in err  # 3TCP v1 [HUB:WARN] 형식
         assert "partial response" in out
 
 
@@ -259,3 +258,161 @@ class TestAnsiStrip:
 
     def test_no_ansi_unchanged(self):
         assert hub._strip_ansi("plain text") == "plain text"
+
+
+# ─── §P-2 메시지 봉투 확장 ────────────────────────────────────
+class TestMessageEnvelope:
+    def test_send_with_type_and_thread(self, ai_dir, capsys):
+        hub.action_send(ai_dir, "cc", "gc", "do this",
+                        thread_id="t-test1", msg_type="DIRECTIVE")
+        mb = json.loads((ai_dir / "mailbox.json").read_text("utf-8"))
+        msg = mb["messages"][0]
+        assert msg["type"] == "DIRECTIVE"
+        assert msg["thread_id"] == "t-test1"
+        assert msg["cc"] == []
+        assert msg["ref"] is None
+
+    def test_send_with_cc_and_ref(self, ai_dir, capsys):
+        hub.action_send(ai_dir, "gc", "cc", "done",
+                        thread_id="t-test1", msg_type="ARTIFACT",
+                        cc_list=["ca"], ref_id=1)
+        mb = json.loads((ai_dir / "mailbox.json").read_text("utf-8"))
+        msg = mb["messages"][0]
+        assert msg["cc"] == ["ca"]
+        assert msg["ref"] == 1
+        assert msg["type"] == "ARTIFACT"
+
+    def test_check_includes_cc_messages(self, ai_dir):
+        hub.action_send(ai_dir, "ca", "cc", "verify result",
+                        msg_type="VERIFY", cc_list=["gc"])
+        # gc should see this message (it's cc'd)
+        mb = json.loads((ai_dir / "mailbox.json").read_text("utf-8"))
+        msgs = mb["messages"]
+        gc_visible = [m for m in msgs
+                      if m.get("to") == "gc" or "gc" in m.get("cc", [])]
+        assert len(gc_visible) == 1
+
+    def test_check_cc_filter_in_action(self, ai_dir, capsys):
+        hub.action_send(ai_dir, "ca", "cc", "verify result",
+                        msg_type="VERIFY", cc_list=["gc"])
+        hub.action_check(ai_dir, "gc")
+        out = capsys.readouterr().out
+        assert "verify result" in out
+
+    def test_backward_compat_old_format(self, ai_dir):
+        hub.action_send(ai_dir, "claude", "gemini", "old style msg")
+        mb = json.loads((ai_dir / "mailbox.json").read_text("utf-8"))
+        msg = mb["messages"][0]
+        assert msg["type"] == "MSG"
+        assert msg["cc"] == []
+        assert msg["ref"] is None
+        assert msg["thread_id"].startswith("t-")
+
+
+# ─── §P-3 만장일치 협의 프로토콜 ─────────────────────────────
+class TestConsensusProtocol:
+    def test_propose_creates_round(self, ai_dir, capsys):
+        hub.action_consensus_propose(ai_dir, "Test subject", ["cc", "ca", "gc"])
+        rounds = list((ai_dir / "consensus").glob("*.json"))
+        assert len(rounds) == 1
+        r = json.loads(rounds[0].read_text("utf-8"))
+        assert r["subject"] == "Test subject"
+        assert r["status"] == "voting"
+        assert set(r["voters"]) == {"cc", "ca", "gc"}
+        assert all(v is None for v in r["votes"].values())
+
+    def test_vote_unanimous_finalized(self, ai_dir, capsys):
+        hub.action_consensus_propose(ai_dir, "Approve X", ["cc", "ca", "gc"])
+        rounds = list((ai_dir / "consensus").glob("*.json"))
+        rid = json.loads(rounds[0].read_text("utf-8"))["round_id"]
+
+        hub.action_consensus_vote(ai_dir, rid, "cc", "agree")
+        hub.action_consensus_vote(ai_dir, rid, "ca", "agree")
+        hub.action_consensus_vote(ai_dir, rid, "gc", "agree")
+
+        r = json.loads((ai_dir / "consensus" / f"{rid}.json").read_text("utf-8"))
+        assert r["status"] == "finalized"
+        assert r["outcome"] == "unanimous"
+
+        out = capsys.readouterr().out
+        assert "FINALIZED" in out
+        assert "unanimous" in out
+
+    def test_vote_disagree_escalated(self, ai_dir, capsys):
+        hub.action_consensus_propose(ai_dir, "Risky change", ["cc", "ca", "gc"])
+        rounds = list((ai_dir / "consensus").glob("*.json"))
+        rid = json.loads(rounds[0].read_text("utf-8"))["round_id"]
+
+        hub.action_consensus_vote(ai_dir, rid, "cc", "agree")
+        hub.action_consensus_vote(ai_dir, rid, "ca", "disagree", "too risky")
+        hub.action_consensus_vote(ai_dir, rid, "gc", "agree")
+
+        r = json.loads((ai_dir / "consensus" / f"{rid}.json").read_text("utf-8"))
+        assert r["status"] == "escalated"
+        assert r["outcome"] == "human_gate"
+
+    def test_vote_partial_still_voting(self, ai_dir, capsys):
+        hub.action_consensus_propose(ai_dir, "Partial vote", ["cc", "ca", "gc"])
+        rounds = list((ai_dir / "consensus").glob("*.json"))
+        rid = json.loads(rounds[0].read_text("utf-8"))["round_id"]
+
+        hub.action_consensus_vote(ai_dir, rid, "cc", "agree")
+        # Only 1/3 voted — should still be voting
+        r = json.loads((ai_dir / "consensus" / f"{rid}.json").read_text("utf-8"))
+        assert r["status"] == "voting"
+
+    def test_consensus_check_all_rounds(self, ai_dir, capsys):
+        hub.action_consensus_propose(ai_dir, "Round 1", ["cc", "ca"])
+        hub.action_consensus_propose(ai_dir, "Round 2", ["cc", "gc"])
+        hub.action_consensus_check(ai_dir)
+        out = capsys.readouterr().out
+        assert "Round 1" in out
+        assert "Round 2" in out
+
+    def test_consensus_check_specific_round(self, ai_dir, capsys):
+        hub.action_consensus_propose(ai_dir, "Specific", ["cc", "ca", "gc"])
+        rounds = list((ai_dir / "consensus").glob("*.json"))
+        rid = json.loads(rounds[0].read_text("utf-8"))["round_id"]
+        hub.action_consensus_check(ai_dir, rid)
+        out = capsys.readouterr().out
+        assert "Specific" in out
+
+    def test_invalid_voter_rejected(self, ai_dir, capsys):
+        hub.action_consensus_propose(ai_dir, "Closed vote", ["cc", "ca"])
+        rounds = list((ai_dir / "consensus").glob("*.json"))
+        rid = json.loads(rounds[0].read_text("utf-8"))["round_id"]
+        import sys as _sys
+        with pytest.raises(SystemExit):
+            hub.action_consensus_vote(ai_dir, rid, "unknown_node", "agree")
+
+    def test_vote_on_closed_round_rejected(self, ai_dir):
+        hub.action_consensus_propose(ai_dir, "Quick", ["cc"])
+        rounds = list((ai_dir / "consensus").glob("*.json"))
+        rid = json.loads(rounds[0].read_text("utf-8"))["round_id"]
+        hub.action_consensus_vote(ai_dir, rid, "cc", "agree")  # finalized
+        with pytest.raises(SystemExit):
+            hub.action_consensus_vote(ai_dir, rid, "cc", "agree")  # already closed
+
+
+# ─── §P-7 N-Node 등록 ─────────────────────────────────────────
+class TestNodeManagement:
+    def test_list_nodes_shows_defaults(self, ai_dir, capsys):
+        hub.action_list_nodes(ai_dir)
+        out = capsys.readouterr().out
+        assert "cc" in out
+        assert "gc" in out
+        assert "ca" in out
+
+    def test_register_new_node(self, ai_dir, capsys):
+        hub.action_register_node(ai_dir, "n1", 4, "sensor",
+                                  "custom-cli", "-p,{query}", "session", 0)
+        data = json.loads((ai_dir / "nodes.json").read_text("utf-8"))
+        assert "n1" in data["nodes"]
+        assert data["nodes"]["n1"]["tier"] == 4
+
+    def test_register_node_console_output(self, ai_dir, capsys):
+        hub.action_register_node(ai_dir, "n2", 4, "agent",
+                                  "custom", "-p,{query}", "short-term", 0)
+        out = capsys.readouterr().out
+        assert "REGISTER" in out
+        assert "n2" in out

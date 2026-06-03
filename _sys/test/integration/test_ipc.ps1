@@ -34,12 +34,12 @@ try {
 
     Test-Case "send message" {
         $out = (& $venvPy $hub send --from claude --to gemini --msg "integration test" 2>&1) -join " "
-        if ($out -notmatch "\[SENT\]") { throw "Expected [SENT], got: $out" }
+        if ($out -notmatch "\[HUB\] SENT") { throw "Expected [HUB] SENT, got: $out" }
     }
 
     Test-Case "check — pretty-print 전문 출력" {
         $out = (& $venvPy $hub check --target gemini 2>&1) -join "`n"
-        if ($out -notmatch "INBOX") { throw "Expected INBOX header, got: $out" }
+        if ($out -notmatch "messages for gemini") { throw "Expected READ header, got: $out" }
         if ($out -notmatch "integration test") { throw "Expected message content, got: $out" }
     }
 
@@ -83,7 +83,7 @@ try {
 
     Test-Case "msg.bat wrapper (send)" {
         $out = (cmd /c "`"$msgBat`" send --from gemini --to claude --msg ""hello from bat""" 2>&1) -join " "
-        if ($out -notmatch "\[SENT\]") { throw "msg.bat failed: $out" }
+        if ($out -notmatch "\[HUB\] SENT") { throw "msg.bat failed: $out" }
     }
 
     Test-Case "msg.bat wrapper (status)" {

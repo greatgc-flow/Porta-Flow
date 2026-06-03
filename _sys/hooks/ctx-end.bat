@@ -54,7 +54,7 @@ if "%GLOBAL_UPDATE%"=="1" (
             claude -p "Update the global CLAUDE.md at %CLAUDE_CONFIG_DIR%\CLAUDE.md with new preferences or lessons from today. Keep it concise and universal across projects."
         ) else (
             echo [ctx-end] Note: no global CLAUDE.md found at %CLAUDE_CONFIG_DIR%\CLAUDE.md
-            echo           Copy _sys\context\CLAUDE_global.md to create one.
+            echo           Copy _sys\docs\CLAUDE_global.md to create one.
         )
     )
 )
@@ -76,25 +76,24 @@ type "%CLAUDE_MD%" >> "!SES_FILE!"
 >> "!SES_FILE!" echo ---
 echo [ctx-end] Session log: !SES_FILE!
 
-:: Update session-master.json
-set "_MASTER_FILE=%CD%\_workspace\session-master.json"
-if exist "%_MASTER_FILE%" (
-    echo [ctx-end] Finalizing session-master.json...
-    powershell -NoProfile -Command "$f='%_MASTER_FILE%'; $m=Get-Content $f | ConvertFrom-Json; $m.session_info.last_sync=(Get-Date -Format 'yyyy-MM-dd HH:mm:ss'); $m.current_mission.status='completed'; $m.shared_memory.last_summary='Session finalized and archived.'; [IO.File]::WriteAllText($f,($m|ConvertTo-Json -Depth 5),(New-Object System.Text.UTF8Encoding($false)))"
-)
 
 echo.
 echo [ctx-end] Session saved. Safe to close.
 if "%GLOBAL_UPDATE%"=="0" echo         Tip: ctx-end --global  also updates global preferences.
 
-:: Optional: Gemini summary (skipped if GEMINI_MODE is not ON)
-call "%~dp0gemini-mode-check.bat"
-if not "%GEMINI_MODE%"=="ON" goto :SKIP_GEMINI_SUM
+:: Optional: Gemini summary (skipped if Gemini unavailable)
+for %%I in ("%~dp0..\..") do set "_PORTABLE_ROOT=%%~fI"
+set "PYTHONUTF8=1"
+set "PATH=!_PORTABLE_ROOT!\_sys\env\venv\Scripts;%PATH%"
+call "%~dp0check-gate.bat" >nul 2>&1
+if errorlevel 1 goto :SKIP_GEMINI_SUM
 set "_SUM=!SES_FILE!.summary.md"
+set "_QF=%TEMP%\ctx-end-query-%RANDOM%.txt"
+echo Read the session log below and write a concise summary with exactly 5 bullet points: 1) What was accomplished 2) Key decisions made 3) Files changed 4) Known issues remaining 5) Next actions. Be specific, not generic. > "!_QF!"
+echo. >> "!_QF!"
+type "!SES_FILE!" >> "!_QF!" 2>nul
 echo [ctx-end] Generating Gemini summary...
-call "%~dp0gemini-session-read.bat"
-type "!SES_FILE!" | gemini %_GEMINI_SESSION_FLAG% -p "Read the session log below and write a concise summary with exactly 5 bullet points: 1) What was accomplished 2) Key decisions made 3) Files changed 4) Known issues remaining 5) Next actions. Be specific, not generic." -o text -y > "!_SUM!" 2>&1
-:: Check by file existence/size — Gemini may return non-zero even on success (routing errors)
+cmd /c "!_PORTABLE_ROOT!\_sys\cli\msg.bat" ask --to gc --query-file "!_QF!" > "!_SUM!" 2>&1
 if not exist "!_SUM!" goto :CTX_END_GEMINI_FAIL
 for /f "delims=" %%Z in ('powershell -NoProfile -Command "(Get-Item -LiteralPath '!_SUM!').Length"') do set "_SZ=%%Z"
 if "!_SZ!"=="0" goto :CTX_END_GEMINI_FAIL

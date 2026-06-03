@@ -45,7 +45,7 @@ Test-Scenario "Scenario A: Claude 작업 시작 → Gemini 메시지 → 완료"
 
         # Gemini에게 메시지 발송
         $out = (& $py $hub send --from claude --to gemini --msg "Phase 1 완료. 아키텍처 검토 요청." 2>&1) -join ""
-        if ($out -notmatch "\[SENT\]") { throw "send failed: $out" }
+        if ($out -notmatch "\[HUB\] SENT") { throw "send failed: $out" }
 
         # Gemini 세션 시작 (역할 전환 시뮬레이션)
         $gsid = (& $py $hub init-session --agent gemini 2>&1) -join ""
@@ -54,7 +54,7 @@ Test-Scenario "Scenario A: Claude 작업 시작 → Gemini 메시지 → 완료"
         # Gemini가 메시지 확인
         $inbox = (& $py $hub check --target gemini 2>&1) -join "`n"
         if ($inbox -notmatch "Phase 1 완료") { throw "Message not received: $inbox" }
-        if ($inbox -notmatch "INBOX") { throw "No INBOX header: $inbox" }
+        if ($inbox -notmatch "messages for gemini") { throw "No READ header: $inbox" }
 
         # Gemini가 Claude에게 응답
         & $py $hub send --from gemini --to claude --msg "검토 완료. 진행하세요." | Out-Null
@@ -152,7 +152,7 @@ Test-Scenario "Scenario D: msg.bat 단일 통로 — ask 포함 전체 인터페
     try {
         # msg.bat send
         $out = (cmd /c "`"$msgBat`" send --from claude --to gemini --msg ""hello via msg.bat""" 2>&1) -join ""
-        if ($out -notmatch "\[SENT\]") { throw "msg.bat send failed: $out" }
+        if ($out -notmatch "\[HUB\] SENT") { throw "msg.bat send failed: $out" }
 
         # msg.bat check
         $out = (cmd /c "`"$msgBat`" check --target gemini" 2>&1) -join "`n"
