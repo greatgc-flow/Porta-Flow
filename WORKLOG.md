@@ -5,6 +5,40 @@
 
 ---
 
+## 2026-06-03 — 3TCP v1 프로토콜 (hub.py Phase A-D)
+
+**목표**: N-node 만장일치 협의체 + 분업 협업 프로토콜 설계 및 구현.
+
+### 핵심 아키텍처 결정
+
+| 결정 | 이유 |
+|------|------|
+| `timeout=None` (무제한) | Gemini 쿼리 120초 타임아웃으로 복잡한 분석 실패 방지 |
+| 메시지 봉투 확장 (thread_id/type/cc/ref) | 분업 체인 추적 + 타 노드 메시지 열람(cc) 지원 |
+| `nodes.json` N-node 등록 | hub.py 코드 수정 없이 새 노드 추가. `msg register-node` |
+| 만장일치 consensus (Propose→Vote→Decision) | 3노드 합의 없이는 진행 불가. GC 대리 투표(CC 경유) |
+| PROTOCOL.md 단일 진실 출처 | COLLAB.md 흡수 삭제. §P-0~P-7(3TCP) + §C-1~C-8(정책) 통합 |
+
+### 주요 변경 파일
+
+| 파일 | 변경 내용 |
+|------|----------|
+| `_sys/core/hub.py` | Phase A~D 완전 재작성. 16개 액션 |
+| `PROTOCOL.md` | 신규 (COLLAB.md 흡수). 3TCP v1 §P-0~P-7 |
+| `COLLAB.md` | 삭제 |
+| `_sys/cli/msg.bat` | 한국어 주석 → 영어 (CONVENTION §1-1) |
+| `_sys/hooks/ctx-save.bat` | session-master.json 제거 + gemini-mode-check → check-gate |
+| `_sys/hooks/ctx-end.bat` | 동일 + context/ → docs/ 경로 수정 |
+| `_sys/bridge/` | 삭제 (hub.py로 대체) |
+
+### 테스트 결과
+
+- **Unit (pytest)**: 74/74 PASS — 신규: §P-2 봉투 5개, §P-3 consensus 8개, §P-7 node 3개
+- **Integration (PS1)**: 31/31 PASS
+- **총합**: 105 tests ALL PASS
+
+---
+
 ## 2026-06-03 — Phase 0~9 전면 재편 (Baseline v2)
 
 **목표**: 파일명 혼재, 종횡 경쟁 상태, AI↔AI IPC 부재를 해결하는 전면 재설계.

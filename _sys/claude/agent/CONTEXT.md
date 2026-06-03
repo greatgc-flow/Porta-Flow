@@ -1,24 +1,25 @@
 # PortableDev Agent Context
-> Last updated: 2026-06-01 | Status: MECE token efficiency refactor complete
+> Last updated: 2026-06-03 | Status: 3TCP v1 complete (hub.py Phase A-D)
 
 ## System State
-Current session state: read _workspace/state.json (system_state field).
-CONTEXT.md = static topology only. Dynamic state → state.json.
+Current session state: read .ai/state.json (hub.py status).
+CONTEXT.md = static topology only. Dynamic state → .ai/state.json.
 
 - Unified Manager: `_sys\manage.ps1` (Register/Unregister + Gemini Junction)
 - Gemini Auth: Directory Junction ACTIVE (`%USERPROFILE%\.gemini` → `_sys\gemini\config`)
 - Gemini Control: Claude-only orchestration. Gemini runs only on explicit Claude call.
-- GEMINI_MODE: set by `start.bat → gemini-status.bat`. Axis bats check via `gemini-mode-check.bat`.
+- GEMINI_MODE: set by `start.bat → gemini-status.bat`. Axis bats check via `check-gate.bat`.
 - local.config.bat options: `NO_GEMINI=1` (disable), `GEMINI_PING_TEST=1` (ping opt-in)
+- 3TCP v1: nodes.json N-node, consensus rounds (.ai/consensus/), message envelope (thread/type/cc/ref)
 
 ## Key Policy Files
 - Coding conventions (bat/ps1/env var/naming): `CONVENTION.md`
-- Orchestration protocol (tiers, Axis routing, session management): `COLLAB.md`
-- Gemini-facing rules: `GEMINI.md §4-1` (references COLLAB.md §C-1)
+- Orchestration protocol + 3TCP v1 spec: `PROTOCOL.md` (§P-0~P-7 + §C-1~C-8)
+- Gemini-facing rules: `GEMINI.md §4-1` (references PROTOCOL.md §C-1)
 - Agent workflow: `CLAUDE.md` (global) + per-skill SKILL.md files
 
 ## Collaboration Policy
-- Full policy: `COLLAB.md §C-1` | Gemini reference: `GEMINI.md §4-1`
+- Full policy: `PROTOCOL.md §C-1` | Gemini reference: `GEMINI.md §4-1`
 - Model: Claude = orchestrator (What/Why), Gemini = domain executor (How)
 - Directive: self-contained — include file path + error target + goal
 - Failure format: `<failure_report><reason>CODE</reason><details>...</details></failure_report>`
@@ -57,8 +58,8 @@ CONTEXT.md = static topology only. Dynamic state → state.json.
 - [x] MECE token efficiency refactor (2026-06-01): validator merged, CONVENTION.md split → COLLAB.md, agent pre-reads inlined, gemini-mode-check.bat extracted
 - [x] .gitattributes: bat/ps1 files locked to CRLF (prevents git LF conversion)
 - [x] ctx-save/ctx-end: Gemini success check via file-exist (not errorlevel)
+- [x] 3TCP v1 (2026-06-03): hub.py Phase A-D (timeout=None, envelope, N-node, consensus); PROTOCOL.md created (COLLAB.md deleted); 105 tests ALL PASS
 
 ## Known Issues
-- GEMINI.md: DO NOT MODIFY directive added; auto-edit issue resolved.
 - VS Code data: some 0-byte files — delete manually while VS Code is running.
 - validator.md stub remains in .claude/agents/ — safe to delete manually.

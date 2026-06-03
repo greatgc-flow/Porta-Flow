@@ -28,7 +28,7 @@ Orchestrator performs orchestration only. All implementation is delegated.
 | Role boundary | On MECE violation: stop offending agent, re-delegate to correct agent |
 
 ## Mandatory Pre-reads (reduced)
-1. `python _sys/core/hub.py status --format llm` — AI pair state, mission, unread messages
+1. `python _sys/core/hub.py status ` — AI pair state, mission, unread messages
 2. `_workspace/state.json` — coordinator loop count, task status, known issues
 3. Inline rules: English-only agents/skills/JSON (§0). No for-loop PATH, no wmic, no hardcoded drives (§1). No USERPROFILE override (§3-3). Read CONVENTION.md only for edge cases.
 
@@ -65,10 +65,10 @@ Heavy phase = task touches >5 files OR Axis-A (full corpus scan) OR >=3 agent MD
 ## Session / IPC Management (hub.py 기반)
 
 Claude↔Gemini IPC는 모두 `_sys/core/hub.py`를 통해 처리한다.
-- **On Start**: `hub.py status --format llm` → pair 상태 + unread 메시지 + handoff 요약 확인
+- **On Start**: `hub.py status ` → pair 상태 + unread 메시지 + handoff 요약 확인
 - **On Phase Change**: `hub.py update-status --mission "Task X" --phase "3"`
 - **Message to Gemini**: `hub.py send --from claude --to gemini --msg "..."`
-- **Read from Gemini**: `hub.py check --target claude --format llm`
+- **Read from Gemini**: `hub.py check --target claude `
 - **End session**: `_sys/hooks/session-end.bat claude`
 
 These replace: `session-master.json`, `session-primer.md`, `collab-bridge.json`.
@@ -76,10 +76,10 @@ These replace: `session-master.json`, `session-primer.md`, `collab-bridge.json`.
 ## Workflow Pipeline
 
 Phase 0: Context health check (Axis-H). Collaboration health check (§3-8).
-         CHECK Gemini messages: `hub.py check --target claude --format llm`
+         CHECK Gemini messages: `hub.py check --target claude `
          Treat unread messages as high-priority instructions from Gemini.
 Phase 1: Request analysis. Init state.json (loop_count=0, caution_flag=false).
-         `hub.py init-session --agent claude --format llm` → print handoff summary.
+         `hub.py init-session --agent claude ` → print handoff summary.
          `hub.py update-status --mission "<task>" --phase "1"`.
 Phase 1.5: Risk scan [risk-scanner / Axis-I] — if task >1 file OR _sys/ OR agents/skills:
            HIGH: ask user | MED: caution_flag=true | LOW/UNKNOWN: proceed.

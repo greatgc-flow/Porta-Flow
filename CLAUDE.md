@@ -169,12 +169,7 @@ Last updated: 2026-06-03 (3TCP v1 완료)
 
 ## Next Steps
 
-1. **settings.json 수동 업데이트** (자동 차단): .claude/settings.json cli/hooks/scans/tools 권한 추가
-2. **bridge/ 삭제**: _sys/bridge/ (orchestrator.py 없음, hub.py로 대체됨)
-3. **ctx-save.bat 수정**: session-master.json 블록 제거, gemini-mode-check.bat → check-gate.bat
-4. **ctx-end.bat 수정**: ctx-save.bat과 동일 + _sys\context → _sys\docs 경로 수정
-5. **marketplace 처리**: claude-plugins-official/.git/ 삭제 후 일반 폴더로 커밋
-6. **Fresh PC setup**: INSTALL.bat (double-click) → _sys\setup.ps1
+1. **Fresh PC setup**: INSTALL.bat (double-click) → _sys\setup.ps1 (사용자 직접 수행)
 
 ---
 ## Gemini CLI Collaboration Model (3TCP v1)
