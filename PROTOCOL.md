@@ -469,7 +469,7 @@ hub.py 코드 수정 없음. nodes.json 수정만으로 완료.
 
 | 원칙 | 내용 |
 |------|------|
-| 시스템 파일 보호 | `_sys/`, `*.bat`, `*.ps1` 직접 편집 금지. `[REQUEST_TO_CLAUDE: WRITE_FILE]` 사용 |
+| 시스템 파일 보호 | `_sys/`, `*.bat`, `*.py` 직접 편집 금지. `[REQUEST_TO_CLAUDE: WRITE_FILE]` 사용 |
 | 거절 권한 | 원칙 위배 요청 → `[REFUSAL: CODE]`. 이유 명시 |
 | 실패 형식 | `<failure_report><reason>CODE</reason><details>...</details></failure_report>` |
 | 메모리 경계 | MEMORY.md: 기술적 How-To만. 오케스트레이션 컨텍스트 기록 금지 |
@@ -627,7 +627,7 @@ ZONE A — CC decides immediately (협의 없이 즉시 결정):
   • loop_count ≥ 3 → HALT
 
 ZONE B — 에이전트 위임 (CC 인라인 분석 없이 위임):
-  • _sys/*.bat / *.ps1 수정 → script-engineer
+  • _sys/*.bat / *.py 수정 → script-engineer
   • tools/ 새 도구 → tool-integrator
   • 폴더 구조 → organizer → folder-tidier
   • 문서 동기화 → organizer → docs-writer

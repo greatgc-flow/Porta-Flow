@@ -10,9 +10,9 @@
 ```
 [사용자 / Gemini CLI]
         ↓
-[진입점] _sys/cli/claude.bat  gemini.bat  msg.bat
+[진입점] _sys/cli/claude.bat  gemini.bat  msg.bat  manage.bat  cleanup.bat  install.bat
         ↓ (PORTABLE_ROOT + venv PATH 주입)
-[코어]  _sys/core/hub.py  ← 모든 IPC 로직의 단일 진입점 (Facade)
+[로직]   _sys/core/hub.py  setup.py  manage.py  cleanup.py
         ↓
 [상태]  .ai/  ← 프로젝트 로컬 AI 상태 (mailbox.json, state.json, sessions/)
         ↓
@@ -159,9 +159,9 @@ Quota signal: `429 Too Many Requests` = 일일 한도 초과 (실패 XML 아님)
 | 컴포넌트 | 경로 |
 |---------|------|
 | 코어 파이썬 | `_sys/core/hub.py` |
-| CLI 진입점 | `_sys/cli/claude.bat` `gemini.bat` `msg.bat` |
+| CLI 진입점 | `_sys/cli/claude.bat` `gemini.bat` `msg.bat` `manage.bat` `cleanup.bat` |
 | 라이프사이클 훅 | `_sys/hooks/session-end.bat` `ctx-save.bat` `ctx-end.bat` |
-| Axis 스캔 | `_sys/checks/check-{risk,agents,deps,health,versions}.bat` |
+| Axis 스캔 | `_sys/checks/check-{risk,agents,deps,health,versions,portability}.bat` |
 | 수동 도구 | `_sys/cli/{git-draft,batch-review}.bat` \| `_sys/hooks/archive-data.bat` |
 | 테스트 | `_sys/tests/run-tests.bat` (--unit|--integration|--all) |
 | AI 상태 | `.ai/state.json` (hub.py 경유만 쓰기) |

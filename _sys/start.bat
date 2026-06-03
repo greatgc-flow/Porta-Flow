@@ -17,6 +17,7 @@ if "%SYS_DIR_PHYS:~-1%"=="\" set "SYS_DIR_PHYS=%SYS_DIR_PHYS:~0,-1%"
 for %%I in ("%SYS_DIR_PHYS%\..") do set "BASE_DIR_PHYS=%%~fI"
 
 set "HOST_LOCALAPPDATA=%LOCALAPPDATA%"
+set "HOST_PATH_BACKUP=%PATH%"
 
 :: ----------------------------------------------------------------
 :: [Per-PC config] Load local.config.bat

@@ -61,12 +61,18 @@ if errorlevel 1 (
 )
 ```
 
-## 2. PowerShell (.ps1) 규칙
+## 2. 통합 관리 및 설치 규칙
 
-### 2-1. 통합 매니저 (manage.ps1)
-모든 환경 등록/해제 및 상태 관리는 `_sys\manage.ps1`을 통해 수행한다.
-- `manage.ps1 -Action Register`: SUBST 매핑, 레지스트리 메뉴 등록, `local.config.bat` 상태 저장.
-- `manage.ps1 -Action Unregister`: 전역 청소(SUBST 해제, 레지스트리 제거), 상태 초기화.
+### 2-1. 통합 매니저 (manage.bat)
+모든 환경 등록/해제 및 상태 관리는 `_sys\cli\manage.bat` (Logic: `manage.py`)을 통해 수행한다.
+- `manage.bat Register`: SUBST 매핑, 레지스트리 메뉴 등록, `local.config.bat` 상태 저장.
+- `manage.bat Unregister`: 전역 청소(SUBST 해제, 레지스트리 제거), 상태 초기화.
+
+### 2-2. 설치 및 복구 (install.bat)
+- `install.bat`: `setup.py`를 통해 모든 런타임을 자동 다운로드 및 구성한다. (ZeroBase 지원)
+
+### 2-3. 공간 최적화 (cleanup.bat)
+- `cleanup.bat`: `cleanup.py`를 통해 Tier 1~4 단계별 정리를 수행한다.
 
 ### 2-2. 레지스트리 및 메뉴 규칙
 - **키 명명**: `SandboxRun_[Drive]_[Parent]_[Leaf]` (경로 특수문자는 `_`로 치환)

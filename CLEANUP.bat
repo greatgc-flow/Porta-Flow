@@ -2,8 +2,15 @@
 setlocal
 cd /d "%~dp0"
 
+set "PY=%~dp0_sys\env\python\python.exe"
+if not exist "%PY%" (
+    echo [Error] Portable Python not found. Run INSTALL.bat first.
+    pause
+    exit /b 1
+)
+
 echo =====================================================
-echo  Portable Dev — Cleanup Utility
+echo  Portable Dev — Cleanup Utility (Python Refactored)
 echo =====================================================
 echo  1. Light (Safe) - Temp files, caches, old logs
 echo  2. Hard        - Tier 1 + Setup archives + venv
@@ -13,16 +20,16 @@ echo =====================================================
 set /p CHOICE="Choose cleanup level (1-4, Default=1): "
 
 if "%CHOICE%"=="2" (
-    set "FLAGS=-Hard"
+    set "TIER=2"
 ) else if "%CHOICE%"=="3" (
-    set "FLAGS=-Reset"
+    set "TIER=3"
 ) else if "%CHOICE%"=="4" (
-    set "FLAGS=-ZeroBase"
+    set "TIER=4"
 ) else (
-    set "FLAGS="
+    set "TIER=1"
 )
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "_sys\cleanup.ps1" %FLAGS%
+"%PY%" "_sys\cli\cleanup.py" --tier %TIER%
 
 endlocal
 pause

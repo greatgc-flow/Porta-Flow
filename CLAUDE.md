@@ -72,8 +72,9 @@ Full annotated tree: `README.md`
 3. **Korean in .bat call args**: `call :LOG "???..."` - cmd.exe parser splits
    multi-byte UTF-8 chars into tokens. Fixed: English only in all .bat files.
 
-4. **Registry command quoting**: `cmd.exe /c ""path"" "arg""` -> empty command error.
-   Fixed: `launch.ps1` as relay, uses `cmd /c call "bat" "arg"` pattern.
+4. Registry command quoting: `cmd.exe /c ""path"" "arg""` -> empty command error.
+   Fixed: `launch.bat` as relay, uses `cmd /c call "bat" "arg"` pattern.
+
 
 5. **FZF_HISTORY_DIR**: invented env var that fzf doesn't recognize. Removed.
 

@@ -32,7 +32,7 @@ See `CONVENTION.md §1` (bat) and `§2` (ps1) for full rules.
 ### 2-4. Gemini Portability
 - Gemini CLI v0.44.1 does not support `GEMINI_CONFIG_DIR`.
 - Portability is achieved via a **Directory Junction** from `%USERPROFILE%\.gemini` to `_sys\gemini\config`.
-- This junction is managed by `register.bat` and `unregister.bat` (via `manage.ps1`).
+- This junction is managed by `register.bat` and `unregister.bat` (via `manage.bat`).
 - Host config is backed up to `%USERPROFILE%\.gemini.host_backup` when portability is enabled.
 
 ## 3. Project Contexts
@@ -50,7 +50,7 @@ Escalation: output `[REQUEST_TO_CLAUDE: ...]` — the agent passes it up to Tier
 
 **Critical boundaries:**
 - Never self-initiate. Only act when Claude explicitly calls you.
-- Do NOT edit `_sys/` scripts, `*.bat`, `*.ps1`, or `P:\GEMINI.md` → use `[REQUEST_TO_CLAUDE: WRITE_FILE]`
+- Do NOT edit `_sys/` scripts, `*.bat`, `*.py`, or `P:\GEMINI.md` → use `[REQUEST_TO_CLAUDE: WRITE_FILE]`
 - Constitutional matters (CLAUDE.md, CONVENTION.md, GEMINI.md, GEMINI_MODE, Human Gate): proposal only. Claude decides.
 
 ## 4-1. Collaboration Protocol v2

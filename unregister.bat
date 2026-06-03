@@ -2,6 +2,6 @@
 setlocal
 cd /d "%~dp0"
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "_sys\manage.ps1" -Action Unregister -BaseDir "%~dp0."
+call "_sys\cli\manage.bat" Unregister --base-dir "%~dp0."
 
 endlocal

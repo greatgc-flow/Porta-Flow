@@ -55,10 +55,11 @@ powershell -NoProfile -Command ^
     "  [pscustomobject]@{ path=Join-Path $scans 'scan-deps.bat' }," ^
     "  [pscustomobject]@{ path=Join-Path $tools 'git-draft.bat' }," ^
     "  [pscustomobject]@{ path=Join-Path $gem 'gemini-status.bat' }," ^
-    "  [pscustomobject]@{ path=Join-Path $base 'manage.ps1' }," ^
-    "  [pscustomobject]@{ path=Join-Path $base 'launch.ps1' }," ^
-    "  [pscustomobject]@{ path=Join-Path $root 'setup.ps1' }," ^
-    "  [pscustomobject]@{ path=Join-Path $root 'cleanup.ps1' }" ^
+    "  [pscustomobject]@{ path=Join-Path $base 'manage.bat' }," ^
+    "  [pscustomobject]@{ path=Join-Path $base 'manage.py' }," ^
+    "  [pscustomobject]@{ path=Join-Path $base 'launch.bat' }," ^
+    "  [pscustomobject]@{ path=Join-Path $root 'setup.py' }," ^
+    "  [pscustomobject]@{ path=Join-Path $root 'cleanup.py' }" ^
     ");" ^
     "$out='%TEMP_MERGED:\=\\%'; $count=0;" ^
     "$merged = foreach ($t in $targets) { if (Test-Path $t.path) { $count++; '=== ' + (Split-Path $t.path -Leaf) + ' ==='; Get-Content $t.path -Raw } };" ^
