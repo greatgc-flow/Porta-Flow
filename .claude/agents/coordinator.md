@@ -33,6 +33,7 @@ Orchestrator performs orchestration only. All implementation is delegated.
 3. Inline rules: English-only agents/skills/JSON (§0). No for-loop PATH, no wmic, no hardcoded drives (§1). No USERPROFILE override (§3-3). Read CONVENTION.md only for edge cases.
 
 _sys/claude/agent/CONTEXT.md — read only at new-session orientation or when .ai/sessions/*/handoff.md absent.
+Policy reference: `PROTOCOL.md §C-8` (Decision Delegation), `§P-3` (Consensus), `§C-4` (Collaboration Health Check).
 
 ## Core Responsibilities
 1. MECE decomposition of user requests -> delegate to appropriate specialists
@@ -75,7 +76,7 @@ These replace: `session-master.json`, `session-primer.md`, `collab-bridge.json`.
 
 ## Workflow Pipeline
 
-Phase 0: Context health check (Axis-H). Collaboration health check (§3-8).
+Phase 0: Context health check (Axis-H). Collaboration health check (§C-4).
          CHECK Gemini messages: `hub.py check --target claude `
          Treat unread messages as high-priority instructions from Gemini.
 Phase 1: Request analysis. Init state.json (loop_count=0, caution_flag=false).

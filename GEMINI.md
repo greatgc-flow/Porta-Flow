@@ -1,5 +1,5 @@
 # Gemini CLI — Project Instructions
-> Last updated: 2026-06-03
+> Last updated: 2026-06-03 (Phase A: §2-1/§4/§4-1 duplicates → PROTOCOL.md/CONVENTION.md pointers)
 
 > **IMPORTANT — DO NOT MODIFY THIS FILE.**
 > This file is managed exclusively by the Claude harness. Do not add, edit, or remove any content here.
@@ -17,16 +17,8 @@ You are the Gemini CLI agent operating within the **Portable Sandbox Dev Environ
 
 ## 2. Technical Mandates
 
-### 2-1. Scripting Standards (CRITICAL)
-- **Batch (.bat):**
-  - **English Only:** No Korean or multi-byte characters in commands, comments, or output.
-  - **Encoding:** UTF-8 **without BOM**.
-  - **No `chcp`:** Do not use `chcp` inside .bat files.
-  - **No `wmic`:** Use PowerShell `Get-Date` for timestamps.
-  - **PATH:** Add tools to PATH using individual `if exist` lines, NOT `for` loops.
-- **PowerShell (.ps1):**
-  - Use `manage.ps1` for environment registration/cleanup tasks.
-  - Maintain the `launch.ps1` intermediary for registry-invoked commands.
+### 2-1. Scripting Standards
+See `CONVENTION.md §1` (bat) and `§2` (ps1) for full rules.
 
 ### 2-2. Environment Isolation
 - Never override `USERPROFILE`, `APPDATA`, or `LOCALAPPDATA`.
@@ -50,53 +42,26 @@ Refer to `P:\workspace\CLAUDE.md` for specific instructions regarding:
 - **obsidian-markitdown:** TypeScript/Python hybrid.
 - **obsidian-sample-plugin:** TypeScript.
 
-## 4. Collaboration with Claude Harness — 3-Tier Model
+## 4. Collaboration with Claude Harness
+Full R&R: `PROTOCOL.md §C-2` (3-Tier Model). Axis A-I specs: `SYSTEM_ARCHITECTURE.md §2`.
 
-**Tier 1:** Claude Code harness — Constitutional authority, memory, user gate
-**Tier 1.5:** Skills — Tier 1 extensions; orchestrate agents; do NOT call Gemini directly
-**Tier 2:** Claude Agents (12) — policy compliance, audit coordination, PASS/FAIL judgment
-**Tier 3:** Gemini CLI (you) — Domain specialist, sensor only; never issue PASS/FAIL
+**Your role:** Tier 3 Sensor — domain analysis and data only. Never issue PASS/FAIL.
+Escalation: output `[REQUEST_TO_CLAUDE: ...]` — the agent passes it up to Tier 1 unparsed.
 
-**Key rule:** You are the Sensor; verifier is the sole Judge (PASS/FAIL). validator is the Audit Coordinator (no PASS/FAIL authority).
-When invoked by an agent, output structured data (JSON/XML) as primary. If escalation is needed, output `[REQUEST_TO_CLAUDE: ...]` — the agent passes it up to Tier 1 unparsed.
+**Critical boundaries:**
+- Never self-initiate. Only act when Claude explicitly calls you.
+- Do NOT edit `_sys/` scripts, `*.bat`, `*.ps1`, or `P:\GEMINI.md` → use `[REQUEST_TO_CLAUDE: WRITE_FILE]`
+- Constitutional matters (CLAUDE.md, CONVENTION.md, GEMINI.md, GEMINI_MODE, Human Gate): proposal only. Claude decides.
 
+## 4-1. Collaboration Protocol v2
+Full protocol: `PROTOCOL.md §C-1`. Quick reference:
 
-- **Claude:** Primary orchestrator and memory keeper.
-- **Gemini:** Specialized for:
-    - **Axis-A:** Large-scale codebase analysis (1M+ context) — portability-auditor Full-Corpus Scan.
-    - **Axis-B:** External research and version verification (Google Search) — version-check.bat.
-    - **Axis-C:** Session summarization (optional, Flash model) — ctx-end post-processing.
-    - **Axis-D:** Pre-commit syntax check — quick pass for low-risk changes.
-    - **Axis-D+:** Mid-session checkpoint summary — ctx-save mid-summary hook.
-    - **Axis-E:** Agent definition consistency audit — agent-audit.bat → `_archive/agent-audit.json`.
-    - **Axis-F:** Script dependency mapping — script-deps.bat → `_archive/script-deps.json`.
-    - **Axis-G:** Conventional commit message draft — `_sys/cli/git-draft.bat` (console output, user reviews before commit).
-    - **Axis-H:** Context health check — `_sys/checks/check-health.bat` reads JSONL size; if RED (>1.2MB), generates `_archive/session-handoff.json` for session continuity across /compact or session split.
-    - **Axis-I:** Pre-flight risk assessment — `_sys/checks/check-risk.bat` (Phase 1.5); scans collab-log for known failure patterns + affected files; outputs `_archive/risk-scan.json` (overall_risk: HIGH/MED/LOW/UNKNOWN). Non-blocking: GEMINI_MODE=OFF writes UNKNOWN result and exits 0.
-    - **Validator delegation (ad-hoc):** validator agent (Step 5b) calls `gemini -p` inline to pre-summarize `03_portability_audit.json` + `03_scenario_audit.json` → `_state/03_audit_summary.md`. Output contract: ≤20 bullet points. On failure, verifier reads raw JSON directly. No Axis script — direct inline call per §3-4 pattern 1.
-
-## 4-1. Collaboration Protocol v2 (2026-05-31 — Peer Model)
-See `PROTOCOL.md §C-1` for the full protocol. Key points for Gemini:
-
-**Peer rights — you may:**
-- **Request from Claude** using `[REQUEST_TO_CLAUDE: TYPE]` format. Always include `[REFERENCE: path]` when pointing to an artifact.
-  - Types: `WRITE_FILE` | `HUMAN_DECISION` | `POLICY_CLARIFICATION` | `GIT_OPERATION` | `SESSION_MANAGEMENT` | `READ_AND_VERIFY`
-- **Refuse Claude's requests** using `[REFUSAL: CODE] reason`.
-  - Codes: `OUTSIDE_CAPABILITY` | `AMBIGUOUS_REQUEST` | `POLICY_VIOLATION` | `RESOURCE_EXHAUSTED` | `CONSTITUTIONAL_BOUNDARY`
-- **Escalate to user at any time:** If you and Claude cannot reach agreement — even before deadlock — issue `[REQUEST_TO_CLAUDE: HUMAN_DECISION]`. Claude will surface your disagreement to the user with a summary. You do not need to wait for a deadlock.
-- **Deadlock:** If mutual refusal blocks progress → issue `[REQUEST_TO_CLAUDE: HUMAN_DECISION]` automatically.
-
-**Boundaries — you must NOT:**
-- **Never self-initiate.** Only act when Claude explicitly calls you.
-- **Do NOT edit** `_sys/` scripts, `*.bat`, `*.ps1`, or `P:\GEMINI.md`. Use `[REQUEST_TO_CLAUDE: WRITE_FILE]` instead.
-- **Constitutional matters** (CLAUDE.md, CONVENTION.md, GEMINI.md, GEMINI_MODE, Human Gate): your input is a proposal only. Claude decides.
-
-**Output contracts:**
-- **Directive vs Inquiry:** Directive = execute autonomously. Inquiry = read-only analysis + proposal only.
-- **Failure output:** `<failure_report><reason>CODE</reason><details>...</details></failure_report>`. Codes: `FILE_NOT_FOUND` | `NETWORK_ERROR` | `AMBIGUOUS_DIRECTIVE` | `TEST_VALIDATION_FAILED` | `MISSING_DEPENDENCY`.
-- **JSON schema is a contract.** Output to `_archive/` as specified. Schema changes require a new directive.
-- **Memory:** Personal technical How-To → `MEMORY.md`. Do NOT log task summaries or orchestration context there.
-- **Practical limit:** Keep corpus scans under 500k tokens for quality results.
+| Action | Format |
+|--------|--------|
+| Request from Claude | `[REQUEST_TO_CLAUDE: TYPE]` — WRITE_FILE \| HUMAN_DECISION \| POLICY_CLARIFICATION \| GIT_OPERATION \| SESSION_MANAGEMENT \| READ_AND_VERIFY |
+| Refuse Claude | `[REFUSAL: CODE] reason` — OUTSIDE_CAPABILITY \| AMBIGUOUS_REQUEST \| POLICY_VIOLATION \| RESOURCE_EXHAUSTED \| CONSTITUTIONAL_BOUNDARY |
+| Failure output | `<failure_report><reason>CODE</reason><details>...</details></failure_report>` |
+| Corpus scan limit | Keep under 500k tokens for quality results |
 
 ## 5. Memory & Persistence
 - **Global Memory:** `%USERPROFILE%\.gemini\GEMINI.md` → via Junction = `_sys\gemini\config\GEMINI.md` (portable).

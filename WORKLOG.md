@@ -5,6 +5,30 @@
 
 ---
 
+## 2026-06-03 — .md 문서 MECE + 제로토큰 통폐합 (Gemini 3-round 협의)
+
+**목표**: 각 개념이 정확히 한 파일에만 정의되도록 하고, 세션 자동 로딩 토큰을 최소화.
+
+### 변경 요약 (Phase A~F)
+
+| Phase | 대상 | 변경 내용 |
+|-------|------|----------|
+| A | GEMINI.md (105→70줄) | §2-1 삭제 → CONVENTION.md 포인터; §4/§4-1 축약 → PROTOCOL.md 포인터 |
+| B | 프로젝트 CLAUDE.md (238→126줄) | ASCII 폴더 트리 10줄 요약 → README.md 위임; Gemini Collaboration 섹션 제거 |
+| C | 전역 CLAUDE.md (111→65줄) | GEMINI_RATIO 테이블 + R:6~10 트리거 + 협업 사이클 → PROTOCOL.md §C-0/§C-1 포인터 |
+| D | CONTEXT.md | Axis Map 스크립트명 현행화; 건강도 임계값 → PROTOCOL.md §C-5 포인터 |
+| E | SYSTEM_ARCHITECTURE.md | §9 Gemini Axis 기술 명세 SSoT 신규 추가; §7 latest 패턴 오류 수정 |
+| F | agents/*.md | coordinator/verifier/portability-auditor에 PROTOCOL.md §C-8/§P-3/§M-1/§C-3 포인터 추가 |
+
+**세션 토큰 절감**: ~3,460 토큰/세션 (~35%) — 전역 CLAUDE.md 1,360 + 프로젝트 CLAUDE.md 700 + CONTEXT.md 일부
+
+**SSoT 재편 결과**:
+- PROTOCOL.md = 협업 정책 권위 문서 (중복 인라인 → 포인터)
+- CONVENTION.md = 코드 품질 기준 단독 소유
+- SYSTEM_ARCHITECTURE.md §9 = Axis A-I 기술 명세 SSoT (신규)
+
+---
+
 ## 2026-06-03 — PROTOCOL.md v2 전면 재작성
 
 **목표**: N-tier 합의체 + 분업 협업 프로토콜을 모든 통신 노드에 적용 가능한 공통 코어로 재설계.

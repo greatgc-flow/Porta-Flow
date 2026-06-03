@@ -1,5 +1,5 @@
 # PortableDev Agent Context
-> Last updated: 2026-06-03 | Status: 3TCP v1 complete (hub.py Phase A-D)
+> Last updated: 2026-06-03 | Status: MECE + zero-token doc consolidation complete (Phase A-F)
 
 ## System State
 Current session state: read .ai/state.json (hub.py status).
@@ -15,11 +15,11 @@ CONTEXT.md = static topology only. Dynamic state → .ai/state.json.
 ## Key Policy Files
 - Coding conventions (bat/ps1/env var/naming): `CONVENTION.md`
 - Orchestration protocol + 3TCP v1 spec: `PROTOCOL.md` (§P-0~P-7 + §C-1~C-8)
-- Gemini-facing rules: `GEMINI.md §4-1` (references PROTOCOL.md §C-1)
+- Gemini-facing rules: `GEMINI.md §4` (references PROTOCOL.md §C-1, §C-2)
 - Agent workflow: `CLAUDE.md` (global) + per-skill SKILL.md files
 
 ## Collaboration Policy
-- Full policy: `PROTOCOL.md §C-1` | Gemini reference: `GEMINI.md §4-1`
+- Full policy: `PROTOCOL.md §C-1` | Gemini reference: `GEMINI.md §4`
 - Model: Claude = orchestrator (What/Why), Gemini = domain executor (How)
 - Directive: self-contained — include file path + error target + goal
 - Failure format: `<failure_report><reason>CODE</reason><details>...</details></failure_report>`
@@ -34,18 +34,18 @@ CONTEXT.md = static topology only. Dynamic state → .ai/state.json.
 
 ## Gemini Axis Map (9 axes)
 - A: portability-auditor full-corpus scan (≤500k tokens, max 3/day)
-- B: version-check.bat | C: ctx-end.bat session summary | D: inline syntax check
-- D+: ctx-save mid-summary (opt-in) | E: agent-audit.bat → _archive/agent-audit.json
-- F: script-deps.bat → _archive/script-deps.json | G: git-draft.bat → commit draft
-- H: check-health.bat → status.json + _archive/session-handoff.json
-- I: risk-scan.bat → _archive/risk-scan.json (pre-flight risk, Phase 1.5)
+- B: check-versions.bat | C: ctx-end.bat session summary | D: inline syntax check
+- D+: ctx-save mid-summary (opt-in) | E: check-agents.bat → _archive/scans/agent-audit.json
+- F: check-deps.bat → _archive/scans/script-deps.json | G: git-draft.bat → commit draft
+- H: check-health.bat → _archive/session-handoff.json
+- I: check-risk.bat → _archive/risk-scan.json (pre-flight risk, Phase 1.5)
+→ 기술 명세(스크립트 경로·출력·쿼터): `SYSTEM_ARCHITECTURE.md §9`
 
 ## Context Health Thresholds (Axis-H)
-- Theory: 200k tokens | Quality limit: ~80k–100k tokens
-- GREEN <600KB | YELLOW 600KB–1.2MB | RED >1.2MB
-- YELLOW → complete phase → ctx-save → /compact before next heavy phase
+GREEN <600KB | YELLOW 600KB–1.2MB | RED >1.2MB
+- YELLOW → complete phase → ctx-save → /compact
 - RED → STOP → check-health.bat --force → MUST /compact or new session
-- Recovery: session-handoff.json → session-primer.md → new session
+→ 전체 정책: `PROTOCOL.md §C-5`
 
 ## Practical Figures
 - Node.js LTS: v24.16.0 "Krypton" (Active), v22 Maintenance until 2027-04
@@ -59,6 +59,7 @@ CONTEXT.md = static topology only. Dynamic state → .ai/state.json.
 - [x] .gitattributes: bat/ps1 files locked to CRLF (prevents git LF conversion)
 - [x] ctx-save/ctx-end: Gemini success check via file-exist (not errorlevel)
 - [x] 3TCP v1 (2026-06-03): hub.py Phase A-D (timeout=None, envelope, N-node, consensus); PROTOCOL.md created (COLLAB.md deleted); 105 tests ALL PASS
+- [x] MECE + zero-token consolidation (2026-06-03): Phase A-F (Gemini 3-round), ~3,460 tokens saved per session; SYSTEM_ARCHITECTURE.md §9 신규 (Axis SSoT); agents/*.md PROTOCOL.md 포인터 추가
 
 ## Known Issues
 - VS Code data: some 0-byte files — delete manually while VS Code is running.

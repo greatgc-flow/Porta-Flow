@@ -21,7 +21,7 @@
 [도구]  _sys/cli/ (git-draft, batch-review) + _sys/hooks/ (archive-data)
 ```
 
-## 2. hub.py — 11개 액션 (Facade 패턴)
+## 2. hub.py — 16개 액션 (Facade 패턴)
 
 **Raw Data 철학**: `--format llm` 없음. 모든 출력은 손실 없는 Pretty-print Markdown.
 **단일 통로**: `msg.bat` → `hub.py %*` (동기 `ask` + 비동기 `send/check`)
@@ -136,7 +136,23 @@ python "%~dp0..\core\hub.py" [action] [args]
 각 scan 스크립트는 완료 후 자동으로:
 1. `_archive/{name}.json` (즉시 출력)
 2. `_archive/{name}-YYYYMMDD.json` (날짜별 보존, _sys/hooks/archive-data.bat)
-3. `_archive/{name}-latest.json` (항상 최신, agent MD 참조 경로)
+
+## 9. Gemini Axis 기술 명세 (SSoT)
+
+| Axis | 트리거 스크립트 | 출력 파일 | 쿼터/제한 |
+|------|--------------|---------|---------|
+| A | portability-auditor (직접 호출) | `_state/03_portability_audit.json` | max 3/day, ≤500k tokens |
+| B | `_sys/checks/check-versions.bat` | `_archive/version-check.json` | Google Search grounding |
+| C | `_sys/hooks/ctx-end.bat` (opt-in) | console summary | Flash model |
+| D | inline `-p` (pre-commit) | console | quick pass |
+| D+ | `_sys/hooks/ctx-save.bat` (opt-in) | console mid-summary | — |
+| E | `_sys/checks/check-agents.bat` | `_archive/scans/agent-audit.json` | — |
+| F | `_sys/checks/check-deps.bat` | `_archive/scans/script-deps.json` | — |
+| G | `_sys/cli/git-draft.bat` | console (user reviews before commit) | — |
+| H | `_sys/checks/check-health.bat` | `_archive/session-handoff.json` | RED >1.2MB triggers |
+| I | `_sys/checks/check-risk.bat` | `_archive/risk-scan.json` | Phase 1.5, non-blocking |
+
+Quota signal: `429 Too Many Requests` = 일일 한도 초과 (실패 XML 아님).
 
 ## 8. 경로 빠른 참조
 
