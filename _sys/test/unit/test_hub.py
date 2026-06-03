@@ -207,6 +207,18 @@ class TestAsk:
         # 쿼리 파일 자동 삭제 확인
         assert not qf.exists()
 
+    def test_ask_nonzero_exit_warns(self, capsys):
+        mock_result = MagicMock()
+        mock_result.stdout = "partial response"
+        mock_result.stderr = "some error"
+        mock_result.returncode = 1
+        with patch("shutil.which", return_value="/usr/bin/gemini"), \
+             patch("subprocess.run", return_value=mock_result):
+            hub.action_ask("gemini", "test")
+        out, err = capsys.readouterr()
+        assert "[WARN] gemini exited 1" in err
+        assert "partial response" in out
+
 
 # ─── handoff FIFO ────────────────────────────────────────────
 class TestHandoffFIFO:
