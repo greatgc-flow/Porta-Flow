@@ -54,19 +54,19 @@ Full annotated tree: `README.md`
 
 ## CRITICAL: Windows Shell Rules
 
-- **Bash tool = /usr/bin/bash** → PowerShell 문법 절대 금지
-- PowerShell 명령 → PowerShell tool 사용
-- 시스템 작업 → `.bat` 파일 직접 호출
-- 경로 구분자: `\` (backslash)
-- 모든 `.bat` 호출 시 `PYTHONUTF8=1` 설정
+- **Bash tool = /usr/bin/bash** → Never use PowerShell syntax in Bash tool
+- PowerShell commands → use PowerShell tool
+- System tasks → call `.bat` files directly
+- Path separator: `\` (backslash)
+- Always set `PYTHONUTF8=1` when calling `.bat` files
 
 ## CRITICAL: Peer-to-Peer State Management
 
-- **모든 노드는 평등함**: Claude가 오케스트레이션을 독점하지 않음.
-- `.ai/state.json` 직접 쓰기 절대 금지
-- 상태 변경: `python _sys/core/hub.py update-status --mission "..." `
-- 메시지 발송 (P2P): `python _sys/core/hub.py send --from X --to Y --msg "..."`
-- 룸 상태 조회: `python _sys/core/hub.py status`
+- **All nodes are equal**: Claude does not monopolize orchestration.
+- **NEVER** write directly to `.ai/state.json`
+- Change state: `python _sys/core/hub.py update-status --mission "..."`
+- Send message (P2P): `python _sys/core/hub.py send --from X --to Y --msg "..."`
+- Check room status: `python _sys/core/hub.py status`
 
 ## Tool Output Limits (MANDATORY)
 
@@ -78,13 +78,13 @@ Full annotated tree: `README.md`
   - Pattern: `cmd ... > "$env:TEMP\last_log.txt" 2>&1; Get-Content "$env:TEMP\last_log.txt" -Tail 10`
 - For broad exploration: delegate to `Explore` sub-agent (isolates context blowout)
 
-## P2P 협업 (PROTOCOL.md v3.3)
+## P2P Collaboration (PROTOCOL.md v3.3)
 
-이 프로젝트는 **N-Way 단일 공유 세션(Room)**과 **무제한 합의 루프**를 기반으로 운영됩니다.
-- **COLLAB_RATE (0~10)**: 모든 노드 간의 협업 깊이를 조절합니다. (R:10 = 100% 완전 협업)
-- **만장일치 합의**: 작업 실행 전 모든 참여 노드의 동의가 필수입니다.
-- **업무 분담 (Division of Labor)**: 합의 후 각 노드는 자신의 전문 분야에 맞춰 업무를 분할 수행합니다.
-- **교차 검토 (Cross-check)**: 작업 완료 후 모든 노드가 결과물을 상호 검증합니다.
+This project runs on an **N-Way shared Room session** with **unlimited consensus rounds**.
+- **COLLAB_RATE (0~10)**: Controls collaboration depth across all nodes. (R:10 = 100% full sync)
+- **Unanimous consensus**: All participating nodes must agree before task execution.
+- **Division of Labor**: After consensus, each node handles tasks matching its specialty.
+- **Cross-check**: All nodes mutually verify outputs after completion.
 
 ### Adaptive COLLAB_RATE (task risk-based)
 
@@ -102,11 +102,11 @@ Full annotated tree: `README.md`
 
 ## Collaboration Interface (Claude Optimized)
 
-### Direct P2P (Autonomous — Gemini 호출)
-글로벌 CLAUDE.md의 "Gemini Collaboration Protocol" 섹션 참조.
+### Direct P2P (Autonomous — Gemini call)
+See global CLAUDE.md "Gemini Collaboration Protocol" section.
 
 ### Human-relay (Human-in-the-loop)
-사람이 직접 개입해야 하는 경우 텍스트 태그로 요청:
+Request human intervention via text tags:
 
 | Action | Format |
 |--------|--------|
@@ -114,49 +114,49 @@ Full annotated tree: `README.md`
 | Refusal | `[REFUSAL: CODE] reason` |
 
 **Critical boundaries:**
-- `_sys/` 스크립트 직접 편집 금지 → `[REQUEST_TO_PEERS: WRITE_FILE]` 요청.
-- 헌법적 문서(`PROTOCOL.md` 등) 수정 시 반드시 전체 노드 합의 필요.
+- Do not edit `_sys/` scripts directly → use `[REQUEST_TO_PEERS: WRITE_FILE]`.
+- Constitutional documents (`PROTOCOL.md`, etc.) require full node consensus to modify.
 
 ## Zero-Token Symmetric Memory
 
-- **Blackboard First**: 작업 시작 전 `.ai/sessions/room-{uuid}/handoff.md` 및 `summary_*.md`를 읽어 프로젝트 상태를 동기화 (**Re-orientation Phase**).
-- **Zero-Token Sharing**: 상세 분석·요약은 파일로 기록하고, 짧은 포인터(경로)만 공유.
-- **Symmetric Persistence**: `ctx-save` 실행 시 `CLAUDE.md`와 `_sys\gemini\config\GEMINI.md` 양쪽에 체크포인트를 기록하여 기억을 대칭 보존.
+- **Blackboard First**: Before starting work, read `.ai/sessions/room-{uuid}/handoff.md` and `summary_*.md` to sync project state (**Re-orientation Phase**).
+- **Zero-Token Sharing**: Write detailed analysis/summaries to files; share only short pointers (paths).
+- **Symmetric Persistence**: On `ctx-save`, write checkpoints to both `CLAUDE.md` and `_sys\gemini\config\GEMINI.md`.
 
-## Git 관리 원칙
+## Git Management
 
-### 트래킹 대상 (Essential — git managed)
-- 루트: `install.bat`, `register.bat`, `unregister.bat`, `CLEANUP.bat`, `*.md` (문서), `.gitignore`, `.gitattributes`
+### Tracked Targets (Essential — git managed)
+- Root: `install.bat`, `register.bat`, `unregister.bat`, `CLEANUP.bat`, `*.md`, `.gitignore`, `.gitattributes`
 - `.claude/`: `agents/*.md`, `settings.json`, `skills/*/SKILL.md`
-- `_sys/`: 모든 `.py` + `.bat` 스크립트, 설정 파일, 문서, 테스트 소스
+- `_sys/`: All `.py` + `.bat` scripts, configs, documentation, test sources
 
-### gitignore 처리 대상 (Non-tracked)
-| 경로 | 이유 |
-|------|------|
-| `_sys/env/**` | 대형 바이너리 — install.bat이 설치 |
-| `_sys/tools/` | 대형 바이너리 — install.bat이 설치 |
-| `_sys/data/temp/`, `_sys/data/setup-files/` | 설치 중 생성 |
-| `workspace/`, `_archive/`, `.ai/` | 사용자 데이터 / ephemeral |
-| `_state/` | 에이전트 세션 워크스페이스 (auto-managed) |
-| `_sys/claude/config/` | 인증/세션 데이터 (CLAUDE.md, settings.json, statusline-command.sh 제외) |
-| `.claude/settings.local.json` | 드라이브별 권한 패턴 — register.bat이 자동 생성, 새 PC마다 재생성 필요 |
-| `_sys/tests/results/` | 테스트 결과물 |
-| `WORKLOG.md` | 작업 로그 → `_archive/` 에서 관리 |
+### Ignored Targets (Non-tracked)
+| Path | Reason |
+|------|--------|
+| `_sys/env/**` | Large binaries — installed via install.bat |
+| `_sys/tools/` | Large binaries — installed via install.bat |
+| `_sys/data/temp/`, `_sys/data/setup-files/` | Generated during setup |
+| `workspace/`, `_archive/`, `.ai/` | User data / ephemeral |
+| `_state/` | Agent session workspace (auto-managed) |
+| `_sys/claude/config/` | Auth/session data (except CLAUDE.md, settings.json, statusline-command.sh) |
+| `.claude/settings.local.json` | Drive-specific permissions — auto-generated by register.bat, regenerated per PC |
+| `_sys/tests/results/` | Test outputs |
+| `WORKLOG.md` | Work log — managed in `_archive/` |
 
-### 런타임에 생성되는 필수 폴더
-setup.py 또는 start.bat이 최초 실행 시 생성:
+### Runtime Auto-Generated Folders
+Created on first run by `setup.py` or `start.bat`:
 `workspace/`, `_archive/`, `.ai/`, `_sys/tools/`, `_sys/data/temp/`, `_sys/data/setup-files/`
 
 ## CLI Reference
 
 ### start.bat
-| 호출 | 동작 |
-|------|------|
-| `start.bat` | BASE_DIR 전체를 VSCode workspace로 열기 + Claude Desktop 실행 |
-| `start.bat "폴더"` | 지정 폴더를 VSCode workspace로 열기 |
-| `start.bat "파일.py"` | 포터블 Python(venv)으로 실행 |
-| `start.bat "파일.bat"` | 포터블 cmd로 실행 |
-| `start.bat "파일.exe"` | Windows 기본 핸들러로 실행 |
+| Call | Action |
+|------|--------|
+| `start.bat` | Open BASE_DIR as VSCode workspace + launch Claude Desktop |
+| `start.bat "folder"` | Open specified folder as VSCode workspace |
+| `start.bat "file.py"` | Run with portable Python (venv) |
+| `start.bat "file.bat"` | Run with portable cmd |
+| `start.bat "file.exe"` | Open with Windows default handler |
 
 ## Current State
 Last checkpoint: 2026-06-05 01:15 -- See .ai/ blackboard for details
