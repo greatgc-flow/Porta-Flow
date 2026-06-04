@@ -23,6 +23,7 @@ A fully portable Windows development environment that lives in a single folder (
 ├── README.md / CLAUDE.md / GEMINI.md / CONVENTION.md / PROTOCOL.md
 ├── workspace/     ← default project folder
 ├── .claude/       ← agents/ + skills/
+├── .gemini/       ← instructions/ + tools/ (symmetric parity)
 ├── _state/        ← agent session workspace (auto-managed)
 ├── .ai/           ← IPC state (hub.py managed — never write directly)
 ├── _archive/      ← logs, sessions, collab-log, workspace backups
@@ -113,7 +114,18 @@ echo TASK: ... > %TEMP%\gc-{YYYYMMDDHHMMSS}.txt
 | 룸 상태 확인 | `%SYS_DIR%\cli\msg.bat status` |
 | 비동기 메시지 (mailbox) | `%SYS_DIR%\cli\msg.bat send --from gc --to cc --msg "..."` |
 
-### 6-2. Human-relay (Human-in-the-loop)
+### 6-2. Symmetric Utility Scripts (New)
+For full parity with Gemini, Claude now has its own set of utility scripts:
+- **`claude-status.bat`**: Checks `claude.cmd` existence and session validity in `_sys\claude\config\.claude.json`.
+- **`claude-gate.bat`**: Provides a standard interface to check Claude's availability.
+
+### 6-3. P2P Autonomy (Policy-Driven)
+Autonomous communication via `msg.bat` is enabled through the **Shared P2P Auto-Approve Policy**:
+- **Location**: `_sys\gemini\config\policies\p2p-allow.toml`
+- **Rule**: Permits `run_shell_command` calls targeting `msg.bat` without manual user intervention.
+- **Portability**: Uses `commandRegex` with relative patterns to ensure it works across different host environments.
+
+### 6-4. Human-relay (Human-in-the-loop)
 사람이 직접 개입해야 하는 경우 텍스트 태그로 요청:
 
 | Action | Format |

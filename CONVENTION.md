@@ -143,7 +143,13 @@ set "TMP=%DATA_DIR%\temp"
 - **Policy Management**:
   - Location: `_sys\gemini\config\policies\` (Native path for Gemini CLI; junctioned to host).
   - Portability: Always use `commandRegex` with relative patterns instead of absolute paths (e.g., `commandRegex = ".*_sys[/\\\\]cli[/\\\\]msg\\.bat.*"`).
-  - Shared Policies: Files like `p2p-allow.toml` are shared across sessions. Edits require human consensus.
+- **Shared Policies**: Files like `p2p-allow.toml` are shared across sessions. Edits require human consensus.
+
+### §3-6. Robust JSON Parsing (Shell Scripts)
+When parsing agent configuration files (like `.claude.json`) which can be very large (>30KB), avoid using `ConvertFrom-Json` in PowerShell as it may fail on character encoding or malformed blocks.
+- **Preferred Pattern**: Use `Select-String` (regex) to check for existence of key properties.
+- **Example**: `powershell -NoProfile -Command "if (Select-String -Path 'path/to/config' -Pattern '\"property\"' -Quiet) { exit 0 } else { exit 1 }"`
+- **Rationale**: Faster, less memory-intensive, and more resilient to partial file corruption.
 
 ### §3-4-A — Include-Files Size Guard (MANDATORY)
 

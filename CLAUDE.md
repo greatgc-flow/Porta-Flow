@@ -16,6 +16,7 @@ with all tools (Python, Node.js, FFmpeg, Git, etc.) pre-configured.
 ├── README.md / CLAUDE.md / GEMINI.md / CONVENTION.md / PROTOCOL.md
 ├── workspace/     ← default project folder
 ├── .claude/       ← agents/ + skills/
+├── .gemini/       ← instructions/ + tools/ (symmetric parity)
 ├── _state/        ← agent session workspace (auto-managed)
 ├── .ai/           ← IPC state (hub.py managed — never write directly)
 ├── _archive/      ← logs, sessions, collab-log, workspace backups
@@ -33,6 +34,8 @@ Full annotated tree: `README.md`
 | Registry key = `SandboxRun_[FolderName]` | Multiple envs on same PC without conflict |
 | N-Way Room Session (`room-{uuid}`) | P2P equality: No node monopoly. Shared context for all nodes. |
 | Unified manage.bat (logic: manage.py) | Single Source of Truth for naming, SUBST mapping, and Registry state |
+| Symmetric Agent Utilities | `claude-status.bat` / `claude-gate.bat` for parity with Gemini counterparts |
+| Division of Labor (Autonomous) | Claude can call `gemini-gate.bat` to decide whether to delegate tasks to Gemini |
 | State-aware Cleanup | Registration auto-cleans orphaned keys from previous folder names/paths |
 | No USERPROFILE/APPDATA override | Preserves Git, SSH, host credentials |
 | Tool-specific env vars (NPM_CONFIG_*, etc.) | Precise isolation without broad side effects |
@@ -132,7 +135,7 @@ setup.py 또는 start.bat이 최초 실행 시 생성:
 | `start.bat "파일.exe"` | Windows 기본 핸들러로 실행 |
 
 ## Current State
-Last checkpoint: 2026-06-04 23:45 -- See .ai/ blackboard for details
+Last checkpoint: 2026-06-04 23:55 -- See .ai/ blackboard for details
 ### 1) Tasks Completed Since Last Save
 - **Finalized Phase 3 Portability Framework**: `install.bat`, `register.bat` stability improved.
 - **Implemented N-Way Room Architecture**: `room-7fb9` active with `hub.py` coordination.
