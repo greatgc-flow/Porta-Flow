@@ -77,6 +77,7 @@ Full annotated tree: `README.md`
 - For shell logs (npm, pip, pytest): pipe to temp, read last 10 lines only
   - Pattern: `cmd ... > "$env:TEMP\last_log.txt" 2>&1; Get-Content "$env:TEMP\last_log.txt" -Tail 10`
 - For broad exploration: delegate to `Explore` sub-agent (isolates context blowout)
+- **3-strike rule**: 3 consecutive Grep/Read with no useful result → stop, delegate to `Explore` sub-agent
 
 ## P2P Collaboration (PROTOCOL.md v3.3)
 
@@ -159,22 +160,5 @@ Created on first run by `setup.py` or `start.bat`:
 | `start.bat "file.exe"` | Open with Windows default handler |
 
 ## Current State
-Last checkpoint: 2026-06-05 01:15 -- See .ai/ blackboard for details
-### 1) Tasks Completed Since Last Save
-- **Finalized Phase 3 Portability Framework**: `install.bat`, `register.bat` stability improved.
-- **Implemented N-Way Room Architecture**: `room-7fb9` active with `hub.py` coordination.
-- **Updated Collaboration Protocol to v3.2**: Added **Final Call gate** (§P-3-FC) to consensus for COLLAB_RATE >= 8.
-- **Established P2P Core**: `msg.bat` and `hub.py` now support node-to-node messaging.
-- **Improved Windows Compatibility**: Added `shell=True` to subprocess calls in check scripts.
-- **Repository Cleanup**: Removed 386+ external marketplace files and test artifacts.
-
-### 2) Technical State
-- **Room ID**: `room-7fb9` (ACTIVE)
-- **Active Consensuses**: `r-4601` (Roadmap), `r-5fb7` (Encoding Fix), `r-f2b2` (Doc Alignment).
-- **Protocol**: Symmetric memory persistence between `CLAUDE.md` and `GEMINI.md`.
-
-### 3) Critical Next Steps
-1. **Fresh PC setup validation**: Verify `install.bat` on a clean environment.
-2. **Integration Testing**: Update `test_integration_py.py` for Phase 3 MECE scenarios.
-3. **Claude Encoding Investigation**: Resolve `cross-check-plan-d-encoding` (r-5fb7) for multi-byte handling in pipes.
-4. **Node ID Alignment**: Fix Node ID mismatch in scripts (r-f2b2).
+→ See `.ai/sessions/room-7fb9/handoff.md` for live session state.
+→ See `_sys/claude/agent/CONTEXT.md` for static topology and agent team.

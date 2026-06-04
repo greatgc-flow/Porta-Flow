@@ -168,12 +168,6 @@ Created on first run by `setup.py` or `start.bat`:
 - **Private Project Memory:** `_sys\gemini\config\tmp\...` (portable).
 - **Note:** Directory Junctions ensure auth and memory travel with the portable drive, leaving no trace on the host OS.
 
-## 9. Current State & Next Steps
-Last updated: 2026-06-05
-- `PROTOCOL.md v3.3` active: Full English translation, Adaptive Rate rules, Token budget updated.
-- `GEMINI.md` symmetrized with `CLAUDE.md`: Tool Output Limits, Batch Consensus, IPC Compact Syntax integrated.
-- `tools.enabled: true` — Gemini shell tools active (Direct P2P capable).
-
-**Next Steps:**
-1. **Integration Testing**: Validate Phase 3 MECE scenarios (update `test_integration_py.py`).
-2. **Fresh PC setup**: Verify `install.bat` on a clean environment.
+## 9. Current State
+→ See `.ai/sessions/room-7fb9/handoff.md` for live session state.
+→ See `_sys/gemini/config/CONTEXT.md` for static topology and Axis map.

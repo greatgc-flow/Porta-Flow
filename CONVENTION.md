@@ -1,7 +1,7 @@
 # Portable Dev Environment — Coding Conventions
 
-모든 소스 코드는 이 파일의 규칙을 준수해야 한다.
-verifier 에이전트는 이 파일을 기준으로 PASS/FAIL을 판정한다.
+All source code must comply with the rules in this file.
+The verifier agent determines PASS/FAIL based on this file.
 
 ## §0 — Language Policy (CRITICAL)
 All agent definitions, skill files, policy documents, and JSON artifacts: English only.
@@ -13,101 +13,101 @@ Korean permitted ONLY in:
 Rationale: Korean consumes 2–3× more tokens than equivalent English.
 Agent MD files are loaded into context on every invocation.
 
-## 1. 배치 파일 (.bat) 규칙
+## 1. Batch File (.bat) Rules
 
-### 1-1. 언어 및 인코딩 (CRITICAL)
-- **언어**: 모든 echo, 변수 이름, 주석, 경로는 **영어만** 사용한다.
-- **인코딩**: 반드시 **UTF-8 (BOM 없음)** 형식을 유지한다.
-  - 사유: BOM 존재 시 `cmd.exe`가 파일 첫 명령어(`setlocal`)를 `tlocal` 등으로 오인하는 버그 방지.
-- **한국어 문자열 사용 절대 금지** — chcp 65001 포함, 어떤 인코딩 설정으로도 cmd.exe 파서가 다중 바이트 문자를 토큰 구분자로 처리하여 파싱이 깨진다.
-- `chcp` 명령 자체도 .bat 파일 내 사용 금지 (필요 시 .ps1로 분리).
+### 1-1. Language and Encoding (CRITICAL)
+- **Language**: Use **English only** for all echo statements, variable names, comments, and paths.
+- **Encoding**: Must maintain **UTF-8 (No BOM)** format.
+  - Reason: Prevents the bug where `cmd.exe` misinterprets the first command (`setlocal`) as `tlocal` due to a BOM.
+- **ABSOLUTE PROHIBITION of Korean strings** — Even with `chcp 65001`, the `cmd.exe` parser treats multi-byte characters as token delimiters, breaking parsing.
+- The `chcp` command itself is prohibited within `.bat` files (use `.ps1` if needed).
 
-### 1-2. PATH 통합
+### 1-2. PATH Integration
 ```bat
-# 올바른 패턴 — 개별 if exist 라인
+# Correct pattern — individual if exist lines
 if exist "%TOOLS_DIR%\ripgrep"  set "PATH=%TOOLS_DIR%\ripgrep;%PATH%"
 if exist "%TOOLS_DIR%\fd"       set "PATH=%TOOLS_DIR%\fd;%PATH%"
 
-# 금지 패턴 — for-loop 블록 내 %PATH% 확장 (한 번만 확장됨)
+# Forbidden pattern — %PATH% expansion inside for-loop block (expands only once)
 for %%T in (ripgrep fd) do (
     if exist "%TOOLS_DIR%\%%T" set "PATH=%TOOLS_DIR%\%%T;%PATH%"
 )
 ```
 
-### 1-3. 로그 함수
+### 1-3. Log Function
 ```bat
 :LOG
 echo %~1
 >> "%LOG_FILE%" echo %~1
 exit /b 0
 ```
-모든 출력은 `:LOG` 호출을 통해 파일과 콘솔에 동시 기록한다.
+All output must be recorded simultaneously to file and console via `:LOG` calls.
 
-### 1-4. 타임스탬프 (PowerShell Get-Date)
+### 1-4. Timestamp (PowerShell Get-Date)
 ```bat
 for /f "delims=" %%I in (
     'powershell -NoProfile -Command "Get-Date -Format yyyyMMddHHmmss"'
 ) do set "_DT=%%I"
 set "LOG_FILE=%LOG_DIR%\start_%_DT:~0,8%_%_DT:~8,6%.log"
 ```
-`wmic os get LocalDateTime` 사용 금지 — Win11 24H2+에서 wmic 미탑재 가능.
-DelayedExpansion이 필요한 경우 `setlocal EnableDelayedExpansion`을 선언한다.
+Do not use `wmic os get LocalDateTime` — `wmic` may not be present in Win11 24H2+.
+Declare `setlocal EnableDelayedExpansion` if delayed expansion is required.
 
-### 1-6. 경로 및 특수문자 처리 (Parenthesis Bug 방지)
-- **괄호 포함 경로**: 경로에 `(`, `)`가 포함될 경우, `if (...)` 또는 `for (...)` 블록 내에서 `%VAR%` 확장이 블록을 조기에 닫아버리는 버그가 있다.
-- **해결책**:
-  1. **블록 피하기**: `if condition command` (단일 행) 형식을 사용한다.
-  2. **지연된 확장 사용**: `setlocal EnableDelayedExpansion` 선언 후 `!VAR!` 형식을 사용한다.
-  3. **조건부 할당**: `if defined VAR (set "VAL=%VAR%") else (for ...)` 패턴 대신 `if not defined VAR for ...` (단일 행) 패턴을 사용하여 파서 혼동을 방지한다.
-- **예시**:
+### 1-6. Path and Special Character Handling (Parenthesis Bug Prevention)
+- **Paths with Parentheses**: If a path contains `(` or `)`, `%VAR%` expansion inside an `if (...)` or `for (...)` block can prematurely close the block.
+- **Solutions**:
+  1. **Avoid Blocks**: Use `if condition command` (single line) format.
+  2. **Use Delayed Expansion**: Declare `setlocal EnableDelayedExpansion` and use `!VAR!` format.
+  3. **Conditional Assignment**: Use `if not defined VAR for ...` (single line) instead of `if defined VAR (set "VAL=%VAR%") else (for ...)` to prevent parser confusion.
+- **Example**:
 ```bat
-# 나쁜 예 (경로에 ) 포함 시 에러)
+# Bad example (Error if path contains ")")
 if defined BASE_DIR (
     set "_BASE=%BASE_DIR%"
 ) else (
     for %%I in ("%~dp0..\..") do set "_BASE=%%~fI"
 )
 
-# 좋은 예 (안전함)
+# Good example (Safe)
 if not defined BASE_DIR for %%I in ("%~dp0..\..") do set "BASE_DIR=%%~fI"
 set "_BASE=%BASE_DIR%"
 ```
 
-## 2. 통합 관리 및 설치 규칙
+## 2. Integrated Management and Installation Rules
 
-### 2-1. 통합 매니저 (manage.bat)
-모든 환경 등록/해제 및 상태 관리는 `_sys\cli\manage.bat` (Logic: `manage.py`)을 통해 수행한다.
-- `manage.bat Register`: SUBST 매핑, 레지스트리 메뉴 등록, `local.config.bat` 상태 저장.
-- `manage.bat Unregister`: 전역 청소(SUBST 해제, 레지스트리 제거), 상태 초기화.
+### 2-1. Integrated Manager (manage.bat)
+All environment registration/unregistration and status management via `_sys\cli\manage.bat` (Logic: `manage.py`).
+- `manage.bat Register`: SUBST mapping, registry menu registration, `local.config.bat` state storage.
+- `manage.bat Unregister`: Global cleanup (SUBST release, registry removal), state initialization.
 
-### 2-2. 설치 및 복구 (install.bat)
-- `install.bat`: `setup.py`를 통해 모든 런타임을 자동 다운로드 및 구성한다. (ZeroBase 지원)
+### 2-2. Installation and Recovery (install.bat)
+- `install.bat`: Automatically downloads and configures all runtimes via `setup.py`. (Supports ZeroBase)
 
-### 2-3. 공간 최적화 (cleanup.bat)
-- `cleanup.bat`: `cleanup.py`를 통해 Tier 1~4 단계별 정리를 수행한다.
+### 2-3. Space Optimization (cleanup.bat)
+- `cleanup.bat`: Performs Tier 1~4 step-by-step cleanup via `cleanup.py`.
 
-### 2-2. 레지스트리 및 메뉴 규칙
-- **키 명명**: `SandboxRun_[Drive]_[Parent]_[Leaf]` (경로 특수문자는 `_`로 치환)
-- **레이블**: `Open in Sandbox: [Leaf] ([Full Physical Path] -> [SUBST]:)`
-- **자동 청소**: 등록 시 이전에 사용하던 다른 경로의 키를 자동으로 찾아 제거하여 고아 키 발생을 방지한다.
+### 2-2. Registry and Menu Rules
+- **Key Naming**: `SandboxRun_[Drive]_[Parent]_[Leaf]` (special characters in paths replaced with `_`)
+- **Label**: `Open in Sandbox: [Leaf] ([Full Physical Path] -> [SUBST]:)`
+- **Auto-Cleanup**: Automatically removes keys from previously used paths during registration to prevent orphaned keys.
 
-### 2-3. launch.bat 중간 계층 유지
-레지스트리에서 start.bat을 직접 실행하지 않는다.
-`launch.bat → call start.bat %*` 패턴을 유지한다.
-(레지스트리 명령: `cmd.exe /c ""<physical_path>\_sys\cli\launch.bat" "%V""` — 물리 경로 사용, SUBST 금지)
+### 2-3. Maintain launch.bat Middle Layer
+Do not execute `start.bat` directly from the registry.
+Maintain the `launch.bat → call start.bat %*` pattern.
+(Registry command: `cmd.exe /c ""<physical_path>\_sys\cli\launch.bat" "%V""` — use physical path, SUBST prohibited)
 
-## 3. 환경 변수 격리 규칙
+## 3. Environment Variable Isolation Rules
 
-### 3-1. 오버라이드 금지 목록
+### 3-1. Override Prohibition List
 ```
-USERPROFILE    ← 절대 오버라이드 금지
-APPDATA        ← 절대 오버라이드 금지
-LOCALAPPDATA   ← 절대 오버라이드 금지
+USERPROFILE    ← Absolute prohibition of override
+APPDATA        ← Absolute prohibition of override
+LOCALAPPDATA   ← Absolute prohibition of override
 ```
-`HOST_LOCALAPPDATA=%LOCALAPPDATA%` 백업은 허용 (Claude Desktop 실행 목적).
+`HOST_LOCALAPPDATA=%LOCALAPPDATA%` backup is permitted (for running Claude Desktop).
 
-### 3-2. 도구별 전용 env var
-각 도구는 반드시 자체 전용 환경 변수를 사용한다:
+### 3-2. Dedicated env var per Tool
+Each tool must use its own dedicated environment variables:
 ```bat
 set "NPM_CONFIG_PREFIX=%ENV_DIR%\nodejs\npm-global"
 set "NPM_CONFIG_CACHE=%ENV_DIR%\nodejs\npm-cache"
@@ -121,14 +121,14 @@ set "TMP=%DATA_DIR%\temp"
 :: (ENV_DIR=%SYS_DIR%\env, CLAUDE_DIR=%SYS_DIR%\claude, etc.)
 ```
 
-### 3-3. 하드코딩 경로 금지
-드라이브 문자(`C:\`, `D:\`)를 직접 사용하지 않는다.
-모든 경로는 `%BASE_DIR%` 또는 `%SYS_DIR%` 기반 상대 경로로 작성한다.
+### 3-3. Prohibition of Hardcoded Paths
+Do not use drive letters (`C:\`, `D:\`) directly.
+Write all paths as relative paths based on `%BASE_DIR%` or `%SYS_DIR%`.
 
-### 3-4. Gemini CLI 호출 패턴
+### 3-4. Gemini CLI Call Pattern
 
-**Gemini 가용성은 `GEMINI_MODE` 환경변수로 판단한다** (start.bat → gemini-status.bat이 설정).
-직접 `where gemini`를 호출하지 않는다.
+**Gemini availability is determined via the `GEMINI_MODE` env var** (set by `start.bat → gemini-status.bat`).
+Do not call `where gemini` directly.
 
 ```bat
 :: (Existing patterns 1-3 remain unchanged)
@@ -137,8 +137,8 @@ set "TMP=%DATA_DIR%\temp"
 **Symmetry and Portability (Agent Specifics):**
 - **Root Directory (`.gemini/`)**: Projects should maintain a `.gemini/` directory at the root for symmetry with `.claude/`.
   - `.gemini/instructions/`: Detailed behavioral guides for the Gemini agent.
-  - `.gemini/tools/`: Custom Python scripts/modules. 
-- **Tool Registration**: Unlike Claude's skills, Gemini tools are not auto-loaded. 
+  - `.gemini/tools/`: Custom Python scripts/modules.
+- **Tool Registration**: Unlike Claude's skills, Gemini tools are not auto-loaded.
   - **MANDATORY**: When adding a script to `.gemini/tools/`, you MUST update the corresponding file in `.gemini/instructions/` to inform the agent of the new tool's availability and usage (via `run_shell_command`).
 - **Policy Management**:
   - Location: `_sys\gemini\config\policies\` (Native path for Gemini CLI; junctioned to host).
@@ -209,75 +209,74 @@ check-deps.bat, git-draft.bat, check-risk.bat (risk-scan uses exit /b 0 — non-
 | H | check-health.bat | ≤2k | ~0 | max 5/session |
 | I | check-risk.bat | ≤10k | ~0 | Phase 1.5 |
 
-### 3-5. 협업 프로토콜
-→ **PROTOCOL.md §P-0~§P-10** (P2P 공통 코어), **§C-0** (COLLAB_RATE) 참조.
+### 3-5. Collaboration Protocol
+→ See **PROTOCOL.md §P-0~§P-10** (P2P Common Core), **§C-0** (COLLAB_RATE).
 
 ## §3-7 — Gemini-first Analysis Rule
-Gemini를 분석 도구로 우선 사용해야 하는 경우 → **SYSTEM_ARCHITECTURE.md §7** (Axis 표) 참조.
+When Gemini should be prioritized as an analysis tool → See **SYSTEM_ARCHITECTURE.md §7** (Axis Table).
 
 ## §3-8 — Collaboration Health Check
-협업 건강도 점검 → **Axis H** (`_sys/checks/check-health.bat`). 토큰 예산: §3-4-D 참조.
+Collaboration health check → **Axis H** (`_sys/checks/check-health.bat`). Token budget: See §3-4-D.
 
 ## §3-9 — Session Transition Triggers
-COLLAB_RATE 수준별 협업 전환 시점 → **PROTOCOL.md §C-0** 참조.
+Collaboration transition timing by COLLAB_RATE level → See **PROTOCOL.md §C-0**.
 
-## 4. 폴더/파일 네이밍 규칙
+## 4. Folder/File Naming Rules
 
-### 4-1. 폴더
-- 소문자 kebab-case: `setup-files`, `data`, `env`, `tools`, `claude`, `agent`
-- 예외 (컨벤션 유지): `CONVENTION.md`, `CLAUDE.md`, `README.md`
+### 4-1. Folders
+- lowercase kebab-case: `setup-files`, `data`, `env`, `tools`, `claude`, `agent`
+- Exceptions (maintain convention): `CONVENTION.md`, `CLAUDE.md`, `README.md`
 
-### 4-2. 스크립트 파일
+### 4-2. Script Files
 - PowerShell: PascalCase (`Install_Menu.ps1`, `Remove_Menu.ps1`)
-  - `Install_Menu.ps1` 및 `Remove_Menu.ps1`은 `-BaseDir` 파라미터를 받아 호출 위치(register.bat / unregister.bat)에서 BASE_DIR을 명시적으로 전달한다.
-- Batch (루트): lowercase (`register.bat`, `unregister.bat`, `install.bat`, `cleanup.bat`)
+  - `Install_Menu.ps1` and `Remove_Menu.ps1` receive the `-BaseDir` parameter to explicitly pass BASE_DIR from the calling location (register.bat / unregister.bat).
+- Batch (root): lowercase (`register.bat`, `unregister.bat`, `install.bat`, `cleanup.bat`)
 - Batch (_sys/): lowercase (`start.bat`, `ctx-save.bat`, `ctx-end.bat`)
 
-### 4-3. tools/ 하위 폴더
-형식: `tools/{tool-name}/{executable}.exe`
-예: `tools/ripgrep/rg.exe`, `tools/jq/jq.exe`
+### 4-3. tools/ Subfolders
+Format: `tools/{tool-name}/{executable}.exe`
+Example: `tools/ripgrep/rg.exe`, `tools/jq/jq.exe`
 
 ## 5. CONTEXT.md and State Update Rules
-→ `_sys/claude/agent/CONTEXT.md` 참조. 상태 변경은 반드시 `hub.py update-status` 경유.
+→ See `_sys/claude/agent/CONTEXT.md`. State changes must go through `hub.py update-status`.
 
-## 6. local.config.bat — PC별 설정 패턴
+## 6. local.config.bat — Per-PC Configuration Pattern
 
-### 6-1. 목적
-PC마다 다른 설정(OBSIDIAN_VAULT, NO_DESKTOP, BASE_DIR_WORKSPACE 등)을
-`start.bat` 직접 수정 없이 오버라이드한다. USB 이동 시 기본 설정이 깨지지 않는다.
+### 6-1. Purpose
+Overrides settings that vary by PC (OBSIDIAN_VAULT, NO_DESKTOP, BASE_DIR_WORKSPACE, etc.) without modifying `start.bat` directly. Basic settings remain intact when moving via USB.
 
-### 6-2. 로딩 규칙
-`start.bat`은 CONFIG 섹션 직후, 환경 변수 설정 전에 `local.config.bat`을 로드한다:
+### 6-2. Loading Rules
+`start.bat` loads `local.config.bat` immediately after the CONFIG section, before environment variable settings:
 ```bat
 :: [Per-PC overrides] local.config.bat (not tracked, PC-specific)
 if exist "%SYS_DIR%\local.config.bat" call "%SYS_DIR%\local.config.bat"
 ```
 
-### 6-3. Git 추적 제외
-- `_sys\local.config.bat`은 절대 Git에 커밋하지 않는다.
-- `.gitignore`에 `_sys/local.config.bat` 명시.
-- 템플릿은 `_sys\local.config.bat.template`만 추적한다.
+### 6-3. Git Tracking Exclusion
+- Never commit `_sys\local.config.bat` to Git.
+- Specify `_sys/local.config.bat` in `.gitignore`.
+- Only the template `_sys\local.config.bat.template` is tracked.
 
-### 6-4. 오버라이드 가능 변수
-- `NO_DESKTOP` — Claude Desktop 자동 실행 차단
-- `BASE_DIR_WORKSPACE` — 기본 작업 폴더 변경
-- `NPM_CONFIG_PREFIX` — 시스템 npm 사용 강제 (포터블 격리 해제)
-- `BASE_DIR_PHYS` — 물리적 절대 경로 (register.bat이 자동 설정; 수동 변경 금지)
-- `SUBST_DRIVE_LETTER` — 고정 드라이브 문자 (register.bat이 자동 설정; 수동 변경 금지)
+### 6-4. Overridable Variables
+- `NO_DESKTOP` — Block automatic execution of Claude Desktop
+- `BASE_DIR_WORKSPACE` — Change the default working folder
+- `NPM_CONFIG_PREFIX` — Force use of system npm (releases portable isolation)
+- `BASE_DIR_PHYS` — Physical absolute path (auto-set by register.bat; do not change manually)
+- `SUBST_DRIVE_LETTER` — Fixed drive letter (auto-set by register.bat; do not change manually)
 
-### 6-5. 금지
-- `local.config.bat`에서 `SYS_DIR`, `BASE_DIR`, `ENV_DIR` 등 경로 상수를 재정의하지 않는다.
-- 도구별 격리 변수(`PIP_CACHE_DIR` 등)는 변경 시 격리가 깨질 수 있으므로 신중하게.
+### 6-5. Prohibitions
+- Do not redefine path constants (`SYS_DIR`, `BASE_DIR`, `ENV_DIR`, etc.) in `local.config.bat`.
+- Use caution when changing tool-specific isolation variables (`PIP_CACHE_DIR`, etc.) as it may break isolation.
 
-## 7. 에이전트 경로 정책
-에이전트 파일 내에서 경로 참조 시 `%BASE_DIR%` / `%SYS_DIR%` 기반 상대 표기를 사용한다.
-드라이브 문자 하드코딩 금지. 상호 불가침 영역 → **PROTOCOL.md §M-1** 참조.
+## 7. Agent Path Policy
+Use relative notation based on `%BASE_DIR%` / `%SYS_DIR%` when referencing paths within agent files.
+Hardcoded drive letters are prohibited. Mutual non-interference zone → See **PROTOCOL.md §M-1**.
 
 ---
 
 ## §8 — Decision Delegation Policy
-결정 위임 정책: 만장일치 합의가 필요한 사안은 **PROTOCOL.md §P-3** 참조.
-교착 상태 시 Human Gate 호출 → **PROTOCOL.md §M-3** (불변 규칙 #3) 참조.
+For matters requiring unanimous agreement, see **PROTOCOL.md §P-3**.
+Call Human Gate in case of deadlock → See **PROTOCOL.md §M-3** (Invariant Rule #3).
 
 ## §9 — Testing Environment Policy (2026-06-01)
 
@@ -308,7 +307,7 @@ Local temp directory simulation (PortaFlowTest_*) is DEPRECATED as primary metho
 - Windows Sandbox optional feature: `optionalfeatures.exe → Windows Sandbox`
 - Requires Win11 Pro / Enterprise / Pro for Workstations (this system qualifies)
 
-## §10 — Parallel ^& Multi-Instance Safety (2026-06-02)
+## §10 — Parallel & Multi-Instance Safety (2026-06-02)
 
 To prevent "Vertical" (multi-instance) and "Horizontal" (parallel execution) conflicts:
 

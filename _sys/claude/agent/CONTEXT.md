@@ -39,13 +39,13 @@ CONTEXT.md = static topology only. Dynamic state → .ai/state.json.
 - F: check-deps.bat → _archive/scans/script-deps.json | G: git-draft.bat → commit draft
 - H: check-health.bat → _archive/session-handoff.json
 - I: check-risk.bat → _archive/risk-scan.json (pre-flight risk, Phase 1.5)
-→ 기술 명세(스크립트 경로·출력·쿼터): `SYSTEM_ARCHITECTURE.md §7` | 토큰 예산: `CONVENTION.md §3-4-D`
+→ Technical specs (script paths/output/quota): `SYSTEM_ARCHITECTURE.md §7` | Token budget: `CONVENTION.md §3-4-D`
 
 ## Context Health Thresholds (Axis-H)
 GREEN <600KB | YELLOW 600KB–1.2MB | RED >1.2MB
 - YELLOW → complete phase → ctx-save → /compact
 - RED → STOP → check-health.bat --force → MUST /compact or new session
-→ 협업 전환 정책: `PROTOCOL.md §C-0` (COLLAB_RATE)
+→ Collaboration transition policy: `PROTOCOL.md §C-0` (COLLAB_RATE)
 
 ## Practical Figures
 - Node.js LTS: v24.16.0 "Krypton" (Active), v22 Maintenance until 2027-04
