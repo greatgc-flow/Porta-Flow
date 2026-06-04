@@ -250,6 +250,8 @@ def action_end_session(ai_root: Path, agent: str) -> None:
     print(f"[END] {agent} 세션 종료 완료")
 
 
+_MAILBOX_MAX = 500   # hard cap: oldest read msgs pruned first when exceeded
+
 def action_send(
     ai_root: Path, from_: str, to: str, msg: str,
     thread_id: str | None = None,
@@ -262,7 +264,13 @@ def action_send(
     with _get_lock(ai_root, "mailbox"):
         mb = _read_json(ai_root / "mailbox.json")
         msgs = mb.get("messages", [])
-        new_id = len(msgs) + 1
+        # prune oldest read messages when approaching the cap
+        if len(msgs) >= _MAILBOX_MAX:
+            msgs = [m for m in msgs if m.get("status") != "read"]
+            # if still over cap (all unread), drop oldest to stay under limit
+            if len(msgs) >= _MAILBOX_MAX:
+                msgs = msgs[-(  _MAILBOX_MAX - 1):]
+        new_id = (msgs[-1]["id"] + 1) if msgs else 1
         msgs.append({
             "id": new_id, "thread_id": auto_thread, "type": msg_type,
             "from": from_, "to": to, "cc": cc_list, "content": msg,

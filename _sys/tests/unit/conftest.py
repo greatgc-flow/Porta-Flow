@@ -44,9 +44,10 @@ def ai_dir(tmp_path):
     return ai
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def patch_ai_root(ai_dir, monkeypatch):
-    """모든 테스트에서 find_ai_root()가 tmp .ai/ 반환하도록 패치."""
+    """hub.py 테스트에서 find_ai_root()가 tmp .ai/ 반환하도록 패치.
+    autouse 제거: hub와 무관한 테스트(doc_consistency 등)에서 hub import를 강제하지 않음."""
     import hub
     monkeypatch.setattr(hub, "find_ai_root", lambda: ai_dir)
     monkeypatch.setattr(hub, "ensure_ai_dir", lambda p: p)
