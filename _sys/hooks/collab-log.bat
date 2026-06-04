@@ -11,7 +11,8 @@ setlocal DisableDelayedExpansion
 ::   %3  Status       OK | FAIL | REFUSED | ESCALATED
 ::   %4  Detail       e.g. "Output: _archive\version-check.json"
 
-if defined BASE_DIR (set "_B=%BASE_DIR%") else (for %%I in ("%~dp0..\..") do set "_B=%%~fI")
+if not defined BASE_DIR for %%I in ("%~dp0..\..") do set "BASE_DIR=%%~fI"
+set "_B=%BASE_DIR%"
 set "_LOGDIR=%_B%\_archive\collab-log"
 
 for /f "delims=" %%D in ('powershell -NoProfile -Command "Get-Date -Format yyyy-MM-dd"') do set "_LD=%%D"

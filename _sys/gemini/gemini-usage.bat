@@ -10,7 +10,8 @@
 :: ================================================================
 
 if defined GEMINI_DIR (set "_GD=%GEMINI_DIR%") else (set "_GD=%~dp0")
-if defined BASE_DIR (set "_ROOT=%BASE_DIR%") else (for %%I in ("%~dp0..\..") do set "_ROOT=%%~fI")
+if not defined BASE_DIR for %%I in ("%~dp0..\..") do set "BASE_DIR=%%~fI"
+set "_ROOT=%BASE_DIR%"
 
 for /f "delims=" %%I in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMddHHmmss"') do set "_DT=%%I"
 

@@ -4,7 +4,8 @@ setlocal EnableDelayedExpansion
 :: ================================================================
 :: ctx-end.bat  -  Session end: full summary + Obsidian backup
 
-if defined BASE_DIR (set "_BASE=%BASE_DIR%") else (for %%I in ("%~dp0..\..") do set "_BASE=%%~fI")
+if not defined BASE_DIR for %%I in ("%~dp0..\..") do set "BASE_DIR=%%~fI"
+set "_BASE=%BASE_DIR%"
 ::
 :: Usage: ctx-end               -> summarize current project
 ::        ctx-end --global      -> also update global CLAUDE.md
@@ -63,7 +64,8 @@ if "%GLOBAL_UPDATE%"=="1" (
 for /f "delims=" %%I in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMddHHmmss"') do set "_DT=%%I"
 set "SES_DATE=%_DT:~0,4%-%_DT:~4,2%-%_DT:~6,2%"
 set "SES_TIME=%_DT:~8,2%:%_DT:~10,2%"
-if defined SESSION_DIR (set "SES_DIR=%SESSION_DIR%") else (for %%I in ("%~dp0..\..") do set "SES_DIR=%%~fI\_archive\sessions")
+if not defined SESSION_DIR for %%I in ("%~dp0..\..") do set "SESSION_DIR=%%~fI\_archive\sessions"
+set "SES_DIR=%SESSION_DIR%"
 for %%I in ("%CD%") do set "_PROJ=%%~nxI"
 set "SES_FILE=!SES_DIR!\!SES_DATE!_!_PROJ!.md"
 if not exist "!SES_DIR!" mkdir "!SES_DIR!"
@@ -106,7 +108,7 @@ del "!_SUM!" > nul 2>&1
 echo [ctx-end] Gemini summary skipped (auth or network issue).
 call "%~dp0collab-log.bat" "Axis-C" "ctx-end.bat" "FAIL" "Error: api_error"
 :SKIP_GEMINI_SUM
-:: ── Gemini 1:1 session-id + session-map cleanup ──────────────────
+:: -- Gemini 1:1 session-id + session-map cleanup --
 set "_SID_FILE=!_BASE!\_sys\gemini\session-id.txt"
 set "_SMAP=!_BASE!\_sys\gemini\session-map.json"
 if exist "!_SID_FILE!" (
@@ -115,7 +117,7 @@ if exist "!_SID_FILE!" (
     del "!_SID_FILE!" >nul 2>&1
     echo [ctx-end] Gemini session archived.
 )
-:: ── Gemini session JSONL cleanup ─────────────────────────────────
+:: -- Gemini session JSONL cleanup --
 if not defined GEMINI_SESSION_KEEP set "GEMINI_SESSION_KEEP=7"
 set "_CHAT_DIR=!_BASE!\_sys\gemini\config\tmp\project\chats"
 set "_GS_ARCHIVE=!_BASE!\_archive\gemini-sessions"
@@ -123,5 +125,6 @@ if exist "!_CHAT_DIR!" (
     if not exist "!_GS_ARCHIVE!" mkdir "!_GS_ARCHIVE!"
     powershell -NoProfile -Command "$src='!_CHAT_DIR!'; $dst='!_GS_ARCHIVE!'; $keep=[int]'!GEMINI_SESSION_KEEP!'; $cutoff=(Get-Date).AddDays(-$keep); $old=Get-ChildItem $src -Filter '*.jsonl' | Where-Object {$_.LastWriteTime -lt $cutoff}; foreach($f in $old){ Move-Item $f.FullName (Join-Path $dst $f.Name) -Force }; Write-Host ('[ctx-end] Gemini session cleanup: ' + $old.Count + ' files moved to _archive/gemini-sessions/')"
 )
-:: ─────────────────────────────────────────────────────────────────
+:: -----------------------------------------------------------------
 endlocal
+

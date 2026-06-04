@@ -8,8 +8,11 @@ setlocal EnableDelayedExpansion
 :: Output:    _archive\gemini-reviews\YYYYMMDD_HHMMSS.md + latest.md
 :: ================================================================
 
-if defined GEMINI_DIR (set "_GD=%GEMINI_DIR%") else (for %%I in ("%~dp0..\gemini") do set "_GD=%%~fI")
-if defined BASE_DIR (set "_ROOT=%BASE_DIR%") else (for %%I in ("%~dp0..\..") do set "_ROOT=%%~fI")
+if not defined GEMINI_DIR for %%I in ("%~dp0..\gemini") do set "GEMINI_DIR=%%~fI"
+set "_GD=%GEMINI_DIR%"
+
+if not defined BASE_DIR for %%I in ("%~dp0..\..") do set "BASE_DIR=%%~fI"
+set "_ROOT=%BASE_DIR%"
 set "_CFG=%_GD%\config.json"
 
 :: --- Ratio check (requires >= 7) ---

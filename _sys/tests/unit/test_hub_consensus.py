@@ -16,7 +16,7 @@ class TestConsensusAdvanced:
         hub.action_register_node(ai_dir, "n1", 4, "sensor", "custom-cli", "-p,{query}", "session", 0)
         
         # 2. n1을 포함한 합의 제안
-        hub.action_consensus_propose(ai_dir, "Add n1 to team", ["cc", "ca", "gc", "n1"])
+        hub.action_consensus_propose(ai_dir, "Add n1 to team", ["cc", "ca", "gc", "n1"], "cc")
         
         out = capsys.readouterr().out
         assert "PROPOSE" in out
@@ -27,10 +27,10 @@ class TestConsensusAdvanced:
         round_id = match.group(1)
         
         # 3. 모든 노드 투표 (n1 포함)
-        hub.action_consensus_vote(ai_dir, round_id, "cc", "agree")
-        hub.action_consensus_vote(ai_dir, round_id, "ca", "agree")
-        hub.action_consensus_vote(ai_dir, round_id, "gc", "agree")
-        hub.action_consensus_vote(ai_dir, round_id, "n1", "agree")
+        hub.action_consensus_vote(ai_dir, round_id, "cc", "agree", "test")
+        hub.action_consensus_vote(ai_dir, round_id, "ca", "agree", "test")
+        hub.action_consensus_vote(ai_dir, round_id, "gc", "agree", "test")
+        hub.action_consensus_vote(ai_dir, round_id, "n1", "agree", "test")
         
         # 4. 결과 확인
         rpath = ai_dir / "consensus" / f"{round_id}.json"
@@ -40,14 +40,14 @@ class TestConsensusAdvanced:
 
     def test_p2_abstain_finalization(self, ai_dir, capsys):
         """기권(Abstain)이 포함된 합의 종결 검증."""
-        hub.action_consensus_propose(ai_dir, "Minor change", ["cc", "ca", "gc"])
+        hub.action_consensus_propose(ai_dir, "Minor change", ["cc", "ca", "gc"], "cc")
         out = capsys.readouterr().out
         round_id = re.search(r"PROPOSE (r-\w+)", out).group(1)
         
         # cc: agree, ca: abstain, gc: agree
-        hub.action_consensus_vote(ai_dir, round_id, "cc", "agree")
-        hub.action_consensus_vote(ai_dir, round_id, "ca", "abstain")
-        hub.action_consensus_vote(ai_dir, round_id, "gc", "agree")
+        hub.action_consensus_vote(ai_dir, round_id, "cc", "agree", "test")
+        hub.action_consensus_vote(ai_dir, round_id, "ca", "abstain", "test")
+        hub.action_consensus_vote(ai_dir, round_id, "gc", "agree", "test")
         
         rpath = ai_dir / "consensus" / f"{round_id}.json"
         data = json.loads(rpath.read_text("utf-8"))
@@ -57,13 +57,13 @@ class TestConsensusAdvanced:
 
     def test_p2_pure_abstain_finalization(self, ai_dir, capsys):
         """전원 기권 시의 결과 검증."""
-        hub.action_consensus_propose(ai_dir, "No opinion", ["cc", "ca", "gc"])
+        hub.action_consensus_propose(ai_dir, "No opinion", ["cc", "ca", "gc"], "cc")
         out = capsys.readouterr().out
         round_id = re.search(r"PROPOSE (r-\w+)", out).group(1)
         
-        hub.action_consensus_vote(ai_dir, round_id, "cc", "abstain")
-        hub.action_consensus_vote(ai_dir, round_id, "ca", "abstain")
-        hub.action_consensus_vote(ai_dir, round_id, "gc", "abstain")
+        hub.action_consensus_vote(ai_dir, round_id, "cc", "abstain", "test")
+        hub.action_consensus_vote(ai_dir, round_id, "ca", "abstain", "test")
+        hub.action_consensus_vote(ai_dir, round_id, "gc", "abstain", "test")
         
         rpath = ai_dir / "consensus" / f"{round_id}.json"
         data = json.loads(rpath.read_text("utf-8"))
@@ -72,13 +72,13 @@ class TestConsensusAdvanced:
 
     def test_p3_disagree_escalation(self, ai_dir, capsys):
         """단 1명이라도 반대 시 즉시 ESCALATED 전환 검증."""
-        hub.action_consensus_propose(ai_dir, "Risky change", ["cc", "ca", "gc"])
+        hub.action_consensus_propose(ai_dir, "Risky change", ["cc", "ca", "gc"], "cc")
         out = capsys.readouterr().out
         round_id = re.search(r"PROPOSE (r-\w+)", out).group(1)
         
-        hub.action_consensus_vote(ai_dir, round_id, "cc", "agree")
+        hub.action_consensus_vote(ai_dir, round_id, "cc", "agree", "test")
         hub.action_consensus_vote(ai_dir, round_id, "ca", "disagree", "Too risky")
-        hub.action_consensus_vote(ai_dir, round_id, "gc", "agree")
+        hub.action_consensus_vote(ai_dir, round_id, "gc", "agree", "test")
         
         rpath = ai_dir / "consensus" / f"{round_id}.json"
         data = json.loads(rpath.read_text("utf-8"))
@@ -87,21 +87,21 @@ class TestConsensusAdvanced:
 
     def test_consensus_history_auto_recording(self, ai_dir, capsys):
         """합의 종결 시 handoff.md에 자동 기록되는지 검증."""
-        # 세션 초기화 필수 (pair 생성을 위해)
+        # 세션 초기화 필수
         hub.action_init_session(ai_dir, "claude")
         hub.action_init_session(ai_dir, "gemini")
         state = json.loads((ai_dir / "state.json").read_text("utf-8"))
-        pair = state["pair"]
+        room_id = state["room_id"]
         
-        hub.action_consensus_propose(ai_dir, "History test", ["cc", "ca", "gc"])
+        hub.action_consensus_propose(ai_dir, "History test", ["cc", "ca", "gc"], "cc")
         out = capsys.readouterr().out
         round_id = re.search(r"PROPOSE (r-\w+)", out).group(1)
         
-        hub.action_consensus_vote(ai_dir, round_id, "cc", "agree")
-        hub.action_consensus_vote(ai_dir, round_id, "ca", "agree")
-        hub.action_consensus_vote(ai_dir, round_id, "gc", "agree")
+        hub.action_consensus_vote(ai_dir, round_id, "cc", "agree", "test")
+        hub.action_consensus_vote(ai_dir, round_id, "ca", "agree", "test")
+        hub.action_consensus_vote(ai_dir, round_id, "gc", "agree", "test")
         
-        handoff_path = ai_dir / "sessions" / pair / "handoff.md"
+        handoff_path = ai_dir / "sessions" / room_id / "handoff.md"
         content = handoff_path.read_text("utf-8")
         assert "CONSENSUS_HISTORY" in content
         assert f"{round_id}: History test — FINALIZED" in content

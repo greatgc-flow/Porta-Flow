@@ -1,6 +1,6 @@
 @echo off
-:: gem.bat — Gemini 세션 진입점
-:: init-session → SID 캡처, status → 현재 상태 pretty-print, gemini --resume 실행
+:: gem.bat - Gemini session entry point
+:: init-session -> capture SID, status -> pretty-print status, gemini --resume
 for %%I in ("%~dp0..\..") do set "PORTABLE_ROOT=%%~fI"
 set "PYTHONUTF8=1"
 set "PATH=%PORTABLE_ROOT%\_sys\env\nodejs\npm-global;%PORTABLE_ROOT%\_sys\env\venv\Scripts;%PATH%"

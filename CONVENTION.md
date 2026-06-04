@@ -53,12 +53,24 @@ set "LOG_FILE=%LOG_DIR%\start_%_DT:~0,8%_%_DT:~8,6%.log"
 `wmic os get LocalDateTime` 사용 금지 — Win11 24H2+에서 wmic 미탑재 가능.
 DelayedExpansion이 필요한 경우 `setlocal EnableDelayedExpansion`을 선언한다.
 
-### 1-5. 에러 처리
+### 1-6. 경로 및 특수문자 처리 (Parenthesis Bug 방지)
+- **괄호 포함 경로**: 경로에 `(`, `)`가 포함될 경우, `if (...)` 또는 `for (...)` 블록 내에서 `%VAR%` 확장이 블록을 조기에 닫아버리는 버그가 있다.
+- **해결책**:
+  1. **블록 피하기**: `if condition command` (단일 행) 형식을 사용한다.
+  2. **지연된 확장 사용**: `setlocal EnableDelayedExpansion` 선언 후 `!VAR!` 형식을 사용한다.
+  3. **조건부 할당**: `if defined VAR (set "VAL=%VAR%") else (for ...)` 패턴 대신 `if not defined VAR for ...` (단일 행) 패턴을 사용하여 파서 혼동을 방지한다.
+- **예시**:
 ```bat
-if errorlevel 1 (
-    call :LOG "[Error] {description}. Check: %LOG_FILE%"
-    pause & exit /b 1
+# 나쁜 예 (경로에 ) 포함 시 에러)
+if defined BASE_DIR (
+    set "_BASE=%BASE_DIR%"
+) else (
+    for %%I in ("%~dp0..\..") do set "_BASE=%%~fI"
 )
+
+# 좋은 예 (안전함)
+if not defined BASE_DIR for %%I in ("%~dp0..\..") do set "BASE_DIR=%%~fI"
+set "_BASE=%BASE_DIR%"
 ```
 
 ## 2. 통합 관리 및 설치 규칙

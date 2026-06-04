@@ -5,6 +5,37 @@
 
 ---
 
+## 2026-06-04 — Batch Parenthesis Parsing Bug Remediation
+
+**목표**: 경로명에 `(`, `)`, `-` 등이 포함될 때 발생하는 배치파일 구문 오류(Unexpected -) 해결 및 전수 수정.
+
+### Lesson Learned (Lesson-Run)
+- **Root Cause**: CMD 파서가 `if (...)` 또는 `for (...)` 블록 내에서 따옴표로 묶인 경로일지라도 `)`를 만나면 블록의 끝으로 오인하는 고질적 버그가 있음. 특히 `D:\Path (2) - Copy`와 같이 괄호 뒤에 공백과 대시가 올 경우 `- was unexpected` 에러로 나타남.
+- **Rule of Thumb**: 경로 확장이 포함된 로직은 가급적 `(...)` 블록 내부에서 수행하지 않거나, 단일 행 명령(`if cond cmd`)을 사용해야 함. 복잡한 로직이 필요한 경우 `setlocal EnableDelayedExpansion`을 사용하고 `!VAR!`로 확장하여 파싱 단계의 간섭을 피해야 함.
+
+### 변경 요약
+- **manage.bat**: `if not exist "%PY%"` 블록을 단일 행으로 변경하여 `register.bat` 실행 시 에러 해결.
+- **start.bat**: `gemini-status.bat` 호출 및 Git 경로 설정 블록을 단일 행으로 리팩토링.
+- **check-*.bat / hooks/*.bat**: `if ... (...) else (for ...)` 패턴을 `if not defined ... for ...` 단일 행 패턴으로 전수 수정 (10개 파일).
+- **CONVENTION.md**: §1-6 "경로 및 특수문자 처리" 규칙 신규 추가.
+
+---
+
+## 2026-06-04 — Batch Path & Encoding Issues Remediation
+
+**목표**: 한글 경로 및 인코딩으로 인한 배치파일 오작동 해결 및 재발 방지.
+
+### Lesson Learned (Lesson-Run)
+- **Root Cause**: `local.config.bat` 생성 시 한글 포함 물리 경로(`BASE_DIR_PHYS`)를 UTF-8로 저장 -> `cmd.exe`가 이를 ANSI로 오인하여 경로 깨짐 발생 -> `subst` 및 환경변수 로딩 실패.
+- **Rule of Thumb**: 배치파일용 설정 파일은 **동적 경로 추출(%~dp0)**을 우선하고, 절대 경로 저장이 불가피할 경우 비-ASCII 문자 포함을 철저히 배제해야 함.
+
+### 변경 요약
+- **manage.py**: `local.config.bat` 생성 시 `BASE_DIR_PHYS`, `MENU_REG_KEY` 등 비-ASCII 가능성이 높은 중복 변수 제거.
+- **Batch Cleanup**: `claude.bat`, `gemini.bat`, `run-tests.bat` 등 시스템 배치파일 내 모든 한글 주석 및 특수 기호(─, —)를 영어/ASCII로 교체 (CONVENTION.md §1-1 준수).
+- **Resilience**: `start.bat`이 실행 시점에 `%~dp0`를 통해 경로를 재계산하도록 하여 USB 드라이브 문자나 폴더명 변경에 강인하게 수정.
+
+---
+
 ## 2026-06-03 — .md 문서 MECE + 제로토큰 통폐합 (Gemini 3-round 협의)
 
 **목표**: 각 개념이 정확히 한 파일에만 정의되도록 하고, 세션 자동 로딩 토큰을 최소화.

@@ -15,11 +15,8 @@ setlocal
 :: ================================================================
 
 :: --- Resolve BASE_DIR ---
-if defined BASE_DIR (
-    set "_BASE=%BASE_DIR%"
-) else (
-    for %%I in ("%~dp0..\..") do set "_BASE=%%~fI"
-)
+if not defined BASE_DIR for %%I in ("%~dp0..\..") do set "BASE_DIR=%%~fI"
+set "_BASE=%BASE_DIR%"
 
 set "SYS_DIR=%_BASE%\_sys"
 set "HOOKS_DIR=%SYS_DIR%\hooks"

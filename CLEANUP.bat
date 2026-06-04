@@ -10,7 +10,7 @@ if not exist "%PY%" (
 )
 
 echo =====================================================
-echo  Portable Dev — Cleanup Utility (Python Refactored)
+echo  Portable Dev - Cleanup Utility (Python Refactored)
 echo =====================================================
 echo  1. Light (Safe) - Temp files, caches, old logs
 echo  2. Hard        - Tier 1 + Setup archives + venv

@@ -6,7 +6,8 @@
 :: ================================================================
 if "%~1"=="" exit /b 0
 
-if defined GEMINI_DIR (set "_GD=%GEMINI_DIR%") else (for %%I in ("%~dp0.") do set "_GD=%%~fI")
+if not defined GEMINI_DIR for %%I in ("%~dp0.") do set "GEMINI_DIR=%%~fI"
+set "_GD=%GEMINI_DIR%"
 set "_CFG=%_GD%\config.json"
 
 if not exist "%_CFG%" exit /b 1

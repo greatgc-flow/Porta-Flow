@@ -221,15 +221,34 @@ def emit_metrics(
     task-notification one-liner. Must be in the same JSON line as the metrics
     because CC stops scanning stdout after the first {-prefixed line.
 
-    `additional_context` (asyncRewake findings): model-visible guidance text
-    that CC surfaces via the modern hook-output protocol
-    (hookSpecificOutput.additionalContext) instead of the legacy stderr +
-    exit(2) pair. The caller passes the finding-explanation text it would
-    have written to stderr; the JSON channel carries it cleanly so CC's UI
-    shows the reason properly instead of "Permission denied with no reason".
-    See anthropics/claude-plugins-official#1375 and #1783. Empty/None
-    means no hookSpecificOutput field is emitted (preserves backward compat
-    for legacy emit-sites that only want metrics).
+    `additional_context` (asyncRewake findings): model-visible guidance text.
+    Delivery channel depends on `hook_event_name` because CC's hook-output
+    contract is NOT symmetric across events:
+
+      - PostToolUse (commit-review, push-sweep): surfaced via the modern
+        hookSpecificOutput.additionalContext protocol. `PostToolUse` is a
+        member of CC's hookSpecificOutput discriminated union
+        (coreSchemas.ts), so the JSON validates and metrics/rewakeSummary
+        are consumed. See #1375 / #1783 for why this replaced the legacy
+        stderr + exit(2) shape for PostToolUse.
+
+      - Stop / SubagentStop: there is NO `Stop` member in that union, so
+        emitting hookSpecificOutput{hookEventName:"Stop"} makes the whole
+        line fail isSyncHookJSONOutput validation — which on the asyncRewake
+        path silently drops metrics AND rewakeSummary, and (because the
+        legacy stderr write was removed) leaks the raw JSON to the model as
+        the rewake body. CC's asyncRewake delivery actually reads
+        `stderr || stdout` for the model-visible body and only scans stdout
+        JSON for metrics+rewakeSummary — it never reads additionalContext
+        on this path. So for Stop we use the documented clean pattern:
+        guidance on stderr, valid JSON (metrics + rewakeSummary +
+        top-level decision/reason) on stdout. The top-level decision:"block"
+        + reason also covers the sync-fallback path (single-shot `claude -p`,
+        where asyncRewake degrades to a sync Stop hook that reads
+        decision/reason). See #2159.
+
+    Empty/None additional_context emits neither channel (back-compat for
+    metrics-only callers).
 
     `system_message` (optional, asyncRewake only): user-visible TUI message,
     distinct from rewakeSummary which is the task-notification one-liner.
@@ -237,10 +256,9 @@ def emit_metrics(
     surface; systemMessage adds a per-fire override when the static
     rewakeMessage isn't specific enough for the finding being shown.
 
-    `hook_event_name` (used only when additional_context is set): which event
-    the hookSpecificOutput attaches to. Defaults to "PostToolUse" since the
-    commit-review and push-sweep handlers are the most common callers;
-    handle_stop_hook explicitly passes "Stop".
+    `hook_event_name` (used only when additional_context is set): selects the
+    delivery channel above. Defaults to "PostToolUse" (commit-review and
+    push-sweep are the most common callers); handle_stop_hook passes "Stop".
     """
     head = {}
     if _PV and "pv" not in metrics:
@@ -252,14 +270,23 @@ def emit_metrics(
     if rewake_summary:
         out["rewakeSummary"] = rewake_summary
     if additional_context:
-        # Wrap in hookSpecificOutput per CC's modern hook-output contract.
-        # Drops the legacy `sys.stderr.write(...) + sys.exit(2)` shape that
-        # left CC's UI showing "denied with no reason" (#1783) and triggered
-        # "json output validation failed" on older CC versions (#1375).
-        out["hookSpecificOutput"] = {
-            "hookEventName": hook_event_name,
-            "additionalContext": additional_context,
-        }
+        if hook_event_name in ("Stop", "SubagentStop"):
+            # Stop is NOT in CC's hookSpecificOutput union — emitting it there
+            # fails schema validation and drops metrics+rewakeSummary (#2159).
+            # Clean pattern: guidance on stderr (the asyncRewake body channel,
+            # delivered via `stderr || stdout`), top-level decision/reason for
+            # the sync-fallback path. stdout JSON stays valid so metrics +
+            # rewakeSummary survive.
+            sys.stderr.write(additional_context)
+            sys.stderr.flush()
+            out["decision"] = "block"
+            out["reason"] = additional_context
+        else:
+            # PostToolUse et al. — valid union member; modern protocol.
+            out["hookSpecificOutput"] = {
+                "hookEventName": hook_event_name,
+                "additionalContext": additional_context,
+            }
     if system_message:
         out["systemMessage"] = system_message
     print(json.dumps(out), flush=True)

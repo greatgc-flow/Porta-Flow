@@ -12,22 +12,22 @@ class TestInitSession:
     def test_claude_creates_sid(self, ai_dir, capsys):
         hub.action_init_session(ai_dir, "claude")
         state = json.loads((ai_dir / "state.json").read_text("utf-8"))
-        assert state["claude_sid"] is not None
-        assert state["claude_sid"].startswith("c")
+        assert state["members"]["claude"] is not None
+        assert state["members"]["claude"].startswith("c")
 
     def test_gemini_creates_sid(self, ai_dir, capsys):
         hub.action_init_session(ai_dir, "gemini")
         state = json.loads((ai_dir / "state.json").read_text("utf-8"))
-        assert state["gemini_sid"] is not None
-        assert state["gemini_sid"].startswith("g")
+        assert state["members"]["gemini"] is not None
+        assert state["members"]["gemini"].startswith("g")
 
-    def test_pair_format(self, ai_dir, capsys):
+    def test_room_id_format(self, ai_dir, capsys):
         hub.action_init_session(ai_dir, "claude")
         hub.action_init_session(ai_dir, "gemini")
         state = json.loads((ai_dir / "state.json").read_text("utf-8"))
-        pair = state["pair"]
-        assert pair.startswith("c")
-        assert "-g" in pair
+        room_id = state["room_id"]
+        assert room_id is not None
+        assert "cc" in state["members"] or "claude" in state["members"]
 
     def test_output_is_sid_only(self, ai_dir, capsys):
         hub.action_init_session(ai_dir, "claude")
@@ -39,7 +39,7 @@ class TestInitSession:
     def test_session_dir_created(self, ai_dir):
         hub.action_init_session(ai_dir, "claude")
         state = json.loads((ai_dir / "state.json").read_text("utf-8"))
-        assert (ai_dir / "sessions" / state["pair"]).exists()
+        assert (ai_dir / "sessions" / state["room_id"]).exists()
 
 
 # ─── send + check ────────────────────────────────────────────
@@ -99,7 +99,7 @@ class TestStatus:
         hub.action_update_status(ai_dir, "test mission", None, "2")
         hub.action_status(ai_dir)
         out = capsys.readouterr().out
-        assert "SESSION STATUS" in out
+        assert "ROOM STATUS" in out
         assert "test mission" in out
         assert "Phase" in out
 
@@ -113,7 +113,7 @@ class TestStatus:
         hub.action_init_session(ai_dir, "claude")
         capsys.readouterr()
         state = json.loads((ai_dir / "state.json").read_text("utf-8"))
-        sd = ai_dir / "sessions" / state["pair"]
+        sd = ai_dir / "sessions" / state["room_id"]
         sd.mkdir(parents=True, exist_ok=True)
         (sd / "handoff.md").write_text("## [GOAL]\n- 테스트 목표\n", encoding="utf-8")
         hub.action_status(ai_dir)
@@ -136,7 +136,7 @@ class TestEndSession:
         hub.action_init_session(ai_dir, "claude")
         state = json.loads((ai_dir / "state.json").read_text("utf-8"))
         hub.action_end_session(ai_dir, "claude")
-        handoff = (ai_dir / "sessions" / state["pair"] / "handoff.md").read_text("utf-8")
+        handoff = (ai_dir / "sessions" / state["room_id"] / "handoff.md").read_text("utf-8")
         assert "claude: 세션 종료" in handoff
 
 
@@ -149,7 +149,7 @@ class TestAsk:
         mock_result.returncode = 0
         with patch("shutil.which", return_value="/usr/bin/gemini"), \
              patch("subprocess.run", return_value=mock_result) as mock_run:
-            hub.action_ask("gemini", "test query")
+            hub.action_ask("gemini", "test query", None, 120, None)
             call_args = mock_run.call_args[0][0]
             assert "gemini" in call_args[0]
             assert "-p" in call_args
@@ -162,7 +162,7 @@ class TestAsk:
         mock_result.returncode = 0
         with patch("shutil.which", return_value="/usr/bin/claude"), \
              patch("subprocess.run", return_value=mock_result) as mock_run:
-            hub.action_ask("claude", "test query")
+            hub.action_ask("claude", "test query", None, 120, None)
             call_args = mock_run.call_args[0][0]
             assert "claude" in call_args[0]
             assert "-p" in call_args
@@ -174,7 +174,7 @@ class TestAsk:
         mock_result.returncode = 0
         with patch("shutil.which", return_value="/usr/bin/gemini"), \
              patch("subprocess.run", return_value=mock_result):
-            hub.action_ask("gemini", "test")
+            hub.action_ask("gemini", "test", None, 120, None)
         out = capsys.readouterr().out
         assert "\x1b" not in out
         assert "colored response" in out
@@ -183,12 +183,12 @@ class TestAsk:
         with patch("shutil.which", return_value="/usr/bin/gemini"), \
              patch("subprocess.run", side_effect=subprocess.TimeoutExpired("gemini", 120)):
             with pytest.raises(SystemExit):
-                hub.action_ask("gemini", "test")
+                hub.action_ask("gemini", "test", None, 120, None)
 
     def test_ask_not_found_exits(self):
         with patch("shutil.which", return_value=None):
             with pytest.raises(SystemExit):
-                hub.action_ask("gemini", "test")
+                hub.action_ask("gemini", "test", None, 120, None)
 
     def test_ask_query_file(self, tmp_path, capsys):
         qf = tmp_path / "query.txt"
@@ -199,7 +199,7 @@ class TestAsk:
         mock_result.returncode = 0
         with patch("shutil.which", return_value="/usr/bin/gemini"), \
              patch("subprocess.run", return_value=mock_result) as mock_run:
-            hub.action_ask("gemini", "", str(qf))
+            hub.action_ask("gemini", "", str(qf), 120, None)
             # 파일 내용이 쿼리로 전달됐는지 확인
             call_args = mock_run.call_args[0][0]
             assert "file query content" in call_args
@@ -213,7 +213,7 @@ class TestAsk:
         mock_result.returncode = 1
         with patch("shutil.which", return_value="/usr/bin/gemini"), \
              patch("subprocess.run", return_value=mock_result):
-            hub.action_ask("gemini", "test")
+            hub.action_ask("gemini", "test", None, 120, None)
         out, err = capsys.readouterr()
         assert "[HUB:WARN] gemini exited 1" in err  # 3TCP v1 [HUB:WARN] 형식
         assert "partial response" in out
@@ -312,7 +312,7 @@ class TestMessageEnvelope:
 # ─── §P-3 만장일치 협의 프로토콜 ─────────────────────────────
 class TestConsensusProtocol:
     def test_propose_creates_round(self, ai_dir, capsys):
-        hub.action_consensus_propose(ai_dir, "Test subject", ["cc", "ca", "gc"])
+        hub.action_consensus_propose(ai_dir, "Test subject", ["cc", "ca", "gc"], "cc")
         rounds = list((ai_dir / "consensus").glob("*.json"))
         assert len(rounds) == 1
         r = json.loads(rounds[0].read_text("utf-8"))
@@ -322,13 +322,13 @@ class TestConsensusProtocol:
         assert all(v is None for v in r["votes"].values())
 
     def test_vote_unanimous_finalized(self, ai_dir, capsys):
-        hub.action_consensus_propose(ai_dir, "Approve X", ["cc", "ca", "gc"])
+        hub.action_consensus_propose(ai_dir, "Approve X", ["cc", "ca", "gc"], "cc")
         rounds = list((ai_dir / "consensus").glob("*.json"))
         rid = json.loads(rounds[0].read_text("utf-8"))["round_id"]
 
-        hub.action_consensus_vote(ai_dir, rid, "cc", "agree")
-        hub.action_consensus_vote(ai_dir, rid, "ca", "agree")
-        hub.action_consensus_vote(ai_dir, rid, "gc", "agree")
+        hub.action_consensus_vote(ai_dir, rid, "cc", "agree", "")
+        hub.action_consensus_vote(ai_dir, rid, "ca", "agree", "")
+        hub.action_consensus_vote(ai_dir, rid, "gc", "agree", "")
 
         r = json.loads((ai_dir / "consensus" / f"{rid}.json").read_text("utf-8"))
         assert r["status"] == "finalized"
@@ -339,38 +339,38 @@ class TestConsensusProtocol:
         assert "unanimous" in out
 
     def test_vote_disagree_escalated(self, ai_dir, capsys):
-        hub.action_consensus_propose(ai_dir, "Risky change", ["cc", "ca", "gc"])
+        hub.action_consensus_propose(ai_dir, "Risky change", ["cc", "ca", "gc"], "cc")
         rounds = list((ai_dir / "consensus").glob("*.json"))
         rid = json.loads(rounds[0].read_text("utf-8"))["round_id"]
 
-        hub.action_consensus_vote(ai_dir, rid, "cc", "agree")
+        hub.action_consensus_vote(ai_dir, rid, "cc", "agree", "")
         hub.action_consensus_vote(ai_dir, rid, "ca", "disagree", "too risky")
-        hub.action_consensus_vote(ai_dir, rid, "gc", "agree")
+        hub.action_consensus_vote(ai_dir, rid, "gc", "agree", "")
 
         r = json.loads((ai_dir / "consensus" / f"{rid}.json").read_text("utf-8"))
         assert r["status"] == "escalated"
         assert r["outcome"] == "human_gate"
 
     def test_vote_partial_still_voting(self, ai_dir, capsys):
-        hub.action_consensus_propose(ai_dir, "Partial vote", ["cc", "ca", "gc"])
+        hub.action_consensus_propose(ai_dir, "Partial vote", ["cc", "ca", "gc"], "cc")
         rounds = list((ai_dir / "consensus").glob("*.json"))
         rid = json.loads(rounds[0].read_text("utf-8"))["round_id"]
 
-        hub.action_consensus_vote(ai_dir, rid, "cc", "agree")
+        hub.action_consensus_vote(ai_dir, rid, "cc", "agree", "")
         # Only 1/3 voted — should still be voting
         r = json.loads((ai_dir / "consensus" / f"{rid}.json").read_text("utf-8"))
         assert r["status"] == "voting"
 
     def test_consensus_check_all_rounds(self, ai_dir, capsys):
-        hub.action_consensus_propose(ai_dir, "Round 1", ["cc", "ca"])
-        hub.action_consensus_propose(ai_dir, "Round 2", ["cc", "gc"])
-        hub.action_consensus_check(ai_dir)
+        hub.action_consensus_propose(ai_dir, "Round 1", ["cc", "ca"], "cc")
+        hub.action_consensus_propose(ai_dir, "Round 2", ["cc", "gc"], "cc")
+        hub.action_consensus_check(ai_dir, None)
         out = capsys.readouterr().out
         assert "Round 1" in out
         assert "Round 2" in out
 
     def test_consensus_check_specific_round(self, ai_dir, capsys):
-        hub.action_consensus_propose(ai_dir, "Specific", ["cc", "ca", "gc"])
+        hub.action_consensus_propose(ai_dir, "Specific", ["cc", "ca", "gc"], "cc")
         rounds = list((ai_dir / "consensus").glob("*.json"))
         rid = json.loads(rounds[0].read_text("utf-8"))["round_id"]
         hub.action_consensus_check(ai_dir, rid)
@@ -378,20 +378,19 @@ class TestConsensusProtocol:
         assert "Specific" in out
 
     def test_invalid_voter_rejected(self, ai_dir, capsys):
-        hub.action_consensus_propose(ai_dir, "Closed vote", ["cc", "ca"])
+        hub.action_consensus_propose(ai_dir, "Closed vote", ["cc", "ca"], "cc")
         rounds = list((ai_dir / "consensus").glob("*.json"))
         rid = json.loads(rounds[0].read_text("utf-8"))["round_id"]
-        import sys as _sys
         with pytest.raises(SystemExit):
-            hub.action_consensus_vote(ai_dir, rid, "unknown_node", "agree")
+            hub.action_consensus_vote(ai_dir, rid, "unknown_node", "agree", "")
 
     def test_vote_on_closed_round_rejected(self, ai_dir):
-        hub.action_consensus_propose(ai_dir, "Quick", ["cc"])
+        hub.action_consensus_propose(ai_dir, "Quick", ["cc"], "cc")
         rounds = list((ai_dir / "consensus").glob("*.json"))
         rid = json.loads(rounds[0].read_text("utf-8"))["round_id"]
-        hub.action_consensus_vote(ai_dir, rid, "cc", "agree")  # finalized
+        hub.action_consensus_vote(ai_dir, rid, "cc", "agree", "")  # finalized
         with pytest.raises(SystemExit):
-            hub.action_consensus_vote(ai_dir, rid, "cc", "agree")  # already closed
+            hub.action_consensus_vote(ai_dir, rid, "cc", "agree", "")  # already closed
 
 
 # ─── §P-7 N-Node 등록 ─────────────────────────────────────────

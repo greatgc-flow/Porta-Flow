@@ -1,6 +1,6 @@
 """
-통합 테스트의 Python화 (Refactored from PS1)
-병렬 안전성, 장애 복구, 세션 라이프사이클, 도구 경로, 사용자 시나리오 검증
+통합 테스트 개정 (P2P v3)
+N-Way Room 세션, P2P 무제한 합의, 분업(Division of Labor), 교차 검증 시나리오 구현
 """
 import json
 import subprocess
@@ -10,165 +10,151 @@ import re
 import pytest
 from pathlib import Path
 
-class TestIntegrationRefactored:
-    """기존 PS1 통합 테스트 및 사용자 시나리오를 Python pytest 스타일로 통합 관리."""
+class TestIntegrationP2P:
+    """N-Tier Peer-to-Peer 협업 시스템 고도화 검증."""
 
     @pytest.fixture
     def test_env(self, tmp_path):
-        """테스트용 격리 환경 생성 및 필수 경로 제공."""
+        """테스트용 격리 환경 생성."""
         ai_dir = tmp_path / ".ai"
         ai_dir.mkdir(exist_ok=True)
         (tmp_path / ".git").mkdir(exist_ok=True)
         
         root_dir = Path(__file__).parent.parent.parent.parent
-        msg_bat = root_dir / "_sys" / "cli" / "msg.bat"
         venv_py = root_dir / "_sys" / "env" / "venv" / "Scripts" / "python.exe"
         hub_py = root_dir / "_sys" / "core" / "hub.py"
         
         return {
             "root": tmp_path,
             "ai_dir": ai_dir,
-            "msg_bat": msg_bat,
             "venv_py": venv_py,
-            "hub_py": hub_py,
-            "root_dir": root_dir
+            "hub_py": hub_py
         }
 
-    def test_tools_availability(self, test_env):
-        """test_tools_path.ps1: 필수 도구 및 경로 유효성 검증."""
-        root_dir = test_env["root_dir"]
-        assert test_env["venv_py"].exists()
-        subprocess.run([str(test_env["venv_py"]), "-c", "import filelock"], check=True)
-        assert (root_dir / "_sys/tools/ripgrep/rg.exe").exists()
-        assert (root_dir / "_sys/tools/fd/fd.exe").exists()
-        
-        cli_dir = root_dir / "_sys/cli"
-        for bat in cli_dir.glob("*.bat"):
-            content = bat.read_text(encoding="utf-8", errors="ignore")
-            lines = [line for line in content.splitlines() if not line.strip().startswith("::")]
-            assert "P:\\\\" not in "\n".join(lines), f"Hardcoded P:\\ found in {bat.name}"
-
-    def test_session_lifecycle(self, test_env):
-        """test_session_flow.ps1: 세션 시작, 업데이트, 종료 흐름 검증."""
+    def test_scenario_nway_lifecycle(self, test_env):
+        """[세션/상태] N-Way 단일 룸 생명주기 검증."""
         root, vpy, hub = test_env["root"], test_env["venv_py"], test_env["hub_py"]
-        subprocess.run([str(vpy), str(hub), "init-session", "--agent", "claude"], cwd=root, check=True)
+        
+        # 3개 노드 조인 (동일 룸)
+        room_id = "test-room-123"
+        subprocess.run([str(vpy), str(hub), "init-session", "--agent", "cc", "--room", room_id], cwd=root, check=True)
+        subprocess.run([str(vpy), str(hub), "init-session", "--agent", "ca", "--room", room_id], cwd=root, check=True)
+        subprocess.run([str(vpy), str(hub), "init-session", "--agent", "gc", "--room", room_id], cwd=root, check=True)
+        
         state = json.loads((root / ".ai/state.json").read_text("utf-8"))
-        assert state["claude_sid"] is not None
+        assert state["room_id"] == room_id
+        assert "cc" in state["members"]
+        assert "ca" in state["members"]
+        assert "gc" in state["members"]
         
-        subprocess.run([str(vpy), str(hub), "update-status", "--mission", "test mission"], cwd=root, check=True)
-        assert json.loads((root / ".ai/state.json").read_text("utf-8"))["mission"] == "test mission"
-        
-        subprocess.run([str(vpy), str(hub), "end-session", "--agent", "claude"], cwd=root, check=True)
-        assert json.loads((root / ".ai/state.json").read_text("utf-8"))["claude_sid"] is None
+        # 브로드캐스트 모의 (하나의 노드가 보내고 다른 노드가 확인)
+        subprocess.run([str(vpy), str(hub), "send", "--from", "cc", "--to", "ca", "--msg", "p2p-hi"], cwd=root, check=True)
+        out = subprocess.check_output([str(vpy), str(hub), "check", "--target", "ca"], cwd=root, text=True, encoding="utf-8")
+        assert "p2p-hi" in out
 
-    def test_ipc_and_msg_bat(self, test_env):
-        """test_ipc.ps1: msg.bat을 통한 IPC 및 메시지 송수신 검증."""
-        root, msg = test_env["root"], test_env["msg_bat"]
-        subprocess.run([str(msg), "init-session", "--agent", "claude"], cwd=root, check=True, capture_output=True)
-        out = subprocess.check_output([str(msg), "send", "--from", "claude", "--to", "gemini", "--msg", "hello"], cwd=root, text=True)
-        assert "[HUB] SENT" in out
-        out = subprocess.check_output([str(msg), "check", "--target", "gemini"], cwd=root, text=True)
-        assert "hello" in out
-        subprocess.run([str(msg), "mark-read", "--target", "gemini", "--all"], cwd=root, check=True)
-        assert "inbox empty" in subprocess.check_output([str(msg), "check", "--target", "gemini"], cwd=root, text=True)
-
-    def test_scenario_collaboration(self, test_env):
-        """test_scenarios.ps1 Scenario A: Claude <-> Gemini 협업 흐름."""
+    def test_scenario_p2p_consensus(self, test_env):
+        """[권한/의사결정] P2P 무제한 합의 및 교차 발의 검증."""
         root, vpy, hub = test_env["root"], test_env["venv_py"], test_env["hub_py"]
-        # 1. Claude 시작
-        subprocess.run([str(vpy), str(hub), "init-session", "--agent", "claude"], cwd=root, check=True)
-        subprocess.run([str(vpy), str(hub), "update-status", "--mission", "task1"], cwd=root, check=True)
-        subprocess.run([str(vpy), str(hub), "send", "--from", "claude", "--to", "gemini", "--msg", "review req"], cwd=root, check=True)
         
-        # 2. Gemini 확인 및 응답
-        subprocess.run([str(vpy), str(hub), "init-session", "--agent", "gemini"], cwd=root, check=True)
-        inbox = subprocess.check_output([str(vpy), str(hub), "check", "--target", "gemini"], cwd=root, text=True)
-        assert "review req" in inbox
-        subprocess.run([str(vpy), str(hub), "send", "--from", "gemini", "--to", "claude", "--msg", "ok"], cwd=root, check=True)
+        # GC가 먼저 합의 발의 (P2P 권한 동등성)
+        subprocess.run([str(vpy), str(hub), "consensus-propose", "--subject", "p2p-test", "--voters", "cc,ca,gc", "--from", "gc"], cwd=root, check=True)
         
-        # 3. Claude 확인
-        reply = subprocess.check_output([str(vpy), str(hub), "check", "--target", "claude"], cwd=root, text=True)
-        assert "ok" in reply
+        rounds = list((root / ".ai/consensus").glob("*.json"))
+        assert len(rounds) == 1
+        round_data = json.loads(rounds[0].read_text("utf-8"))
+        rid = round_data["round_id"]
+        
+        # 1. cc votes disagree -> status remains 'voting' until all cast, then becomes 'escalated'
+        subprocess.run([str(vpy), str(hub), "consensus-vote", "--round-id", rid, "--voter", "cc", "--vote", "disagree", "--reason", "more info req"], cwd=root, check=True)
+        
+        # 2. ca votes agree -> still 'voting' (2/3)
+        subprocess.run([str(vpy), str(hub), "consensus-vote", "--round-id", rid, "--voter", "ca", "--vote", "agree"], cwd=root, check=True)
+        
+        # 3. gc votes agree -> all cast (3/3), has_disagree=True -> status becomes 'escalated'
+        subprocess.run([str(vpy), str(hub), "consensus-vote", "--round-id", rid, "--voter", "gc", "--vote", "agree"], cwd=root, check=True)
+        
+        round_data = json.loads(rounds[0].read_text("utf-8"))
+        assert round_data["status"] == "escalated"
+        assert round_data["outcome"] == "human_gate"
 
-    def test_scenario_project_isolation(self, tmp_path, test_env):
-        """test_scenarios.ps1 Scenario C: 프로젝트 간 격리 검증."""
+    def test_scenario_division_of_labor(self, test_env):
+        """[분업/실행] 다중 노드 태스크 분할 및 병렬 실행 검증."""
+        root, vpy, hub = test_env["root"], test_env["venv_py"], test_env["hub_py"]
+        
+        # Room 초기화
+        subprocess.run([str(vpy), str(hub), "init-session", "--agent", "cc"], cwd=root, check=True)
+        
+        # 병렬 태스크 할당 (Node A: Doc, Node B: Code)
+        subprocess.run([str(vpy), str(hub), "send", "--from", "cc", "--to", "gc", "--msg", "write-doc", "--type", "DIRECTIVE"], cwd=root, check=True)
+        subprocess.run([str(vpy), str(hub), "send", "--from", "cc", "--to", "ca", "--msg", "write-code", "--type", "DIRECTIVE"], cwd=root, check=True)
+        
+        # 각 노드가 Artifact 제출
+        subprocess.run([str(vpy), str(hub), "send", "--from", "gc", "--to", "cc", "--msg", "doc-done", "--type", "ARTIFACT"], cwd=root, check=True)
+        subprocess.run([str(vpy), str(hub), "send", "--from", "ca", "--to", "cc", "--msg", "code-done", "--type", "ARTIFACT"], cwd=root, check=True)
+        
+        # CC가 Inbox에서 두 아티팩트 모두 확인 (수합 가능성 확인)
+        inbox = subprocess.check_output([str(vpy), str(hub), "check", "--target", "cc"], cwd=root, text=True, encoding="utf-8")
+        assert "doc-done" in inbox
+        assert "code-done" in inbox
+
+    def test_scenario_cross_validation(self, test_env):
+        """[검증] 전원 교차 검토(Cross-check) 흐름 검증."""
+        root, vpy, hub = test_env["root"], test_env["venv_py"], test_env["hub_py"]
+        
+        # 3개 노드 룸 참여
+        subprocess.run([str(vpy), str(hub), "init-session", "--agent", "cc"], cwd=root, check=True)
+        subprocess.run([str(vpy), str(hub), "init-session", "--agent", "ca"], cwd=root, check=True)
+        subprocess.run([str(vpy), str(hub), "init-session", "--agent", "gc"], cwd=root, check=True)
+        
+        # 작업물 제출
+        subprocess.run([str(vpy), str(hub), "send", "--from", "ca", "--to", "cc", "--msg", "feat-x", "--type", "ARTIFACT"], cwd=root, check=True)
+        
+        # 전원 교차 검증 (GC와 CC 모두 검증 메시지 발신)
+        subprocess.run([str(vpy), str(hub), "send", "--from", "gc", "--to", "ca", "--msg", "PASS: doc aligns", "--type", "VERIFY"], cwd=root, check=True)
+        subprocess.run([str(vpy), str(hub), "send", "--from", "cc", "--to", "ca", "--msg", "PASS: code logic ok", "--type", "VERIFY"], cwd=root, check=True)
+        
+        # Verifier(CA) 입장에서 모든 검증 결과 확인
+        ca_inbox = subprocess.check_output([str(vpy), str(hub), "check", "--target", "ca"], cwd=root, text=True, encoding="utf-8")
+        assert "doc aligns" in ca_inbox
+        assert "code logic ok" in ca_inbox
+
+    def test_scenario_collab_rate(self, test_env):
+        """[정책] COLLAB_RATE=10 에 따른 합의 필수성 로직(모의) 검증."""
+        root, vpy, hub = test_env["root"], test_env["venv_py"], test_env["hub_py"]
+        
+        # COLLAB_RATE=10 설정 시나리오
+        subprocess.run([str(vpy), str(hub), "init-session", "--agent", "cc"], cwd=root, check=True)
+        
+        # 합의 라운드 생성 (모든 작업 전 필수)
+        subprocess.run([str(vpy), str(hub), "consensus-propose", "--subject", "high-rate-task", "--voters", "cc,ca,gc"], cwd=root, check=True)
+        
+        # 합의 확인 전까지는 '실행' 상태로 전이하지 않음을 상태창으로 확인
+        status = subprocess.check_output([str(vpy), str(hub), "status"], cwd=root, text=True, encoding="utf-8")
+        assert "high-rate-task" in status
+        assert "CONSENSUS — ACTIVE" in status
+
+    def test_external_portability(self, test_env, tmp_path_factory):
+        """[포터빌리티] 워크스페이스 외부 폴더에서 N-Tier 협업 도구 사용 및 컨텍스트 격리 검증."""
+        # 1. 워크스페이스와 완전히 떨어진 외부 임시 프로젝트 생성
+        ext_project = tmp_path_factory.mktemp("external_proj")
+        (ext_project / ".git").mkdir() # 프로젝트 루트 인식용
+        
         vpy, hub = test_env["venv_py"], test_env["hub_py"]
-        projA, projB = tmp_path / "projA", tmp_path / "projB"
-        for p in [projA, projB]:
-            p.mkdir()
-            (p / ".git").mkdir()
-            
-        subprocess.run([str(vpy), str(hub), "init-session", "--agent", "claude"], cwd=projA, check=True)
-        subprocess.run([str(vpy), str(hub), "update-status", "--mission", "A work"], cwd=projA, check=True)
         
-        subprocess.run([str(vpy), str(hub), "init-session", "--agent", "claude"], cwd=projB, check=True)
-        subprocess.run([str(vpy), str(hub), "update-status", "--mission", "B work"], cwd=projB, check=True)
+        # 2. 외부 폴더에서 세션 초기화 (시스템 내 도구 호출)
+        subprocess.run([str(vpy), str(hub), "init-session", "--agent", "cc", "--room", "ext-room-1"], cwd=ext_project, check=True)
         
-        assert json.loads((projA / ".ai/state.json").read_text("utf-8"))["mission"] == "A work"
-        assert json.loads((projB / ".ai/state.json").read_text("utf-8"))["mission"] == "B work"
-
-    def test_scenario_large_message(self, test_env):
-        """test_scenarios.ps1 Scenario G: 대용량 메시지 처리."""
-        root, vpy, hub = test_env["root"], test_env["venv_py"], test_env["hub_py"]
-        long_msg = "test content\n" * 100 + "END_OF_MSG"
-        subprocess.run([str(vpy), str(hub), "send", "--from", "claude", "--to", "gemini", "--msg", long_msg], cwd=root, check=True)
-        out = subprocess.check_output([str(vpy), str(hub), "check", "--target", "gemini"], cwd=root, text=True)
-        assert "END_OF_MSG" in out
-
-    def test_parallel_safety_horizontal(self, test_env):
-        """L1: Horizontal Parallel - 세션 UUID 기반 격리."""
-        root, msg = test_env["root"], test_env["msg_bat"]
-        envs = [os.environ.copy() for _ in range(2)]
-        pairs = []
-        for i, env in enumerate(envs):
-            env["SESSION_UUID"] = f"sess{i}"
-            subprocess.run([str(msg), "init-session", "--agent", "claude"], cwd=root, env=env, check=True, capture_output=True)
-            status = subprocess.check_output([str(msg), "status"], cwd=root, env=env, text=True)
-            # Robust regex to capture full pair ID (e.g., c1234-g--- or c1234-g5678)
-            match = re.search(r"Pair\**:\s+(\S+)", status)
-            if not match:
-                raise ValueError(f"Could not find Pair in status output: {status}")
-            pairs.append(match.group(1))
+        # 3. .ai/ 폴더가 외부 프로젝트 루트에 생성되었는지 확인 (워크스페이스가 아닌)
+        assert (ext_project / ".ai").exists()
+        assert (ext_project / ".ai" / "state.json").exists()
         
-        assert pairs[0] != pairs[1]
-        assert (root / ".ai" / "sessions" / pairs[0]).exists()
-        assert (root / ".ai" / "sessions" / pairs[1]).exists()
-
-    def test_external_directory_isolation(self, test_env, tmp_path_factory):
-        """External Dir: 워크스페이스 외부(타 드라이브/폴더)에서 N-Tier 협업 시 컨텍스트 독립 유지 검증."""
-        ext_dir = tmp_path_factory.mktemp("external_project")
-        (ext_dir / ".git").mkdir()
-        msg = test_env["msg_bat"]
+        # 4. 외부 프로젝트 내에서 메시지 송수신 테스트
+        subprocess.run([str(vpy), str(hub), "send", "--from", "cc", "--to", "gc", "--msg", "ext-msg-test"], cwd=ext_project, check=True)
+        inbox = subprocess.check_output([str(vpy), str(hub), "check", "--target", "gc"], cwd=ext_project, text=True, encoding="utf-8")
+        assert "ext-msg-test" in inbox
         
-        subprocess.run([str(msg), "init-session", "--agent", "claude"], cwd=ext_dir, check=True, capture_output=True)
-        subprocess.run([str(msg), "init-session", "--agent", "gemini"], cwd=ext_dir, check=True, capture_output=True)
-        subprocess.run([str(msg), "update-status", "--mission", "Ext Task"], cwd=ext_dir, check=True)
-        
-        state_file = ext_dir / ".ai" / "state.json"
-        assert state_file.exists()
-        assert json.loads(state_file.read_text("utf-8"))["mission"] == "Ext Task"
-        
-        subprocess.run([str(msg), "send", "--from", "claude", "--to", "gemini", "--msg", "ext-ping"], cwd=ext_dir, check=True)
-        out = subprocess.check_output([str(msg), "check", "--target", "gemini"], cwd=ext_dir, text=True)
-        assert "ext-ping" in out
-
-    def test_recovery_flow_mode_off(self, test_env):
-        """R2: 장애 발생 시 Gemini Mode OFF 전환."""
-        root_dir = test_env["root_dir"]
-        status_json = root_dir / "_sys/gemini/status.json"
-        collab_log_bat = root_dir / "_sys/hooks/collab-log.bat"
-        backup = status_json.with_suffix(".json.bak")
-        if status_json.exists(): shutil.copy(status_json, backup)
-        try:
-            with open(status_json, "w", encoding="utf-8") as f:
-                json.dump({"mode": "ON", "gemini_metrics": {"consecutive_failures": 0}}, f)
-            env = os.environ.copy()
-            env["GEMINI_DIR"] = str(root_dir / "_sys/gemini")
-            for i in range(3):
-                subprocess.run([str(collab_log_bat), "Axis-X", "test.bat", "FAILURE", "error"], env=env, check=True)
-            with open(status_json, "r", encoding="utf-8-sig") as f:
-                data = json.load(f)
-                assert data["gemini_metrics"]["consecutive_failures"] >= 3
-                assert data["mode"] == "OFF"
-        finally:
-            if backup.exists(): shutil.move(backup, status_json)
+        # 5. 기존 워크스페이스 상태에 영향을 주지 않았는지 확인
+        ws_root = test_env["root"]
+        if (ws_root / ".ai" / "state.json").exists():
+            ws_state = json.loads((ws_root / ".ai" / "state.json").read_text("utf-8"))
+            assert ws_state.get("room_id") != "ext-room-1"

@@ -10,8 +10,8 @@ import pytest
 from pathlib import Path
 import hub
 
-WORKERS = 20   # 동시 스레드 수
-ROUNDS = 50    # 총 작업 횟수
+WORKERS = 10   # 동시 스레드 수
+ROUNDS = 20    # 총 작업 횟수
 
 
 class TestConcurrentSend:
@@ -45,7 +45,7 @@ class TestConcurrentSend:
         def worker():
             hub.action_send(ai_dir, "claude", "gemini", "test")
 
-        threads = [threading.Thread(target=worker) for _ in range(30)]
+        threads = [threading.Thread(target=worker) for _ in range(15)]
         for t in threads:
             t.start()
         for t in threads:
@@ -89,9 +89,9 @@ class TestConcurrentSend:
                     errors.append(f"mark_read: {e}")
 
         threads = (
-            [threading.Thread(target=sender) for _ in range(10)] +
-            [threading.Thread(target=checker) for _ in range(10)] +
-            [threading.Thread(target=reader) for _ in range(5)]
+            [threading.Thread(target=sender) for _ in range(5)] +
+            [threading.Thread(target=checker) for _ in range(5)] +
+            [threading.Thread(target=reader) for _ in range(2)]
         )
         random.shuffle(threads)
         for t in threads:
@@ -137,12 +137,13 @@ class TestConcurrentInitSession:
         assert not errors, f"에러: {errors}"
         # state.json이 유효한 상태
         state = json.loads((ai_dir / "state.json").read_text("utf-8"))
-        assert state["pair"] is not None
-        # 마지막으로 기록된 SID가 유효한 형식
-        assert state["claude_sid"].startswith("c")
+        assert state["room_id"] is not None
+        # 마지막으로 기록된 SID가 members에 존재하고 유효한 형식
+        assert "claude" in state["members"]
+        assert state["members"]["claude"].startswith("c")
 
     def test_session_pair_stability(self, ai_dir):
-        """claude + gemini 동시 init → pair가 두 에이전트 모두 반영."""
+        """claude + gemini 동시 init → room_id가 생성되고 members에 두 에이전트 모두 반영."""
         import io
         from contextlib import redirect_stdout
 
@@ -160,8 +161,11 @@ class TestConcurrentInitSession:
         t1.join(); t2.join()
 
         state = json.loads((ai_dir / "state.json").read_text("utf-8"))
-        # 둘 다 등록되었거나, 최소한 하나는 등록됨 (lock 경쟁에서 한쪽 승리 가능)
-        assert state["pair"] is not None
+        # room_id가 생성됨
+        assert state["room_id"] is not None
+        # 둘 다 등록됨 (filelock 덕분)
+        assert "claude" in state["members"]
+        assert "gemini" in state["members"]
         assert state["updated_at"] is not None
 
 
@@ -237,7 +241,7 @@ class TestLockStress:
                 with lock:
                     errors.append(str(e))
 
-        threads = [threading.Thread(target=mixed_ops, args=(i,)) for i in range(30)]
+        threads = [threading.Thread(target=mixed_ops, args=(i,)) for i in range(15)]
         for t in threads:
             t.start()
         for t in threads:

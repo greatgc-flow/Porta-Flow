@@ -5,7 +5,7 @@
 :: Created automatically by register.bat.
 :: You can add custom overrides below the [/auto] block.
 ::
-:: [auto] block is managed by register.bat — do not edit.
+:: [auto] block is managed by register.bat - do not edit.
 :: User overrides go AFTER the [/auto] block.
 :: ================================================================
 
@@ -14,10 +14,10 @@
 ::   2. Uncomment and edit the settings for this PC
 ::   3. start.bat loads it automatically on every launch
 ::
-:: This file is PC-specific — do NOT copy to other machines via USB.
+:: This file is PC-specific - do NOT copy to other machines via USB.
 :: If using git: add _sys\local.config.bat to .gitignore.
 
-:: ── SUBST (auto-managed by register.bat) ──────────────────────
+:: -- SUBST (auto-managed by register.bat) --
 :: The following lines are written by register.bat.
 :: DO NOT edit them manually. Run register.bat to update.
 ::
@@ -28,19 +28,19 @@
 :: (register.bat writes SUBST settings here)
 :: [/auto]
 
-:: ── Launch behaviour ──────────────────────────────────────────
+:: -- Launch behaviour --
 :: Prevent Claude Desktop from auto-launching on this PC
 :: set "NO_DESKTOP=1"
 
-:: ── Default workspace ─────────────────────────────────────────
+:: -- Default workspace --
 :: Open a different default folder instead of workspace\
 :: set "BASE_DIR_WORKSPACE=D:\Projects\MyWork"
 
-:: ── Custom tool paths ─────────────────────────────────────────
+:: -- Custom tool paths --
 :: Use system-installed npm instead of portable
 :: set "NPM_CONFIG_PREFIX=C:\Users\%USERNAME%\AppData\Roaming\npm"
 
-:: ── Gemini settings ───────────────────────────────────────────
+:: -- Gemini settings --
 :: Disable Gemini completely on this PC (e.g. offline, no auth)
 :: set "NO_GEMINI=1"
 

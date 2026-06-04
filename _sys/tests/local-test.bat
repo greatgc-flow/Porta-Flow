@@ -10,7 +10,8 @@ setlocal EnableDelayedExpansion
 :: ================================================================
 
 :: --- Resolve BASE_DIR ---
-if defined BASE_DIR (set "_BASE=%BASE_DIR%") else (for %%I in ("%~dp0..\..") do set "_BASE=%%~fI")
+if not defined BASE_DIR for %%I in ("%~dp0..\..") do set "BASE_DIR=%%~fI"
+set "_BASE=%BASE_DIR%"
 
 set "PD=%_BASE%"
 set "TW=%TEMP%\PortaFlowTest_%RANDOM%"

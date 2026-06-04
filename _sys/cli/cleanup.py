@@ -39,9 +39,13 @@ def remove_path_safe(path, label, dry_run=False):
         print(f"  [Fail] Could not remove {label}: {e}")
         return 0
 
-def run_cleanup(tier=1, all_yes=False, dry_run=False):
-    sys_dir = Path(__file__).parent.parent.resolve()
-    base_dir = sys_dir.parent
+def run_cleanup(tier=1, all_yes=False, dry_run=False, base_dir=None):
+    if base_dir is None:
+        sys_dir = Path(__file__).parent.parent.resolve()
+        base_dir = sys_dir.parent
+    else:
+        base_dir = Path(base_dir)
+        sys_dir = base_dir / "_sys"
     env_dir = sys_dir / "env"
     data_dir = sys_dir / "data"
     tools_dir = sys_dir / "tools"
@@ -55,7 +59,7 @@ def run_cleanup(tier=1, all_yes=False, dry_run=False):
 
     # Tier 1: Light
     print("\n[Tier 1] 가벼운 정리 (안전)")
-    total_freed += remove_path_safe(data_dir / "temp", "임시 파일 (_sys\data\temp)", dry_run)
+    total_freed += remove_path_safe(data_dir / "temp", r"임시 파일 (_sys\data\temp)", dry_run)
     total_freed += remove_path_safe(env_dir / "python" / "pip-cache", "pip 캐시", dry_run)
     total_freed += remove_path_safe(env_dir / "nodejs" / "npm-cache", "npm 캐시", dry_run)
     
@@ -82,10 +86,10 @@ def run_cleanup(tier=1, all_yes=False, dry_run=False):
         confirm = all_yes or input("\n  [?] 환경 리셋 (런타임 및 설정 삭제) 계속할까요? [y/N]: ").lower().startswith('y')
         if confirm:
             print("\n[Tier 3] 런타임 리셋 (전체 재설치 필요)")
-            total_freed += remove_path_safe(env_dir, "Portable Runtimes (_sys\env)", dry_run)
-            total_freed += remove_path_safe(tools_dir, "Portable Tools (_sys\tools)", dry_run)
-            total_freed += remove_path_safe(sys_dir / "claude", "Claude Config (_sys\claude)", dry_run)
-            total_freed += remove_path_safe(sys_dir / "gemini" / "config", "Gemini Config (_sys\gemini\config)", dry_run)
+            total_freed += remove_path_safe(env_dir, r"Portable Runtimes (_sys\env)", dry_run)
+            total_freed += remove_path_safe(tools_dir, r"Portable Tools (_sys\tools)", dry_run)
+            total_freed += remove_path_safe(sys_dir / "claude", r"Claude Config (_sys\claude)", dry_run)
+            total_freed += remove_path_safe(sys_dir / "gemini" / "config", r"Gemini Config (_sys\gemini\config)", dry_run)
             status_json = sys_dir / "gemini" / "status.json"
             if status_json.exists():
                 total_freed += status_json.stat().st_size

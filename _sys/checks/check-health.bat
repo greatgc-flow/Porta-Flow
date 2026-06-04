@@ -20,8 +20,11 @@ setlocal EnableDelayedExpansion
 :: Status update to _sys\gemini\status.json runs regardless of Gemini mode.
 :: ================================================================
 
-if defined BASE_DIR (set "_BASE=%BASE_DIR%") else (for %%I in ("%~dp0..\..") do set "_BASE=%%~fI")
-if defined GEMINI_DIR (set "_GDIR=%GEMINI_DIR%") else set "_GDIR=%_BASE%\_sys\gemini"
+if not defined BASE_DIR for %%I in ("%~dp0..\..") do set "BASE_DIR=%%~fI"
+set "_BASE=%BASE_DIR%"
+
+if not defined GEMINI_DIR set "_GDIR=%_BASE%\_sys\gemini"
+if defined GEMINI_DIR set "_GDIR=%GEMINI_DIR%"
 
 set "_PROJECTS_DIR=%_BASE%\_sys\claude\config\projects\P--"
 set "_ARCHIVE_DIR=%_BASE%\_archive"

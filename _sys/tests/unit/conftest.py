@@ -23,7 +23,8 @@ def ai_dir(tmp_path):
     )
     (ai / "state.json").write_text(
         json.dumps({
-            "pair": None, "claude_sid": None, "gemini_sid": None,
+            "room_id": None,
+            "members": {},
             "mission": None, "blocked": None, "phase": None, "updated_at": None
         }), encoding="utf-8"
     )

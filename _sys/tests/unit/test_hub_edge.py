@@ -23,19 +23,19 @@ class TestSessionEdge:
         assert second_sid.startswith("c")
         # state.json에 새 SID 반영
         state = json.loads((ai_dir / "state.json").read_text("utf-8"))
-        assert state["claude_sid"] == second_sid
+        assert state["members"]["claude"] == second_sid
 
     def test_s4_partial_end_session(self, ai_dir):
         """S-4: 한쪽만 end-session → 상대방 SID 유지."""
         hub.action_init_session(ai_dir, "claude")
         hub.action_init_session(ai_dir, "gemini")
         state_before = json.loads((ai_dir / "state.json").read_text("utf-8"))
-        gemini_sid = state_before["gemini_sid"]
+        gemini_sid = state_before["members"]["gemini"]
         hub.action_end_session(ai_dir, "claude")
         state_after = json.loads((ai_dir / "state.json").read_text("utf-8"))
-        # claude SID는 null, gemini SID는 유지
-        assert state_after["claude_sid"] is None
-        assert state_after["gemini_sid"] == gemini_sid
+        # claude SID는 삭제됨, gemini SID는 유지
+        assert "claude" not in state_after["members"]
+        assert state_after["members"]["gemini"] == gemini_sid
 
     def test_s5_end_session_clears_read_only(self, ai_dir):
         """S-5: end-session이 read 메시지만 삭제, unread는 보존."""
@@ -177,8 +177,8 @@ class TestDataIntegrity:
         out = capsys.readouterr().out
         assert "test mission" in out
         assert "some blocker" in out
-        assert "SESSION STATUS" in out
-        assert "MAILBOX" in out
+        assert "ROOM STATUS" in out
+        assert "Mailbox" in out
 
 
 # ─── R: 강건성 ─────────────────────────────────────────────
@@ -272,10 +272,10 @@ class TestRobustness:
         (ai_dir / "state.json").write_text('{"pair": "c1234-g5678"}', encoding="utf-8")
         hub.action_status(ai_dir)
         out = capsys.readouterr().out
-        assert "SESSION STATUS" in out  # 에러 없이 출력
+        assert "ROOM STATUS" in out  # 에러 없이 출력
 
     def test_r_ask_invalid_target(self):
         """ask --to invalid → 에러 메시지 + exit 1."""
         with pytest.raises(SystemExit) as exc:
-            hub.action_ask("unknown_target", "test query")
+            hub.action_ask("unknown_target", "test query", None, 0, None)
         assert exc.value.code == 1

@@ -13,8 +13,11 @@ setlocal EnableDelayedExpansion
 :: GEMINI_MODE=OFF -> writes UNKNOWN result, exits 0 (non-blocking).
 :: ================================================================
 
-if defined BASE_DIR (set "_BASE=%BASE_DIR%") else (for %%I in ("%~dp0..\..") do set "_BASE=%%~fI")
-if defined GEMINI_DIR (set "_GDIR=%GEMINI_DIR%") else set "_GDIR=%_BASE%\_sys\gemini"
+if not defined BASE_DIR for %%I in ("%~dp0..\..") do set "BASE_DIR=%%~fI"
+set "_BASE=%BASE_DIR%"
+
+if not defined GEMINI_DIR set "_GDIR=%_BASE%\_sys\gemini"
+if defined GEMINI_DIR set "_GDIR=%GEMINI_DIR%"
 
 set "_ARCHIVE_DIR=%_BASE%\_archive"
 set "_COLLAB_LOG_DIR=%_ARCHIVE_DIR%\collab-log"

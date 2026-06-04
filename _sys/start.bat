@@ -101,11 +101,8 @@ if exist "%CLAUDE_DIR%\config\statusline-command.sh" (
 )
 set "GEMINI_DIR=%SYS_DIR%\gemini"
 
-if exist "%GEMINI_DIR%\gemini-status.bat" (
-    call "%GEMINI_DIR%\gemini-status.bat"
-) else (
-    set "GEMINI_MODE=OFF"
-)
+if exist "%GEMINI_DIR%\gemini-status.bat" call "%GEMINI_DIR%\gemini-status.bat"
+if not exist "%GEMINI_DIR%\gemini-status.bat" set "GEMINI_MODE=OFF"
 
 :: ----------------------------------------------------------------
 :: 5. PATH integration
@@ -207,3 +204,4 @@ exit /b 1
 echo %~1
 >> "%LOG_FILE%" echo %~1
 exit /b 0
+

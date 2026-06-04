@@ -8,7 +8,8 @@
 ::   call "%~dp0raw-log.bat" "Axis-E" "%OUT_FILE%" "%TEMP_MERGED%"
 ::   call "%~dp0raw-log.bat" "Axis-B" "%OUT_FILE%"
 
-if defined BASE_DIR (set "_B=%BASE_DIR%") else (for %%I in ("%~dp0..\..") do set "_B=%%~fI")
+if not defined BASE_DIR for %%I in ("%~dp0..\..") do set "BASE_DIR=%%~fI"
+set "_B=%BASE_DIR%"
 
 set "_RAWDIR=%_B%\_archive\raw-log"
 if not exist "%_RAWDIR%" mkdir "%_RAWDIR%" > nul 2>&1
