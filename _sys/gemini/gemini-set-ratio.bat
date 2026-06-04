@@ -2,20 +2,14 @@
 :: ================================================================
 :: gemini-set-ratio.bat [0-10]
 ::
-:: Sets GEMINI_RATIO in _sys\gemini\config.json
+:: Sets COLLAB_RATE in _sys\gemini\config.json (PROTOCOL v3.1 Mixed-Model)
 ::
-:: Usage:
-::   gemini-set-ratio.bat 10   -> full delegation (everything via Gemini)
-::   gemini-set-ratio.bat 7    -> delegate non-trivial tasks
-::   gemini-set-ratio.bat 5    -> consult for complex decisions only
-::   gemini-set-ratio.bat 0    -> Gemini OFF
-::
-:: Ratio levels:
-::   0     Gemini OFF (no auto calls)
-::   1-4   Manual only (no auto-consult)
-::   5-6   Consult for complex analysis / design decisions
-::   7-9   Mandatory consult before any non-trivial work
-::   10    Full delegation: every read/write/analysis goes through Gemini first
+:: Anchor Definitions:
+::   [0] Solo         (100%% Autonomy - No consensus)
+::   [3] System Guard (75%% Autonomy - PROPOSE for _sys/ and docs)
+::   [5] Partner      (50%% Autonomy - Milestone consensus - DEFAULT)
+::   [8] Strict       (25%% Autonomy - Logic change consensus)
+::   [10] Brain Sync  (0%% Autonomy - ABSOLUTE ZERO EXCEPTIONS)
 :: ================================================================
 
 if not defined GEMINI_DIR for %%I in ("%~dp0.") do set "GEMINI_DIR=%%~fI"
@@ -24,6 +18,13 @@ set "_CFG=%_GD%\config.json"
 
 if "%~1"=="" (
     echo Usage: gemini-set-ratio.bat [0-10]
+    echo.
+    echo Anchor Levels:
+    echo   [0] Solo         (Autonomy: 100%%)
+    echo   [3] System Guard (Autonomy: 75%%)
+    echo   [5] Partner      (Autonomy: 50%%)
+    echo   [8] Strict       (Autonomy: 25%%)
+    echo   [10] Brain Sync  (Autonomy: 0%%)
     echo.
     echo Current config:
     type "%_CFG%"
@@ -36,9 +37,13 @@ if %_N% GTR 10 set "_N=10"
 
 powershell -NoProfile -Command "$n=[int]'%_N%'; try { $cfg=Get-Content '%_CFG:\=\\%' -Raw|ConvertFrom-Json } catch { $cfg=[pscustomobject]@{ratio=5;review_interval_min=5;last_review_ts=$null} }; $cfg|Add-Member -NotePropertyName ratio -NotePropertyValue $n -Force; [System.IO.File]::WriteAllText('%_CFG:\=\\%',($cfg|ConvertTo-Json -Depth 3),(New-Object System.Text.UTF8Encoding($false)))"
 
-echo [gemini-set-ratio] GEMINI_RATIO set to %_N%
-if "%_N%"=="0"  echo   [Gemini OFF - no auto calls]
-if "%_N%"=="10" echo   [Full delegation - all reads/writes/analysis go through Gemini first]
+echo [gemini-set-ratio] COLLAB_RATE set to %_N%
+if "%_N%"=="0"  echo   [Solo Mode - All autonomous]
+if "%_N%"=="3"  echo   [System Guard - PROPOSE for _sys/ and docs]
+if "%_N%"=="5"  echo   [Partner Mode - Milestone consensus]
+if "%_N%"=="8"  echo   [Strict Mode - Logic change consensus]
+if "%_N%"=="10" echo   [Brain Sync - ABSOLUTE ZERO EXCEPTIONS]
+
 type "%_CFG%"
 
 set "_GD=" & set "_CFG=" & set "_N="

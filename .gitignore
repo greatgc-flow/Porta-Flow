@@ -19,10 +19,15 @@ _archive/
 
 # 3. Project-local AI State (.ai/ - ephemeral IPC)
 .ai/
+_state/
+
+# Work Logs (ephemeral — archived in _archive/)
+WORKLOG.md
 
 # 4. Claude/Gemini Private State, Config & History (Dynamic)
 _sys/claude/config/
 !_sys/claude/config/CLAUDE.md
+!_sys/claude/config/settings.json
 !_sys/claude/config/statusline-command.sh
 _sys/gemini/status.json
 _sys/gemini/usage.json

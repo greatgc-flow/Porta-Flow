@@ -25,6 +25,10 @@ if errorlevel 1 (
 )
 echo [WSB] Setup/Bootstrap PASSED. >> "%RES%\summary.txt"
 
+echo [WSB] 2b. Unblocking downloaded binaries (Device Guard workaround)...
+powershell -NoProfile -Command "Get-ChildItem '%TGT%\_sys\env' -Recurse | Unblock-File -ErrorAction SilentlyContinue" >> "%RES%\install_log.txt" 2>&1
+echo [WSB] Unblock complete. >> "%RES%\summary.txt"
+
 echo [WSB] 3. Running Core pytest Suite...
 set "PYTHONUTF8=1"
 set "VENV_PY=%TGT%\_sys\env\venv\Scripts\python.exe"

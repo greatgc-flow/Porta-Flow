@@ -27,7 +27,7 @@ def get_registry_key_name(base_dir):
 def get_subst_mappings():
     mappings = {}
     try:
-        out = subprocess.check_output(["subst"], text=True)
+        out = subprocess.check_output(["subst"], text=True, encoding='oem')
         for line in out.splitlines():
             # Format: P:\: => D:\Path
             match = re.match(r'^([A-Z]):\\: => (.*)$', line, re.IGNORECASE)
@@ -89,7 +89,7 @@ def global_cleanup(base_dir):
     
     # 1. SUBST cleanup
     try:
-        out = subprocess.check_output(["subst"], text=True)
+        out = subprocess.check_output(["subst"], text=True, encoding='oem')
         for line in out.splitlines():
             match = re.match(r'^([A-Z]):.*' + re.escape(str(base_dir)), line, re.IGNORECASE)
             if match:

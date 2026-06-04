@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal EnableDelayedExpansion
 
 :: ================================================================
 :: start.bat  -  Portable Sandbox Development Environment Launcher
@@ -33,7 +33,19 @@ for %%I in ("%SYS_DIR_PHYS%\..") do set "BASE_DIR_PHYS=%%~fI"
 :: 2. SUBST restore + path derivation
 :: ----------------------------------------------------------------
 if defined SUBST_DRIVE_LETTER (
-    if not exist "%SUBST_DRIVE_LETTER%:\" (
+    if exist "%SUBST_DRIVE_LETTER%:\" (
+        :: S-3: Verify this drive maps to OUR PortableDev instance, not another
+        if not exist "%SUBST_DRIVE_LETTER%:\_sys\start.bat" (
+            echo [Warning] Drive %SUBST_DRIVE_LETTER%: is mapped to a different path. Remapping...
+            subst %SUBST_DRIVE_LETTER%: /D >nul 2>&1
+            subst %SUBST_DRIVE_LETTER%: "%BASE_DIR_PHYS%"
+            if errorlevel 1 (
+                echo [Error] Drive %SUBST_DRIVE_LETTER%: is occupied.
+                echo         Run register.bat to reassign.
+                goto :ERROR_EXIT
+            )
+        )
+    ) else (
         subst %SUBST_DRIVE_LETTER%: "%BASE_DIR_PHYS%"
         if errorlevel 1 (
             echo [Error] Drive %SUBST_DRIVE_LETTER%: is occupied.
@@ -56,8 +68,32 @@ if defined SUBST_DRIVE_LETTER (
     set "SYS_DIR=%SUBST_DRIVE_LETTER%:\_sys"
 ) else (
     echo [Warning] Not registered. Run register.bat for full portability.
-    set "BASE_DIR=%BASE_DIR_PHYS%"
-    set "SYS_DIR=%SYS_DIR_PHYS%"
+    :: S-2: Detect non-ASCII (Korean) path and auto-assign a temporary SUBST drive
+    powershell -NoProfile -Command "exit ([int]($env:BASE_DIR_PHYS -match '[^\x00-\x7F]'))" >nul 2>&1
+    if errorlevel 1 (
+        echo [Info] Korean path detected. Assigning temporary SUBST drive for this session...
+        set "TEMP_DRIVEOK=0"
+        for %%D in (Z Y X W V U T S R Q P O N M L K J I H G F E) do (
+            if "!TEMP_DRIVEOK!"=="0" (
+                if not exist "%%D:\" (
+                    subst %%D: "%BASE_DIR_PHYS%" >nul 2>&1
+                    if not errorlevel 1 set "TEMP_DRIVEOK=%%D"
+                )
+            )
+        )
+        if not "!TEMP_DRIVEOK!"=="0" (
+            echo [Info] Temporary drive !TEMP_DRIVEOK!: assigned. Node.js tools are now available.
+            set "BASE_DIR=!TEMP_DRIVEOK!:"
+            set "SYS_DIR=!TEMP_DRIVEOK!:\_sys"
+        ) else (
+            echo [Warning] All drive letters occupied. Node.js tools may fail with Korean path.
+            set "BASE_DIR=%BASE_DIR_PHYS%"
+            set "SYS_DIR=%SYS_DIR_PHYS%"
+        )
+    ) else (
+        set "BASE_DIR=%BASE_DIR_PHYS%"
+        set "SYS_DIR=%SYS_DIR_PHYS%"
+    )
 )
 
 set "ENV_DIR=%SYS_DIR%\env"
@@ -150,19 +186,19 @@ if exist "%VENV_DIR%\Scripts" (
 :: ----------------------------------------------------------------
 set "TARGET=%~1"
 if defined SUBST_DRIVE_LETTER (
-    call set "TARGET=%%TARGET:%BASE_DIR_PHYS%=%BASE_DIR%%%"
+    set "TARGET=!TARGET:%BASE_DIR_PHYS%=%BASE_DIR%!"
 )
 
-if "%TARGET%"=="" (
+if "!TARGET!"=="" (
     set "TARGET_DIR=%BASE_DIR%\workspace"
     goto :RUN_DEV
 )
-if exist "%TARGET%\" (
-    set "TARGET_DIR=%TARGET%"
+if exist "!TARGET!\" (
+    set "TARGET_DIR=!TARGET!"
     goto :RUN_DEV
 ) else (
     set "TARGET_DIR="
-    for %%I in ("%TARGET%") do set "TARGET_DIR=%%~dpI"
+    for %%I in ("!TARGET!") do set "TARGET_DIR=%%~dpI"
     goto :RUN_APP
 )
 

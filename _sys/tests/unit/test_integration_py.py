@@ -144,3 +144,30 @@ class TestIntegrationP2P:
         if (ws_root / ".ai" / "state.json").exists():
             ws_state = json.loads((ws_root / ".ai" / "state.json").read_text("utf-8"))
             assert ws_state.get("room_id") != "ext-room-1"
+
+    def test_two_external_projects_strict_isolation(self, test_env, tmp_path_factory):
+        """[격리] 두 개의 외부 프로젝트 .ai/ 상태가 완전히 격리됨을 검증.
+        프로젝트 A의 메시지가 프로젝트 B의 inbox에 보이지 않아야 함."""
+        vpy, hub = test_env["venv_py"], test_env["hub_py"]
+
+        proj_a = tmp_path_factory.mktemp("ext_proj_a")
+        proj_b = tmp_path_factory.mktemp("ext_proj_b")
+        (proj_a / ".git").mkdir()
+        (proj_b / ".git").mkdir()
+
+        # Project A: cc → gc로 메시지 전송
+        self._run(vpy, hub, ["init-session", "--agent", "cc", "--room", "room-proj-a"], proj_a)
+        self._run(vpy, hub, ["send", "--from", "cc", "--to", "gc", "--msg", "secret-for-proj-a"], proj_a)
+
+        # Project B: 초기화만 (A의 메시지가 없어야 함)
+        self._run(vpy, hub, ["init-session", "--agent", "cc", "--room", "room-proj-b"], proj_b)
+        inbox_b = self._out(vpy, hub, ["check", "--target", "gc"], proj_b)
+
+        assert "secret-for-proj-a" not in inbox_b, \
+            "프로젝트 A의 메시지가 프로젝트 B의 inbox에 누출됨"
+
+        # State 파일도 독립적이어야 함
+        state_a = json.loads((proj_a / ".ai" / "state.json").read_text("utf-8"))
+        state_b = json.loads((proj_b / ".ai" / "state.json").read_text("utf-8"))
+        assert state_a["room_id"] != state_b["room_id"], \
+            "두 프로젝트의 room_id가 동일함 — 격리 위반"

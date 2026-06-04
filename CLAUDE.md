@@ -71,11 +71,35 @@ Full annotated tree: `README.md`
 - **업무 분담 (Division of Labor)**: 합의 후 각 노드는 자신의 전문 분야에 맞춰 업무를 분할 수행합니다.
 - **교차 검토 (Cross-check)**: 작업 완료 후 모든 노드가 결과물을 상호 검증합니다.
 
+## Git 관리 원칙
+
+### 트래킹 대상 (Essential — git managed)
+- 루트: `install.bat`, `register.bat`, `unregister.bat`, `CLEANUP.bat`, `*.md` (문서), `.gitignore`, `.gitattributes`
+- `.claude/`: `agents/*.md`, `settings.json`, `skills/*/SKILL.md`
+- `_sys/`: 모든 `.py` + `.bat` 스크립트, 설정 파일, 문서, 테스트 소스
+
+### gitignore 처리 대상 (Non-tracked)
+| 경로 | 이유 |
+|------|------|
+| `_sys/env/**` | 대형 바이너리 — install.bat이 설치 |
+| `_sys/tools/` | 대형 바이너리 — install.bat이 설치 |
+| `_sys/data/temp/`, `_sys/data/setup-files/` | 설치 중 생성 |
+| `workspace/`, `_archive/`, `.ai/` | 사용자 데이터 / ephemeral |
+| `_state/` | 에이전트 세션 워크스페이스 (auto-managed) |
+| `_sys/claude/config/` | 인증/세션 데이터 (CLAUDE.md, settings.json, statusline-command.sh 제외) |
+| `_sys/tests/results/` | 테스트 결과물 |
+| `WORKLOG.md` | 작업 로그 → `_archive/` 에서 관리 |
+
+### 런타임에 생성되는 필수 폴더
+setup.py 또는 start.bat이 최초 실행 시 생성:
+`workspace/`, `_archive/`, `.ai/`, `_sys/tools/`, `_sys/data/temp/`, `_sys/data/setup-files/`
+
 ## Current State
-Last updated: 2026-06-03 (P2P 평등 협업 구조 대개편 완료)
+Last updated: 2026-06-04 (Git 최소화 정리 완료)
 - PROTOCOL.md v3.0 적용: Tier 폐지, Room 세션 도입, COLLAB_RATE 일반화.
 - SYSTEM_ARCHITECTURE.md v3.0 적용: N-Way Room 아키텍처 반영.
 - 3TCP v1 및 P2P 협업 코어 확립.
+- Git 트래킹 최소화: 외부 마켓플레이스(386개), 테스트 결과, 임시 파일 제거.
 
 ## Next Steps
 

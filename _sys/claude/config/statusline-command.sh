@@ -46,8 +46,8 @@ if [ -n "$five_pct" ] || [ -n "$week_pct" ]; then
   rate_str=" | $rate_parts"
 fi
 
-# Gemini 사용량 + ratio (로컬 파일만, 토큰 0)
-gem_str=""
+# 협업(Collaboration) 정보 + Ratio (Gemini 연동 상태)
+coop_str=""
 gem_status="/p/_sys/gemini/status.json"
 gem_usage="/p/_sys/gemini/usage.json"
 gem_config="/p/_sys/gemini/config.json"
@@ -57,15 +57,15 @@ if [ -f "$gem_status" ] && [ -f "$gem_usage" ]; then
   gem_ratio=""
   [ -f "$gem_config" ] && gem_ratio=$(jq -r '.ratio // empty' "$gem_config" 2>/dev/null)
   if [ -n "$gem_ratio" ]; then
-    gem_str=" | Gem:${gem_mode} ${gem_calls}회 [R:${gem_ratio}]"
+    coop_str=" | collab:${gem_mode} ${gem_calls}회 R:${gem_ratio}"
   else
-    gem_str=" | Gem:${gem_mode} ${gem_calls}회"
+    coop_str=" | collab:${gem_mode} ${gem_calls}회"
   fi
 fi
 
 # 출력 조합
 output="$model | ctx:$ctx_str | $short_cwd"
 [ -n "$git_branch" ] && output="$output ($git_branch)"
-output="${output}${rate_str}${gem_str}"
+output="${output}${rate_str}${coop_str}"
 
 printf "%s" "$output"

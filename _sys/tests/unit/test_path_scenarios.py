@@ -151,8 +151,9 @@ class TestPathScenarios:
     @patch("os.path.exists")
     @patch("winreg.OpenKey", side_effect=OSError)
     def test_registry_command_uses_subst_path(self, mock_open_key, mock_exists, mock_check_output, mock_run, mock_set_val, mock_create_key, mock_env):
-        """Scenario 6: 레지스트리 명령에 SUBST 경로 사용 확인 (한글/공백 우회).
-        manage.action_register가 SUBST 성공 후 cmd_str에 물리 경로 대신 SUBST 경로를 써야 함."""
+        """Scenario 6: 레지스트리 명령 포맷 확인 - 물리경로 사용 + 이중인용부호 래핑.
+        manage.action_register는 재부팅 후에도 동작하도록 물리경로를 사용하되
+        cmd.exe /c \"\"path\" \"arg\"\" 패턴으로 한글/공백을 올바르게 이스케이프해야 함."""
         mock_exists.return_value = False
         mock_check_output.return_value = ""
         mock_run.return_value = MagicMock(returncode=0)
@@ -160,16 +161,14 @@ class TestPathScenarios:
         manage.action_register(mock_env)
 
         # SetValueEx 중 레지스트리 command 값 확인
-        # call(cmd_key, "", 0, REG_SZ, cmd_str) 형태로 저장됨
         all_set_calls = mock_set_val.call_args_list
         cmd_values = [str(c.args[4]) for c in all_set_calls if len(c.args) >= 5 and "launch.bat" in str(c.args[4])]
         assert cmd_values, "launch.bat 명령이 레지스트리에 등록되지 않음"
 
-        # 물리 경로(한글)가 아닌 SUBST 드라이브 경로 사용 확인
+        # cmd.exe /c ""path" "arg"" 이중인용부호 패턴 사용 확인 (한글/공백 경로 처리 표준 방식)
         for cmd in cmd_values:
-            assert "테스트_폴더" not in cmd, f"레지스트리 명령에 물리 경로(한글) 포함됨: {cmd}"
-            # 드라이브 문자 경로 (X:\) 형태여야 함
-            assert ":\\" in cmd, f"레지스트리 명령에 드라이브 경로가 없음: {cmd}"
+            assert cmd.startswith('cmd.exe /c ""'), f"레지스트리 명령이 cmd.exe /c \"\"...\" 형식이 아님: {cmd}"
+            assert 'launch.bat" "' in cmd, f"launch.bat 경로와 인수가 개별 인용부호 처리되지 않음: {cmd}"
 
     @patch("winreg.CreateKey")
     @patch("winreg.SetValueEx")
@@ -198,10 +197,11 @@ class TestPathScenarios:
         subst_calls = [c for c in mock_run.call_args_list if "subst" in str(c.args[0]).lower() and "/D" not in str(c.args[0])]
         assert subst_calls, "SUBST 명령이 호출되지 않음"
 
-        # 레지스트리 명령에 공백/한글 물리 경로 미포함 확인
+        # cmd.exe /c ""path" "arg"" 패턴으로 공백/한글을 이스케이프했는지 확인
         cmd_values = [str(c.args[4]) for c in mock_set_val.call_args_list if len(c.args) >= 5 and "launch.bat" in str(c.args[4])]
+        assert cmd_values, "launch.bat 명령이 레지스트리에 등록되지 않음"
         for cmd in cmd_values:
-            assert "테스트 폴더" not in cmd, f"공백 포함 한글 경로가 레지스트리 명령에 남아있음: {cmd}"
+            assert cmd.startswith('cmd.exe /c ""'), f"한글+공백 경로에서 이중인용부호 래핑 없음: {cmd}"
 
     @patch("winreg.CreateKey")
     @patch("winreg.SetValueEx")
@@ -230,10 +230,11 @@ class TestPathScenarios:
         second_subst_calls = [c for c in mock_run.call_args_list if "subst" in str(c.args[0]).lower() and "/D" not in str(c.args[0])]
         assert second_subst_calls, "재삽입 후 SUBST 재등록 실패"
 
-        # 재등록 후에도 레지스트리 명령이 SUBST 경로 사용
+        # 재등록 후에도 레지스트리 명령이 올바른 이중인용부호 패턴 유지
         cmd_values = [str(c.args[4]) for c in mock_set_val.call_args_list if len(c.args) >= 5 and "launch.bat" in str(c.args[4])]
+        assert cmd_values, "재등록 후 launch.bat 명령이 레지스트리에 등록되지 않음"
         for cmd in cmd_values:
-            assert "테스트_폴더" not in cmd
+            assert cmd.startswith('cmd.exe /c ""'), f"재등록 후 레지스트리 명령 포맷 오류: {cmd}"
 
     @patch("subprocess.run")
     def test_local_config_no_non_ascii_fix(self, mock_run, mock_env):
