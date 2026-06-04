@@ -3,5 +3,6 @@
     "git.openRepositoryInParentFolders": "always",
     "workbench.secondarySideBar.defaultVisibility": "hidden",
     "terminal.integrated.rightClickBehavior": "default",
-    "window.restoreWindows": "folders"
+    "window.restoreWindows": "folders",
+    "workbench.startupEditor": "none"
 }
