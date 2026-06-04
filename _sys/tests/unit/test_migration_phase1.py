@@ -161,3 +161,116 @@ class TestRawLog:
         dir_files = sorted(raw_dir.glob("*_Axis-BOTH_directive.txt"))
         assert len(resp_files) >= 1
         assert len(dir_files) >= 1
+
+
+class TestCtxSave:
+    """ctx_save.py — symmetric checkpoint marker update."""
+
+    def test_updates_current_state_line(self, tmp_path):
+        import sys as _sys
+        _sys.path.insert(0, str(SYS_DIR / "hooks"))
+        from ctx_save import _update_current_state_marker  # type: ignore
+
+        md = tmp_path / "CLAUDE.md"
+        md.write_text(
+            "# Title\n\n## Current State\nOld marker line\n\n## Next Steps\n- todo\n",
+            encoding="utf-8",
+        )
+        _update_current_state_marker(md, "New marker line")
+        content = md.read_text(encoding="utf-8")
+        assert "New marker line" in content
+        assert "Old marker line" not in content
+        assert "## Next Steps" in content  # rest of file untouched
+
+    def test_noop_when_no_current_state_section(self, tmp_path):
+        import sys as _sys
+        _sys.path.insert(0, str(SYS_DIR / "hooks"))
+        from ctx_save import _update_current_state_marker  # type: ignore
+
+        md = tmp_path / "CLAUDE.md"
+        original = "# Title\n\nNo current state section.\n"
+        md.write_text(original, encoding="utf-8")
+        _update_current_state_marker(md, "irrelevant")
+        assert md.read_text(encoding="utf-8") == original
+
+    def test_exits_1_when_no_claude_md(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        result = run_py(SYS_DIR / "hooks" / "ctx_save.py")
+        assert result.returncode == 1
+        assert "No CLAUDE.md" in result.stdout
+
+
+class TestCtxEnd:
+    """ctx_end.py — session log save, gemini archive, cleanup functions."""
+
+    def test_save_session_log_creates_file(self, tmp_path):
+        import sys as _sys
+        _sys.path.insert(0, str(SYS_DIR / "hooks"))
+        from ctx_end import save_session_log  # type: ignore
+
+        claude_md = tmp_path / "CLAUDE.md"
+        claude_md.write_text("## Current State\nActive\n", encoding="utf-8")
+        ses_file = save_session_log(tmp_path / "sessions", tmp_path, claude_md)
+        assert ses_file.exists()
+        content = ses_file.read_text(encoding="utf-8")
+        assert "ctx-end" in content
+        assert "Active" in content
+
+    def test_save_session_log_appends_on_second_call(self, tmp_path):
+        import sys as _sys
+        _sys.path.insert(0, str(SYS_DIR / "hooks"))
+        from ctx_end import save_session_log  # type: ignore
+        from datetime import datetime
+
+        claude_md = tmp_path / "CLAUDE.md"
+        claude_md.write_text("State A\n", encoding="utf-8")
+        ses_dir = tmp_path / "sessions"
+        save_session_log(ses_dir, tmp_path, claude_md)
+        claude_md.write_text("State B\n", encoding="utf-8")
+        save_session_log(ses_dir, tmp_path, claude_md)
+        files = list(ses_dir.glob("*.md"))
+        assert len(files) == 1
+        content = files[0].read_text(encoding="utf-8")
+        assert "State A" in content
+        assert "State B" in content
+
+    def test_archive_gemini_session_moves_active_to_history(self, tmp_path):
+        import sys as _sys
+        _sys.path.insert(0, str(SYS_DIR / "hooks"))
+        from ctx_end import archive_gemini_session  # type: ignore
+
+        sys_gemini = tmp_path / "_sys" / "gemini"
+        sys_gemini.mkdir(parents=True)
+        (sys_gemini / "session-id.txt").write_text("ses-001", encoding="utf-8")
+        smap = sys_gemini / "session-map.json"
+        smap.write_text(
+            json.dumps({"active": {"id": "ses-001", "started_at": "2026-01-01T00:00:00"}, "history": []}),
+            encoding="utf-8",
+        )
+        archive_gemini_session(tmp_path)
+        assert not (sys_gemini / "session-id.txt").exists()
+        data = json.loads(smap.read_text(encoding="utf-8"))
+        assert data["active"] is None
+        assert len(data["history"]) == 1
+        assert data["history"][0]["id"] == "ses-001"
+        assert "ended_at" in data["history"][0]
+
+    def test_cleanup_gemini_sessions_moves_old_files(self, tmp_path):
+        import sys as _sys
+        import time
+        _sys.path.insert(0, str(SYS_DIR / "hooks"))
+        from ctx_end import cleanup_gemini_sessions  # type: ignore
+
+        chat_dir = tmp_path / "_sys" / "gemini" / "config" / "tmp" / "project" / "chats"
+        chat_dir.mkdir(parents=True)
+        old_file = chat_dir / "old.jsonl"
+        old_file.write_text("{}", encoding="utf-8")
+        # Backdate the file to 10 days ago
+        old_ts = time.time() - 10 * 86400
+        import os
+        os.utime(old_file, (old_ts, old_ts))
+
+        cleanup_gemini_sessions(tmp_path, keep_days=7)
+        archive_dir = tmp_path / "_archive" / "gemini-sessions"
+        assert (archive_dir / "old.jsonl").exists()
+        assert not old_file.exists()
