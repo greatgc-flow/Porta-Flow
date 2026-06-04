@@ -1,11 +1,11 @@
 # Gemini CLI — Project Instructions
-> Last updated: 2026-06-04
+> Last updated: 2026-06-05
 
 > **IMPORTANT:**
 > Your personal memory and global preferences belong in `%USERPROFILE%\.gemini\GEMINI.md` (which via Directory Junction equals `_sys\gemini\config\GEMINI.md` — portable across PCs).
 
 You are the Gemini CLI agent operating within the **Portable Sandbox Dev Environment**.
-당신은 Claude 및 다른 에이전트들과 **대등한 권한을 가진 Peer 노드**입니다.
+You are a **Peer Node with equal rights** to Claude and other agents.
 
 ## 1. What This Project Is & Environment
 A fully portable Windows development environment that lives in a single folder (USB drive or cloud). Right-click any folder -> open VS Code + Claude Desktop/Gemini CLI with all tools (Python, Node.js, FFmpeg, Git, etc.) pre-configured.
@@ -19,7 +19,7 @@ A fully portable Windows development environment that lives in a single folder (
 
 ```
 [PortableDev]/
-├── install.bat / register.bat / unregister.bat
+├── install.bat / register.bat / unregister.bat / CLEANUP.bat
 ├── README.md / CLAUDE.md / GEMINI.md / CONVENTION.md / PROTOCOL.md
 ├── workspace/     ← default project folder
 ├── .claude/       ← agents/ + skills/
@@ -28,151 +28,152 @@ A fully portable Windows development environment that lives in a single folder (
 ├── .ai/           ← IPC state (hub.py managed — never write directly)
 ├── _archive/      ← logs, sessions, collab-log, workspace backups
 └── _sys/          ← cli/ hooks/ checks/ core/ templates/ env/ tools/ tests/ data/
-                     SYSTEM_ARCHITECTURE.md  git-config/  claude/  gemini/
 ```
 Full annotated tree: `README.md`
 
 ### Architecture Decisions
-
-| Decision | Reason |
-|----------|--------|
-| Everything under `_sys/` (except docs + workspace) | Root clean: 3 docs + workspace + .claude + _sys only |
-| Workspace at root or external | Multiple workspaces, nested or outside BASE_DIR |
-| Registry key = `SandboxRun_[FolderName]` | Multiple envs on same PC without conflict |
-| N-Way Room Session (`room-{uuid}`) | P2P equality: No node monopoly. Shared context for all nodes. |
-| Unified manage.bat (logic: manage.py) | Single Source of Truth for naming, SUBST mapping, and Registry state |
-| State-aware Cleanup | Registration auto-cleans orphaned keys from previous folder names/paths |
-| No USERPROFILE/APPDATA override | Preserves Git, SSH, host credentials |
-| Tool-specific env vars (NPM_CONFIG_*, etc.) | Precise isolation without broad side effects |
-| `CLAUDE_CONFIG_DIR = _sys\claude\config\` | Claude Code CLI auth/config travels with USB |
-| Gemini CLI via npm-global (nodejs/npm-global) | `gemini.cmd` auto-in-PATH via existing npm-global PATH entry |
-| Gemini auth in `%USERPROFILE%\.gemini\` (host) | Junctioned to `_sys\gemini\config` for portability |
-| `_archive/` for all rolling data | logs + sessions + workspace backups in one place for easy cleanup |
-| Individual `if exist` lines (not for-loop) | for-loop expands %PATH% once -> bug |
-| `-LiteralPath` in all registry PS1 ops | `HKCU:\Software\Classes\*\shell\...` wildcard hang prevention |
-| `launch.bat` as registry intermediary | Direct start.bat from registry breaks on space/Korean paths; uses physical path (not SUBST) |
-| `.bat` files: English only, no Korean | chcp 65001 doesn't fix cmd.exe parser for multi-byte chars |
-| `local.config.bat` for per-PC overrides | start.bat auto-loads it before CONFIG defaults |
-| WSB (`launch-wsbtest.ps1`) as default test env | True OS isolation; sandbox-test.bat runs unmodified inside WSB |
+> **Pointer:** See `CLAUDE.md` §Architecture Decisions for the full design rationale table. Avoid duplication here to maintain a Single Source of Truth.
 
 ## 3. Technical Mandates
 
 ### 3-1. Windows Shell Rules
-- Shell 명령 실행 시 `cmd /c` 또는 PowerShell 명시적 호출 사용
-- 경로 구분자: `\` (backslash)
-- `.bat` 파일 호출 시 `PYTHONUTF8=1` 환경변수 설정 필수
-- Korean 문자열을 `.bat` 파일에 직접 포함 금지 (chcp 65001 파서 버그)
-- 스크립팅 표준 전문: `CONVENTION.md §1` (bat) and `§2` (ps1)
+- Always use `cmd /c` or explicit PowerShell invocation when executing shell commands.
+- Path separator: `\` (backslash).
+- Mandatory: Set the `PYTHONUTF8=1` environment variable when calling `.bat` files.
+- Prohibition: Do not include Korean strings directly in `.bat` files (cmd.exe parser bug with chcp 65001).
+- Scripting standards: See `CONVENTION.md §1` (bat) and `§2` (ps1).
 
 ### 3-2. Cross-Node Query Protocol
 - **Write queries in English.** Korean tokenizes at 2–3x cost → wastes quota fast.
-- **Query file is deleted before the API call.** If the call fails, the file is already gone — always generate a fresh unique file per request. Never reuse.
+- **Query file is deleted before the API call.** Always generate a fresh unique file per request. Never reuse.
 
 ### 3-3. Zero-Token Symmetric Memory
-- **Blackboard First**: 작업을 시작하기 전 반드시 `.ai/sessions/room-{uuid}/` 내의 `handoff.md` 및 `summary_*.md` 파일을 읽어 프로젝트 상태를 동기화하십시오 (**Re-orientation Phase**).
-- **Zero-Token Sharing**: 상세한 분석이나 요약은 프롬프트에 직접 쓰는 대신 파일로 기록하고, 짧은 포인터(경로)만 공유하십시오.
-- **Symmetric Persistence**: `ctx-save` 실행 시 `CLAUDE.md`뿐만 아니라 `_sys\gemini\config\GEMINI.md`에도 체크포인트를 기록하여 기억을 대칭적으로 보존하십시오.
+- **Blackboard First**: Before starting work, you MUST read `handoff.md` and `summary_*.md` files in `.ai/sessions/room-{uuid}/` to sync project state (**Re-orientation Phase**). Follow the `handoff.md` rolling rule to keep logs compact.
+- **Zero-Token Sharing**: Write detailed analysis or summaries to files. Share only short pointers (paths) in prompts.
+- **Symmetric Persistence**: When running `ctx-save`, record checkpoints in BOTH `CLAUDE.md` and `_sys\gemini\config\GEMINI.md` to symmetrically preserve memory.
+
+### 3-4. Tool Output Limits (MANDATORY)
+- **NEVER** use naked shell commands returning unbounded output (e.g., `find` or `grep` without `-l`).
+- **ALWAYS** limit directory listings to `-maxdepth 1` or equivalent.
+- **ALWAYS** exclude: `node_modules/`, `.git/`, `_sys/env/`, `venv/`, `__pycache__/` from any glob/find.
+- For files >100 lines: **ALWAYS** use line-range targeting (`head`/`tail` or offset via tool args). Never read the whole file.
+- For shell command output (npm, pip, pytest): **ALWAYS** pipe stdout to a temp file, and report the last 10 lines only.
+- **Pattern:** `cmd ... > "%TEMP%\last_log.txt" 2>&1 & powershell -c "Get-Content '%TEMP%\last_log.txt' -Tail 10"`
 
 ## 4. CRITICAL: Peer-to-Peer State Management
 
-- **모든 노드는 평등함**: 어떤 노드도 오케스트레이션을 독점하지 않음.
-- `.ai/state.json` 직접 쓰기 절대 금지
-- 상태 변경: `python %SYS_DIR%\core\hub.py update-status --mission "..."`
-- 메시지 발송 (P2P): `python %SYS_DIR%\core\hub.py send --from X --to Y --msg "..."`
-- 룸 상태 조회: `python %SYS_DIR%\core\hub.py status`
+- **All nodes are equal**: No node monopolizes orchestration.
+- **NEVER** write directly to `.ai/state.json`.
+- Change state: `python %SYS_DIR%\core\hub.py update-status --mission "..."`
+- Send message (P2P): `python %SYS_DIR%\core\hub.py send --from X --to Y --msg "..."`
+- Check room status: `python %SYS_DIR%\core\hub.py status`
 
-## 5. Collaboration Protocol v3.1 (P2P & Mixed-Model)
-Full R&R: `PROTOCOL.md v3.1`.
+## 5. Collaboration Protocol (P2P & Mixed-Model)
+Full R&R: `PROTOCOL.md v3.3`.
 
-**당신의 역할 (Peer Node):**
-- **COLLAB_RATE (0~10)**: 설정된 앵커(0, 3, 5, 8, 10) 규칙을 엄격히 준수하십시오.
-- **Level 10 (Brain Sync)**: **절대 예외 없음**. 사소한 오타 수정이라도 자의적 판단으로 합의를 생략하는 것을 엄격히 금지합니다.
-- **능동적 제안**: 필요 시 당신이 먼저 `PROPOSE`를 발의하여 합의를 주도하십시오.
-- **교차 검토**: 타 노드의 결과물에 대해 비판적으로 검토하고 `VERIFY` 피드백을 제공할 의무가 있습니다.
+### Adaptive COLLAB_RATE
+Task risk classification — apply within a session unless overridden globally:
+
+| Risk | Rate | Applies To |
+|------|------|------------|
+| Low  | R:0  | Read-only, grep, explore, doc reads |
+| Med  | R:3  | `workspace/` code changes |
+| High | R:5  | `_sys/` script changes |
+| Critical | R:10 | `PROTOCOL.md`, `CLAUDE.md`, `GEMINI.md`, `hub.py`, `nodes.json` |
+
+*Rule:* Session-level overrides apply (user requests deep analysis → R:10 globally). **No exceptions for Level 10 core files.**
+
+### IPC Compact Syntax
+- AGREE: `ACK:r-{round_id}`
+- DISAGREE: `NACK:r-{round_id}:REASON={short}`
+- FINAL CALL: `FC:r-{round_id}:SUMMARY={brief}`
+- PROCEED: `PROC:r-{round_id}`
+
+### Batch Consensus Pattern
+Instead of step-by-step voting, propose full plan bundles:
+`PLAN:[1.{step}, 2.{step}, 3.{step}] RISK:{main_risk} VOTE?`
+
+### Your Role (Peer Node)
+- **Active Proposal**: Initiate `PROPOSE` proactively to lead consensus when necessary.
+- **Cross-Review**: Obligated to critically review peer output and provide `VERIFY` feedback.
 
 ## 6. Collaboration Interface (Gemini Optimized)
 
-### 6-1. Direct P2P (Autonomous — shell 도구로 직접 호출)
-쿼리 파일 방식 사용 (cmd.exe 줄바꿈 파싱 버그 회피):
+### 6-1. Direct P2P (Autonomous — via shell tools)
+Use the query file method to bypass cmd.exe newline parsing bugs:
 
 ```bat
-:: Step 1 — 고유 쿼리 파일 작성 (반드시 UTF-8 인코딩 사용)
+:: Step 1 — Create unique query file (MUST be UTF-8)
 echo TASK: ... > %TEMP%\gc-{YYYYMMDDHHMMSS}.txt
 
-:: Step 2 — Claude에게 질의 (응답이 stdout으로 반환됨)
+:: Step 2 — Ask CC (response in stdout)
 %SYS_DIR%\cli\msg.bat ask --to cc --query-file %TEMP%\gc-{YYYYMMDDHHMMSS}.txt
 ```
 
-**Encoding & Parsing Rules (P2P 통신):**
-- **응답 수신:** Claude의 파이프(pipe) 출력은 윈도우 환경에 따라 간혹 `UTF-16-LE`로 반환되어 한 칸씩 벌어지는 현상(널 바이트 포함)이 발생할 수 있습니다. `msg.bat` 수신 시 바이트 내에 `\x00`이 포함되어 있는지 먼저 확인하여 `UTF-16-LE`로 처리하고, 실패 시 `UTF-8` -> `CP949` 순서로 디코딩해야 합니다 (`hub.py` 내부 로직 참고).
-- **줄바꿈 처리:** 수신된 문자열의 `\r\n`은 파싱 전 반드시 `\n`으로 정규화하십시오.
-- **환경 변수:** 파이프라인 보호를 위해 쉘 실행 전 항상 `PYTHONUTF8=1`을 설정하십시오.
+**Encoding & Parsing Rules (P2P Communication):**
+- **Receive**: Claude's pipe output may return as `UTF-16-LE` on Windows. Check for `\x00`; if found, process as `UTF-16-LE`. Fallback: `UTF-8` → `CP949` (see `hub.py` logic).
+- **Newlines**: Normalize `\r\n` → `\n` before parsing.
+- **Env Vars**: Always set `PYTHONUTF8=1` before shell execution.
 
-| Target | Node ID |
-|--------|---------|
-| Claude Code (대화형 페어) | `cc` |
-| 룸 상태 확인 | `%SYS_DIR%\cli\msg.bat status` |
-| 비동기 메시지 (mailbox) | `%SYS_DIR%\cli\msg.bat send --from gc --to cc --msg "..."` |
+| Target | Node ID | Action |
+|--------|---------|--------|
+| Claude Code (Interactive Peer) | `cc` | `%SYS_DIR%\cli\msg.bat ask --to cc ...` |
+| Room Status | | `%SYS_DIR%\cli\msg.bat status` |
+| Async Message (Mailbox) | | `%SYS_DIR%\cli\msg.bat send --from gc --to cc --msg "..."` |
 
-### 6-2. Symmetric Utility Scripts (New)
-For full parity with Gemini, Claude now has its own set of utility scripts:
-- **`claude-status.bat`**: Checks `claude.cmd` existence and session validity in `_sys\claude\config\.claude.json`.
-- **`claude-gate.bat`**: Provides a standard interface to check Claude's availability.
+### 6-2. Symmetric Utility Scripts
+- **`claude-status.bat`**: Checks `claude.cmd` existence and session validity.
+- **`claude-gate.bat`**: Standard interface to check Claude's availability.
 
 ### 6-3. P2P Autonomy (Policy-Driven)
-Autonomous communication via `msg.bat` is enabled through the **Shared P2P Auto-Approve Policy**:
 - **Location**: `_sys\gemini\config\policies\p2p-allow.toml`
 - **Rule**: Permits `run_shell_command` calls targeting `msg.bat` without manual user intervention.
-- **Portability**: Uses `commandRegex` with relative patterns to ensure it works across different host environments.
+- **Portability**: Uses `commandRegex` with relative patterns for cross-host compatibility.
 
-### 6-4. Human-relay (Human-in-the-loop)
-사람이 직접 개입해야 하는 경우 텍스트 태그로 요청:
+### 6-4. Human-Relay (Human-in-the-loop)
 
 | Action | Format |
 |--------|--------|
-| Request to Peers | `[REQUEST_TO_PEERS: TYPE]` — WRITE_FILE \| HUMAN_DECISION \| POLICY_CLARIFICATION \| GIT_OPERATION \| SESSION_MANAGEMENT \| READ_AND_VERIFY |
+| Request to Peers | `[REQUEST_TO_PEERS: TYPE]` (Types: WRITE_FILE, HUMAN_DECISION, POLICY_CLARIFICATION, GIT_OPERATION, SESSION_MANAGEMENT, READ_AND_VERIFY) |
 | Refusal | `[REFUSAL: CODE] reason` |
 
-**Critical boundaries:**
-- `_sys/` 스크립트 직접 편집 금지 → `[REQUEST_TO_PEERS: WRITE_FILE]` 요청.
-- 헌법적 문서(`PROTOCOL.md` 등) 수정 시 반드시 전체 노드 합의 필요.
+**Critical Boundaries:**
+- Do not edit `_sys/` scripts directly if constrained → use `[REQUEST_TO_PEERS: WRITE_FILE]`.
+- Constitutional documents (`PROTOCOL.md`, etc.) require full node consensus to modify.
 
-## 7. Git 관리 원칙
+## 7. Git Management Principles
 
-### 트래킹 대상 (Essential — git managed)
-- 루트: `install.bat`, `register.bat`, `unregister.bat`, `CLEANUP.bat`, `*.md` (문서), `.gitignore`, `.gitattributes`
-- `.claude/`: `agents/*.md`, `settings.json`, `skills/*/SKILL.md`
-- `_sys/`: 모든 `.py` + `.bat` 스크립트, 설정 파일, 문서, 테스트 소스
+### Tracked Targets (Essential — git managed)
+- **Root:** `install.bat`, `register.bat`, `unregister.bat`, `CLEANUP.bat`, `*.md`, `.gitignore`, `.gitattributes`
+- **`.claude/`:** `agents/*.md`, `settings.json`, `skills/*/SKILL.md`
+- **`_sys/`:** All `.py` + `.bat` scripts, configs, documentation, tests
 
-### gitignore 처리 대상 (Non-tracked)
-| 경로 | 이유 |
-|------|------|
-| `_sys/env/**` | 대형 바이너리 — install.bat이 설치 |
-| `_sys/tools/` | 대형 바이너리 — install.bat이 설치 |
-| `_sys/data/temp/`, `_sys/data/setup-files/` | 설치 중 생성 |
-| `workspace/`, `_archive/`, `.ai/` | 사용자 데이터 / ephemeral |
-| `_state/` | 에이전트 세션 워크스페이스 (auto-managed) |
-| `_sys/claude/config/` | 인증/세션 데이터 (CLAUDE.md, settings.json, statusline-command.sh 제외) |
-| `_sys/tests/results/` | 테스트 결과물 |
-| `WORKLOG.md` | 작업 로그 → `_archive/` 에서 관리 |
+### Ignored Targets (Non-tracked via .gitignore)
+| Path | Reason |
+|------|--------|
+| `_sys/env/**`, `_sys/tools/` | Large binaries — installed via install.bat |
+| `_sys/data/temp/`, `_sys/data/setup-files/` | Generated during setup |
+| `workspace/`, `_archive/`, `.ai/` | User data / ephemeral state |
+| `_state/` | Agent session workspace (auto-managed) |
+| `_sys/claude/config/` | Auth/session data (except `CLAUDE.md`, `settings.json`, `statusline-command.sh`) |
+| `_sys/tests/results/` | Test outputs |
+| `WORKLOG.md` | Work log (managed inside `_archive/`) |
 
-### 런타임에 생성되는 필수 폴더
-setup.py 또는 start.bat이 최초 실행 시 생성:
+### Runtime Auto-Generated Folders
+Created on first run by `setup.py` or `start.bat`:
 `workspace/`, `_archive/`, `.ai/`, `_sys/tools/`, `_sys/data/temp/`, `_sys/data/setup-files/`
 
 ## 8. Memory & Persistence
 - **Global Memory:** `_sys\gemini\config\GEMINI.md` (portable).
 - **Private Project Memory:** `_sys\gemini\config\tmp\...` (portable).
-- **Note:** Junction 덕분에 인증 정보와 메모리가 휴대용 드라이브를 따라 이동합니다.
+- **Note:** Directory Junctions ensure auth and memory travel with the portable drive, leaving no trace on the host OS.
 
 ## 9. Current State & Next Steps
-Last updated: 2026-06-04
-- PROTOCOL.md v3.1 적용: Tier 폐지, Room 세션 도입, COLLAB_RATE 일반화.
-- SYSTEM_ARCHITECTURE.md v3.0 적용: N-Way Room 아키텍처 반영.
-- 3TCP v1 및 P2P 협업 코어 확립: hub.py, msg.bat, nodes.json.
-- Git 트래킹 최소화: 외부 마켓플레이스(386개), 테스트 결과, 임시 파일 제거 완료.
-- tools.enabled: true — Gemini 셸 도구 활성화 (Direct P2P 통신 가능).
+Last updated: 2026-06-05
+- `PROTOCOL.md v3.3` active: Full English translation, Adaptive Rate rules, Token budget updated.
+- `GEMINI.md` symmetrized with `CLAUDE.md`: Tool Output Limits, Batch Consensus, IPC Compact Syntax integrated.
+- `tools.enabled: true` — Gemini shell tools active (Direct P2P capable).
 
 **Next Steps:**
-1. **Fresh PC setup**: install.bat (double-click) → _sys\core\setup.py
-2. **Integration Testing**: Phase 3 MECE 시나리오 검증 (`test_integration_py.py` 업데이트 필요)
+1. **Integration Testing**: Validate Phase 3 MECE scenarios (update `test_integration_py.py`).
+2. **Fresh PC setup**: Verify `install.bat` on a clean environment.

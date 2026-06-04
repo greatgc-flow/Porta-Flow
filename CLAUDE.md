@@ -68,13 +68,37 @@ Full annotated tree: `README.md`
 - 메시지 발송 (P2P): `python _sys/core/hub.py send --from X --to Y --msg "..."`
 - 룸 상태 조회: `python _sys/core/hub.py status`
 
-## P2P 협업 (PROTOCOL.md v3.1)
+## Tool Output Limits (MANDATORY)
+
+- **NEVER** glob/Read/PowerShell without bounding the output
+- **ALWAYS** exclude `node_modules/`, `.git/`, `_sys/env/`, `venv/`, `__pycache__/` in all glob/find
+- **ALWAYS** use `-Depth 1` for `Get-ChildItem`; never use `dir /s` or `ls -R` naked
+- For files >100 lines: **ALWAYS** use `offset`/`limit` in Read tool. Never read whole file.
+- For shell logs (npm, pip, pytest): pipe to temp, read last 10 lines only
+  - Pattern: `cmd ... > "$env:TEMP\last_log.txt" 2>&1; Get-Content "$env:TEMP\last_log.txt" -Tail 10`
+- For broad exploration: delegate to `Explore` sub-agent (isolates context blowout)
+
+## P2P 협업 (PROTOCOL.md v3.3)
 
 이 프로젝트는 **N-Way 단일 공유 세션(Room)**과 **무제한 합의 루프**를 기반으로 운영됩니다.
 - **COLLAB_RATE (0~10)**: 모든 노드 간의 협업 깊이를 조절합니다. (R:10 = 100% 완전 협업)
 - **만장일치 합의**: 작업 실행 전 모든 참여 노드의 동의가 필수입니다.
 - **업무 분담 (Division of Labor)**: 합의 후 각 노드는 자신의 전문 분야에 맞춰 업무를 분할 수행합니다.
 - **교차 검토 (Cross-check)**: 작업 완료 후 모든 노드가 결과물을 상호 검증합니다.
+
+### Adaptive COLLAB_RATE (task risk-based)
+
+| Risk | Rate | Applies To |
+|------|------|------------|
+| Low | R:0 | Read-only, grep, explore, doc reads |
+| Med | R:3 | `workspace/` code changes |
+| High | R:5 | `_sys/` script changes |
+| Critical | R:10 | `PROTOCOL.md`, `CLAUDE.md`, `GEMINI.md`, `hub.py`, `nodes.json` |
+
+### IPC Compact Syntax
+- AGREE: `ACK:r-{round_id}` / DISAGREE: `NACK:r-{round_id}:REASON={short}`
+- FINAL CALL: `FC:r-{round_id}:SUMMARY={brief}` / PROCEED: `PROC:r-{round_id}`
+- Batch proposal: `PLAN:[1.{step}, 2.{step}] RISK:{main_risk} VOTE?`
 
 ## Collaboration Interface (Claude Optimized)
 
@@ -135,12 +159,13 @@ setup.py 또는 start.bat이 최초 실행 시 생성:
 | `start.bat "파일.exe"` | Windows 기본 핸들러로 실행 |
 
 ## Current State
-Last checkpoint: 2026-06-04 23:55 -- See .ai/ blackboard for details
+Last checkpoint: 2026-06-05 01:15 -- See .ai/ blackboard for details
 ### 1) Tasks Completed Since Last Save
 - **Finalized Phase 3 Portability Framework**: `install.bat`, `register.bat` stability improved.
 - **Implemented N-Way Room Architecture**: `room-7fb9` active with `hub.py` coordination.
-- **Updated Collaboration Protocol**: `PROTOCOL.md v3.1` (Zero-Token sharing, P2P consensus).
+- **Updated Collaboration Protocol to v3.2**: Added **Final Call gate** (§P-3-FC) to consensus for COLLAB_RATE >= 8.
 - **Established P2P Core**: `msg.bat` and `hub.py` now support node-to-node messaging.
+- **Improved Windows Compatibility**: Added `shell=True` to subprocess calls in check scripts.
 - **Repository Cleanup**: Removed 386+ external marketplace files and test artifacts.
 
 ### 2) Technical State
@@ -151,5 +176,5 @@ Last checkpoint: 2026-06-04 23:55 -- See .ai/ blackboard for details
 ### 3) Critical Next Steps
 1. **Fresh PC setup validation**: Verify `install.bat` on a clean environment.
 2. **Integration Testing**: Update `test_integration_py.py` for Phase 3 MECE scenarios.
-3. **Claude Encoding Investigation**: Resolve `cross-check-plan-d-encoding` (r-5fb7).
+3. **Claude Encoding Investigation**: Resolve `cross-check-plan-d-encoding` (r-5fb7) for multi-byte handling in pipes.
 4. **Node ID Alignment**: Fix Node ID mismatch in scripts (r-f2b2).

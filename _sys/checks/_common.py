@@ -35,6 +35,7 @@ def ai_available() -> bool:
     r = subprocess.run(
         [python, str(_SYS_DIR / "hooks" / "ai_check.py")],
         capture_output=True, env=build_env(),
+        shell=(os.name == "nt"),
     )
     return r.returncode == 0
 
@@ -50,6 +51,7 @@ def gemini_call(
     return subprocess.run(
         ["gemini", "--session-id", sid, "-p", prompt, "-o", "text", "-y"],
         capture_output=True, text=True, input=stdin, timeout=timeout, env=build_env(),
+        shell=(os.name == "nt"),
     )
 
 

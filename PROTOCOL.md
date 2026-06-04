@@ -1,62 +1,60 @@
 # PROTOCOL.md — N-Tier Peer-to-Peer Collaboration & Division of Labor (v3)
 
-> **단일 진실 출처**: 노드 평등 권한 · N-Way 합의 · 분업 · 세션 연속성 · 협의 태도(Soft Skills)
-> 코딩 컨벤션 → CONVENTION.md | 시스템 구조 → SYSTEM_ARCHITECTURE.md | 에이전트 워크플로 → CLAUDE.md
+> **Single Source of Truth**: Node Equality · N-Way Consensus · Division of Labor · Session Continuity · Consultation Attitude (Soft Skills)
+> Coding Convention → CONVENTION.md | System Architecture → SYSTEM_ARCHITECTURE.md | Agent Workflow → CLAUDE.md
 
 ---
 
-## §META — 문서 안내
+## §META — Document Guide
 
-### 목적
+### Purpose
 
-이 문서는 **Human, Claude Code(CC), Claude Agent(CA), Gemini CLI(GC) 등 모든 노드 사이**에
-적용 가능한 **평등 권한 기반의 P2P 협업 프로토콜**을 정의한다.
-수직적 계층(Tier)을 폐지하고, N-Way 단일 공유 세션(Room)을 통해 컨텍스트를 동기화하며,
-만장일치 합의 후 업무를 분담(Division of Labor)하여 선순환 루프를 완성한다.
+This document defines an **equality-based P2P collaboration protocol** applicable between **all nodes, including Human, Claude Code (CC), Claude Agent (CA), and Gemini CLI (GC)**.
+It abolishes vertical tiers, synchronizes context through N-Way single shared sessions (Rooms), and completes a virtuous loop by dividing labor (Division of Labor) after unanimous consensus.
 
-### 섹션 맵
+### Section Map
 
-| Part | 섹션 | 내용 | 필수 독자 |
-|------|------|------|----------|
-| **P** | §P-0~P-10 | 공통 코어 (P2P, 합의, 분업, 태도) | 모든 노드 |
-| **M** | §M-1~M-3 | 불변 규칙·상호 불가침·통신 공개 | 모든 노드 |
-| **C** | §C-0 | 협업 정책 (COLLAB_RATE) | CC / CA / GC |
-| **L** | §L-1~L-2 | 레슨런·안티패턴 | 모든 노드 |
-| **H** | §HISTORY | 변경 이력 | 감사용 |
+| Part | Section | Content | Mandatory Readers |
+|------|---------|---------|-------------------|
+| **P** | §P-0~P-10 | Common Core (P2P, Consensus, Division of Labor, Attitude) | All Nodes |
+| **M** | §M-1~M-3 | Mandatory Rules · Mutual Non-Interference · Transparent Communication | All Nodes |
+| **C** | §C-0 | Collaboration Policy (COLLAB_RATE) | CC / CA / GC |
+| **L** | §L-1~L-2 | Lessons Learned · Anti-patterns | All Nodes |
+| **H** | §HISTORY | Change History | For Auditing |
 
 ---
 
 ## Part P: Universal Core Protocol (P2P)
 
-> 어느 노드 쌍 또는 그룹에도 적용 가능한 공통 프로토콜.
-> 모든 노드는 동등한 의사결정 권한과 제안 권한을 가진다.
+> Common protocol applicable to any node pair or group.
+> All nodes have equal decision-making and proposal rights.
 
 ---
 
-## §P-0 — 노드 특성 및 평등 권한 (Node Equality)
+## §P-0 — Node Characteristics and Equality
 
-**원칙**: 모든 협업은 각 노드의 기술적 특성을 배려하되, **의사결정 및 제안 권한은 완전하게 평등**하다.
-모든 노드는 어느 단계에서든 `PROPOSE`(합의 제안)를 주도할 수 있다.
+**Principle**: All collaborations respect each node's technical characteristics, but **decision-making and proposal rights are completely equal**.
+Every node can initiate a `PROPOSE` (consensus proposal) at any stage.
 
-| 속성 | Human | Claude Code (CC) | Claude Agent (CA) | Gemini CLI (GC) |
-|------|-------|-----------------|-------------------|-----------------|
-| **권한** | Tier 0 (거부권) | Peer (평등) | Peer (평등) | Peer (평등) |
-| **인지 범위** | 콘솔·UI 출력 | 파일·도구·메모리 전체 | 작업 범위 내 | 파일 읽기 전용 |
-| **세션 형태** | N-Way Room 참여 | N-Way Room 참여 | N-Way Room 참여 | N-Way Room 참여 |
-| **의사결정** | 최종 승인/거부 | 1/N 투표권 | 1/N 투표권 | 1/N 투표권 |
-| **PASS/FAIL 판정** | 최종 승인 | 교차 검증 참여 | 교차 검증 참여 | 교차 검증 참여 |
-| **컨텍스트 한계** | 인지 부하 관리 | ~1.2 MB JSONL | ~1.2 MB JSONL | ~500k 토큰 |
+| Attribute | Human | Claude Code (CC) | Claude Agent (CA) | Gemini CLI (GC) |
+|-----------|-------|-----------------|-------------------|-----------------|
+| **Authority** | Tier 0 (Veto) | Peer (Equal) | Peer (Equal) | Peer (Equal) |
+| **Cognition Scope** | Console · UI Output | Full File · Tool · Memory | Within Work Scope | File Read-Only |
+| **Session Type** | N-Way Room Participation | N-Way Room Participation | N-Way Room Participation | N-Way Room Participation |
+| **Decision Making** | Final Approval/Refusal | 1/N Voting Right | 1/N Voting Right | 1/N Voting Right |
+| **PASS/FAIL Judgment** | Final Approval | Cross-verification | Cross-verification | Cross-verification |
+| **Context Limit** | Cognition Load Management | ~1.2 MB JSONL | ~1.2 MB JSONL | ~500k Tokens |
 
-**Human 배려 규칙**:
-- Human에게 보이는 정보: Phase 4 승인 요청 + ESCALATE 에스컬레이션 + 에러 알림
-- Human 응답 대기: timeout=0 (무제한). 응답 없으면 status="waiting_approval"로 유지
-- 모든 노드는 협의 교착 시 Human에게 판단을 요청(ESCALATE)할 수 있다.
+**Human Consideration Rules**:
+- Information visible to Human: Phase 4 Approval Requests + ESCALATE escalation + Error Notifications
+- Human response waiting: timeout=0 (unlimited). If no response, status maintained as `"waiting_approval"`.
+- Any node can request judgment from Human (ESCALATE) in case of a consultation deadlock.
 
 ---
 
-## §P-1 — 노드 및 룸 등록 (nodes.json / room.json)
+## §P-1 — Node and Room Registration (nodes.json / room.json)
 
-위치: `.ai/nodes.json` (가용 노드), `.ai/sessions/room-{uuid}/state.json` (참여 노드)
+Location: `.ai/nodes.json` (available nodes), `.ai/sessions/room-{uuid}/state.json` (participating nodes)
 
 ```json
 {
@@ -67,12 +65,12 @@
 }
 ```
 
-- 모든 노드는 동일한 `room_id` 하에서 단일 `handoff.md`와 메시지 큐를 공유한다.
-- N번째 노드 추가 시, 해당 노드를 `members`에 등록하는 것만으로 평등한 투표권이 부여된다.
+- All nodes share a single `handoff.md` and message queue under the same `room_id`.
+- When adding the N-th node, equal voting rights are granted simply by registering the node in `members`.
 
 ---
 
-## §P-2 — 메시지 봉투 (Message Envelope)
+## §P-2 — Message Envelope
 
 ```json
 {
@@ -81,7 +79,7 @@
   "type": "DIRECTIVE",
   "from": "cc",
   "to": "gc",
-  "content": "메시지 내용",
+  "content": "Message content",
   "status": "unread",
   "timestamp": "2026-06-03T14:30:00",
   "ref": 39
@@ -90,123 +88,125 @@
 
 ---
 
-## §P-3 — 만장일치 협의 (Consensus Protocol)
+## §P-3 — Unanimous Consensus (Consensus Protocol)
 
-**원칙**: 작업 실행 전 반드시 만장일치 협의 완료. **합의 라운드 횟수 제한 없음.**
+**Principle**: Unanimous consensus must be completed before task execution. **No limit on the number of consensus rounds.**
 
-상태 파일: `.ai/consensus/{round_id}.json`
-
-```
-[제안 노드]   msg consensus-propose --subject "..." --voters cc,ca,gc
-                     ↓  round_id=r-xxxx 자동 발급, status=voting
-[참여 노드]   msg consensus-vote --round-id r-xxxx --voter {id} --vote agree|disagree|abstain
-                     ↓
-          전원 agree     → [Final Call 단계 진입] (§P-3-FC)
-          1명이라도 모호 → 열린 질문 및 대안 제안을 통한 지속 협의 (라운드 무제한 반복)
-          교착 상태      → ESCALATED  → Human Gate 호출 가능
-```
-
-### §P-3-FC — Final Call (마지막 확인 질문)
-
-**적용 조건**: COLLAB_RATE >= 8 (Strict / Brain Sync) — CR < 8은 선택 적용.
-
-전원 agree 도달 후, 제안 노드가 **Final Call**을 발송한다:
-
-> "~~이렇게 진행할게. 추가 의견이나 놓친 맥락 있어?"
-> *(영문 형식: "Agreed path: [Brief Summary]. Any final blockers or missed context?")*
-
-- 모든 참여 노드가 **"없어" / "No additional input" / "Proceed"** 중 하나로 응답 → **FINALIZED**
-- 미해결 사안이 있을 경우: **P0/P1 블로커(이전에 다루지 않은 것)만** Final Call에서 제기 가능.
-  - 스타일 선호·이미 합의된 사항 재논쟁은 허용하지 않음.
-- Final Call에서 블로커 제기 시: 해당 라운드를 재개하여 협의 계속.
+Status file: `.ai/consensus/{round_id}.json`
 
 ```
-[전원 agree 후]  제안 노드 → Final Call 발송
-                     ↓
-          전원 "없어/Proceed"  → FINALIZED → handoff.md CONSENSUS_HISTORY 자동 기록
-          블로커 제기          → 라운드 재개 → §P-3 voting 단계로 복귀
+[Proposing Node]      msg consensus-propose --subject "..." --voters cc,ca,gc
+                           ↓  round_id=r-xxxx automatically issued, status=voting
+[Participating Node]  msg consensus-vote --round-id r-xxxx --voter {id} --vote agree|disagree|abstain
+                           ↓
+          Everyone agree     → [Enter Final Call stage] (§P-3-FC)
+          Even one ambiguous → Continuous consultation via open questions and alternatives (unlimited rounds)
+          Deadlock           → ESCALATED → Human Gate can be called
 ```
 
----
+### §P-3-FC — Final Call (Last Confirmation Question)
 
-## §P-4 — 분업 프로토콜 (Division of Labor)
+**Application Condition**: COLLAB_RATE >= 8 (Strict / Brain Sync) — Optional for CR < 8.
 
-**전제**: §P-3 FINALIZED 확인 후 진입. **다중 노드 병렬/순차 수행.**
+After reaching unanimous agreement, the proposing node sends a **Final Call**:
+
+> "I will proceed like this. Any additional opinions or missed context?"
+> *(English format: "Agreed path: [Brief Summary]. Any final blockers or missed context?")*
+
+- If all participating nodes respond with **"None" / "No additional input" / "Proceed"** → **FINALIZED**
+- If there are unresolved issues: Only **P0/P1 blockers (those not previously addressed)** can be raised during Final Call.
+  - Re-litigating style preferences or matters already agreed upon is not permitted.
+- If a blocker is raised during Final Call: Resume the round and continue consultation.
 
 ```
-[전략 수립]   합의된 목표를 세부 태스크(Sub-tasks)로 분할
-[업무 할당]   각 노드의 특성에 맞게 DIRECTIVE 발송
-              - Node A (CC): 본 로직 구현
-              - Node B (CA): 테스트 코드 작성
-              - Node C (GC): 문서화 및 Axis 분석
-[결과 취합]   각 노드의 ARTIFACT를 단일 공유 세션(Room)에 취합
-[교차 검증]   전체 참여 노드가 상호 결과물을 검토하여 VERIFY 수행
+[After everyone agrees]  Proposing Node → Send Final Call
+                              ↓
+          Everyone "None/Proceed"  → FINALIZED → Automatically record in handoff.md CONSENSUS_HISTORY
+          Blocker raised           → Resume round → Return to §P-3 voting stage
 ```
 
 ---
 
-## §P-5 — 콘솔 출력 표준 (HUB Prefix)
+## §P-4 — Division of Labor Protocol
 
-| 접두어 | 용도 |
-|--------|------|
-| `[HUB]` | 정상 동작 (SENT, READ, ASK, REPLY, PROPOSE, VOTE, DECISION, REGISTER) |
-| `[HUB:ERROR]` | 오류 |
-| `[HUB:WARN]` | 경고 |
-| `[HUB:GATE]` | 가용 여부 확인 |
+**Premise**: Enter after §P-3 FINALIZED verification. **Multiple nodes perform parallel/sequential execution.**
+
+```
+[Strategy Establishment] Divide agreed goals into detailed sub-tasks
+[Task Assignment]        Send DIRECTIVEs suited to each node's characteristics
+                           - Node A (CC): Implement core logic
+                           - Node B (CA): Write test code
+                           - Node C (GC): Documentation and Axis analysis
+[Result Aggregation]     Gather each node's ARTIFACT into the single shared session (Room)
+[Cross-Verification]     All participating nodes review each other's output and perform VERIFY
+```
 
 ---
 
-## §P-6 — 세션 연속성 (Session Continuity)
+## §P-5 — Console Output Standard (HUB Prefix)
 
-handoff.md 6개 섹션 (단일 Room 내 공통 공유):
+| Prefix | Use |
+|--------|-----|
+| `[HUB]` | Normal operation (SENT, READ, ASK, REPLY, PROPOSE, VOTE, DECISION, REGISTER) |
+| `[HUB:ERROR]` | Error |
+| `[HUB:WARN]` | Warning |
+| `[HUB:GATE]` | Availability check |
+
+---
+
+## §P-6 — Session Continuity
+
+handoff.md 6 sections (shared common within a single Room):
 
 ```markdown
-## [GOAL]               ← 룸 전체 공통 목표
-## [RECENT_COMPLETED]   ← 노드 구분 없이 시간순 기록
-## [PENDING_ISSUES]     ← 현재 블로킹 사안
-## [KEY_DECISIONS]      ← 합의된 주요 결정 사항
-## [CONSENSUS_HISTORY]  ← 무제한 합의 라운드 기록
-## [ACTIVE_THREADS]     ← 분업 진행 중인 태스크 체인
+## [GOAL]               ← Common goal for the entire room
+## [RECENT_COMPLETED]   ← Chronological record regardless of node
+## [PENDING_ISSUES]     ← Current blocking issues
+## [KEY_DECISIONS]      ← Agreed-upon major decisions
+## [CONSENSUS_HISTORY]  ← Record of unlimited consensus rounds
+## [ACTIVE_THREADS]     ← Task chains currently in division of labor
 ```
 
----
-
-## §P-7 — 동기/비동기 정책 (Sync / Async Policy)
-
-- **기본**: 동기(Synchronous), 타임아웃 없음.
-- **분업 시**: 비동기(Async) 허용. 출력 파일이나 영향 범위가 겹치지 않는 독립 태스크에 한해 다중 노드가 병렬로 수행 가능.
+**handoff.md Rolling Rule**: Move any item marked `[DONE]` to `_archive/handoff-YYYYMMDD.md`. Keep only active items. Target: handoff.md always < 2KB.
 
 ---
 
-## §P-8 — 노드별 필수 로딩 파일 & 토큰 예산
+## §P-7 — Sync / Async Policy
 
-| 노드 | 필수 로딩 파일 | 예상 토큰 |
-|------|---------------|----------|
-| **CC** | `CLAUDE.md`, `CONTEXT.md`, `MEMORY.md`, `room state` | ~10,450+ |
-| **CA** | `[agent].md`, `room state`, `CONVENTION.md` 요약 | ~3,750 |
-| **GC** | `GEMINI.md`, `room state`, Query 파일 | ~2,700+ |
+- **Default**: Synchronous, no timeout.
+- **During Division of Labor**: Asynchronous allowed. Multiple nodes can perform parallel tasks as long as output files or influence scopes do not overlap.
 
 ---
 
-## §P-9 — N-Node 확장 절차
+## §P-8 — Node Required Loading Files & Token Budget
 
-모든 새로운 노드는 `msg register-node` 후 `members` 리스트에 추가되는 즉시 다른 노드와 **동일한 등급의 Peer**로서 협업에 참여한다.
+| Node | Required Loading Files | Estimated Tokens |
+|------|----------------------|-----------------|
+| **CC** | `CLAUDE.md`, `CONTEXT.md`, `MEMORY.md`, `room state` | ~3,000+ |
+| **CA** | `[agent].md`, `room state`, `CONVENTION.md` summary | ~3,750 |
+| **GC** | `GEMINI.md`, `room state`, Query file | ~2,700+ |
 
 ---
 
-## §P-10 — 협의 태도와 선순환 루프 (Soft Skills)
+## §P-9 — N-Node Expansion Procedure
 
-**원칙**: 모든 노드는 객관적이고 건설적인 태도로 협의에 임하며, 시스템을 지속적으로 개선한다.
+Every new node participates in collaboration as a **Peer of the same rank** as other nodes immediately upon being added to the `members` list after `msg register-node`.
 
-1. **열린 질문 (Open-ended Questions)**:
-   - 질문 범위를 좁히지 말고 목적 기반의 열린 질문으로 상대 노드의 대안을 이끌어낸다.
-   - 예: "이 방식이 최선인가요?" (X) → "이 구조를 개선할 수 있는 더 나은 대안이나 고려사항이 있을까요?" (O)
-2. **선판단 금지 (Non-judgmental)**:
-   - "변경 범위가 많다" 등을 이유로 미리 실행 가능성을 판단하지 않는다. 의견은 의견일 뿐, 데이터와 합의에 기반하여 결정한다.
-3. **지속적 개선 제안 (Kaizen)**:
-   - 진행 과정 중 프로토콜이나 절차 자체에 대한 개선점이 발견되면 즉시 `PROPOSE`를 통해 룰 업데이트를 제안한다.
-4. **교차 검토의 의무 (Cross-check)**:
-   - 타 노드의 결과물에 대해 단순 수용이 아닌, 자신의 특성 관점에서 비판적으로 검토하여 피드백을 제공한다.
+---
+
+## §P-10 — Consultation Attitude and Virtuous Loop (Soft Skills)
+
+**Principle**: All nodes engage in consultation with an objective and constructive attitude, continuously improving the system.
+
+1. **Open-ended Questions**:
+   - Do not narrow the scope of questions; use goal-based open questions to draw out alternatives from the other node.
+   - e.g.: "Is this way best?" (X) → "Are there better alternatives or considerations that can improve this structure?" (O)
+2. **Non-judgmental**:
+   - Do not pre-judge feasibility based on reasons like "there are many changes." Opinions are just opinions; decisions are based on data and consensus.
+3. **Continuous Improvement Proposal (Kaizen)**:
+   - If improvements to the protocol or procedures are discovered during the process, immediately propose a rule update via `PROPOSE`.
+4. **Duty of Cross-check**:
+   - Do not simply accept outputs from other nodes; review them critically from the perspective of your own characteristics and provide feedback.
 
 ---
 
@@ -214,30 +214,30 @@ handoff.md 6개 섹션 (단일 Room 내 공통 공유):
 
 ---
 
-## §M-1 — 상호 불가침 영역 (Mutual Non-Interference)
+## §M-1 — Mutual Non-Interference
 
-모든 노드는 평등하지만, 각자의 **전용 기술적 자산**에 대해서는 상호 존중한다.
+All nodes are equal, but each respects the other's **exclusive technical assets**.
 
-| 소유 노드 | 불가침 영역 | 타 노드 접근 방법 |
-|----------|-----------|----------------|
-| **Human** | 최종 거부권, 범위 이탈 판단 | Phase 4 Gate 또는 ESCALATE |
-| **모든 노드** | 보안·인증 파일 (auth, USERPROFILE 영역) | 접근 불가 |
-| **모든 노드** | 헌법적 문서 (`CLAUDE.md` 등) 직접 수정 | **N-Way 합의 필수** |
-
----
-
-## §M-2 — 통신 공개 원칙 (Transparent Communication)
-
-**원칙**: 룸 내의 모든 통신은 숨김 없이 전체 참여 노드와 공유한다. 비공개 채널 사용을 금지하며, 합의 내용은 `handoff.md`에 투명하게 기록한다.
+| Owner Node | Inviolable Area | Other Node Access Method |
+|------------|----------------|--------------------------|
+| **Human** | Final Veto, Judgment on Scope Deviation | Phase 4 Gate or ESCALATE |
+| **All Nodes** | Security/Auth files (auth, USERPROFILE area) | No access |
+| **All Nodes** | Constitutional documents (`CLAUDE.md`, etc.) direct modification | **N-Way Consensus Mandatory** |
 
 ---
 
-## §M-3 — 불변 규칙 (Invariants)
+## §M-2 — Transparent Communication
 
-1. 합의 전 실행 금지 (`FINALIZED` 확인 필수).
-2. `room-{uuid}` 세션 이탈/파편화 금지.
-3. 동일 오류 3회 반복 시 즉시 HALT 및 협의 재시작.
-4. 모든 결정은 투표를 통한 만장일치 원칙 준수.
+**Principle**: All communication within the room is shared with all participating nodes without concealment. Use of private channels is prohibited, and consensus content is transparently recorded in `handoff.md`.
+
+---
+
+## §M-3 — Invariants
+
+1. No execution before consensus (`FINALIZED` check mandatory).
+2. No departure from or fragmentation of `room-{uuid}` session.
+3. If the same error repeats 3 times, immediately HALT and restart consultation.
+4. All decisions must follow the principle of unanimity through voting.
 
 ---
 
@@ -245,36 +245,46 @@ handoff.md 6개 섹션 (단일 Room 내 공통 공유):
 
 ---
 
-## §C-0 — COLLAB_RATE 협업 깊이 (0~10)
+## §C-0 — COLLAB_RATE Collaboration Depth (0~10)
 
-본 시스템은 **자율성 그라데이션과 5개 주요 앵커**가 혼합된 모델을 사용하여 에이전트의 활동 범위를 제어한다. 숫자가 높을수록 합의 허들이 낮아지며, 10에 도달하면 모든 행위에 합의가 필수적이다.
+This system uses a model mixing an **autonomy gradient with 5 major anchors** to control the agents' scope of activity. Higher numbers mean higher consensus requirements; at 10, consensus is mandatory for all actions.
 
-| Anchor | 모드 | 자율성 | 협업 노드 개입 및 합의(PROPOSE) 규칙 |
-|:---:|:---:|:---:|:---|
-| **0** | **Solo** | 100% | **모두 자율**. 합의 프로세스 생략. 에이전트 단독 실행. |
-| **3** | **System Guard** | 75% | 일반 코드는 자율 수정. 단, **시스템 구조(`_sys/`) 및 헌법 문서(`*.md`) 수정 시 사전 합의 필수**. |
-| **5** | **Partner** | 50% | 세부 구현은 자율. 단, **기능 설계 시작 및 마일스톤 완료 시점**에 교차 검토 및 합의 필수. |
-| **8** | **Strict** | 25% | **모든 로직 변경 시 사전 합의 필수**. (함수 시그니처, 알고리즘, 핵심 상태 전이 등). 오타/주석/로그 등 사소한 변경만 자율 허용. |
-| **10** | **Brain Sync** | 0% | **절대 예외 없음 (No Exceptions)**. 사소한 오타나 명백한 버그 수정을 포함한 **모든 파일 수정 행위에 대해 에이전트의 자의적 판단 엄격 금지**. 무조건 선 합의 후 진행. |
+| Anchor | Mode | Autonomy | Rules for Intervention and Consensus (PROPOSE) |
+|:------:|:----:|:--------:|:----------------------------------------------|
+| **0** | **Solo** | 100% | **Fully Autonomous**. Skip consensus process. Agent executes alone. |
+| **3** | **System Guard** | 75% | Autonomous modification of general code. However, **prior consensus is mandatory for modifying system structures (`_sys/`) and constitutional documents (`*.md`)**. |
+| **5** | **Partner** | 50% | Autonomous for detailed implementation. However, **cross-verification and consensus are mandatory at functional design start and milestone completion points**. |
+| **8** | **Strict** | 25% | **Prior consensus is mandatory for all logic changes** (function signatures, algorithms, core state transitions, etc.). Only minor changes such as typos/comments/logs are autonomously allowed. |
+| **10** | **Brain Sync** | 0% | **No Exceptions**. Strict prohibition of agent's arbitrary judgment for **any file modification actions**, including minor typos or obvious bug fixes. Must proceed only after prior consensus. |
+
+**Adaptive Rate by Task Risk** (applies within a session unless globally overridden):
+
+| Risk | Rate | Applies To |
+|------|------|------------|
+| Low | R:0 | Read-only, grep, explore, doc reads |
+| Med | R:3 | `workspace/` code changes |
+| High | R:5 | `_sys/` script changes |
+| Critical | R:10 | `PROTOCOL.md`, `CLAUDE.md`, `GEMINI.md`, `hub.py`, `nodes.json` |
 
 ---
 
-## §P-11 — 제로토큰 대칭 기억 (Zero-Token Symmetric Memory)
+## §P-11 — Zero-Token Symmetric Memory
 
-컨텍스트 비대화로 인한 지침 망각(Context Decay)을 방지하기 위해 채팅 프롬프트가 아닌 **파일 기반의 블랙보드 시스템**을 사용한다.
+To prevent Context Decay due to context bloat, a **file-based blackboard system** is used instead of chat prompts.
 
-1.  **블랙보드 공유**: 모든 상세 요약, 아키텍처 분석은 `.ai/sessions/room-{uuid}/summary_{agent}.md` (최대 4KB) 파일에 기록한다. 채팅창에는 파일 경로만 전달한다.
-2.  **대칭적 체크포인트**: `ctx-save` 실행 시 `CLAUDE.md`와 `GEMINI.md` 양쪽에 현재 상태와 상호 교차 요약을 동시에 기록하여 두 노드가 대등한 기억을 유지하게 한다.
-3.  **재지향 단계 (Re-orientation Phase)**: 새 세션 시작 또는 지시 수신 시, 에이전트는 반드시 블랙보드 파일들을 먼저 읽고 프로젝트 상태를 동기화한 뒤 작업을 시작해야 한다.
+1. **Blackboard Sharing**: All detailed summaries and architectural analyses are recorded in `.ai/sessions/room-{uuid}/summary_{agent}.md` (max 4KB) files. Only file paths are transmitted in the chat window.
+2. **Symmetric Checkpoint**: When executing `ctx-save`, the current state and mutual cross-summaries are recorded in both `CLAUDE.md` and `GEMINI.md` simultaneously to maintain equal memory between both nodes.
+3. **Re-orientation Phase**: Upon starting a new session or receiving instructions, the agent must first read the blackboard files and synchronize the project state before starting work.
 
 ---
 
 ## §HISTORY
 
-| 날짜 | 버전 | 주요 변경 |
-|------|------|---------|
-| 2026-06-05 | **v3.2** | **Final Call 합의 마감 절차 추가.** §P-3-FC 신설: 전원 agree 후 제안 노드가 "추가 의견 있어?" 마지막 확인 → 전원 "없어" 응답 시 FINALIZED. CR>=8 필수. |
-| 2026-06-04 | **v3.1** | **제로토큰 대칭 기억 및 앵커 확장.** COLLAB_RATE 5단계 앵커 도입. Level 10 '절대 예외 없음' 명문화. §P-11 제로토큰 블랙보드 시스템 추가. |
-| 2026-06-03 | **v3.0** | **N-Tier Peer-to-Peer 대개편.** 수직적 계층(Tier) 폐지 및 노드 평등 권한 확립. 1:1 페어 세션을 N-Way Room 세션으로 확장. 합의 라운드 무제한화. `GEMINI_RATIO`를 `COLLAB_RATE`로 일반화. §P-10 협의 태도(Soft Skills) 및 §P-4 다중 노드 분업/교차검토 명문화. CC 독점 결정권 폐지. |
-| 2026-06-03 | **v2.0** | §META 신규. §P-7 Sync/Async, §P-8 노드별 로딩 파일. §M-1~M-3 상호 불가침·통신 공개·불변 규칙. |
-| 2026-06-03 | **v1.0** | 3TCP v1 최초 구현. |
+| Date | Version | Major Changes |
+|------|---------|---------------|
+| 2026-06-05 | **v3.3** | **Full English translation. Adaptive Rate rules added to §C-0. Token budget updated in §P-8. handoff.md rolling rule added to §P-6.** |
+| 2026-06-05 | **v3.2** | **Added Final Call consensus closing procedure.** New §P-3-FC: After everyone agrees, proposing node performs final check → FINALIZED upon everyone responding "None". Required for CR>=8. |
+| 2026-06-04 | **v3.1** | **Zero-Token Symmetric Memory and anchor expansion.** COLLAB_RATE 5 anchor levels. Level 10 'No Exceptions' codified. §P-11 Zero-Token Blackboard system added. |
+| 2026-06-03 | **v3.0** | **Major N-Tier Peer-to-Peer overhaul.** Abolished vertical tiers, established node equality. Expanded 1:1 pair sessions to N-Way Room sessions. Unlimited consensus rounds. Generalized `GEMINI_RATIO` to `COLLAB_RATE`. §P-10 Soft Skills and §P-4 Division of Labor codified. CC exclusive decision power abolished. |
+| 2026-06-03 | **v2.0** | §META added. §P-7 Sync/Async, §P-8 node loading files. §M-1~M-3 Mutual Non-Interference, Transparent Communication, Invariants. |
+| 2026-06-03 | **v1.0** | Initial implementation of 3TCP v1. |
