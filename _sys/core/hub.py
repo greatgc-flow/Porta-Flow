@@ -1,9 +1,10 @@
 """
-hub.py — Portable Dev Environment AI 협업 허브 (P2P v3)
+hub.py — Portable Dev Environment AI 협업 허브 (P2P v3.1)
 액션: Write 7개 (filelock) + Read 2개 (Lock-Free) + ask 1개 (동기) + consensus 3개 + node 2개
 
 P2P v3: N-Way Room 세션 기반 평등 권등 구조 구현.
 기존 Pair(c-g) 구조 폐기 -> room-{uuid} 및 members 리스트 기반 동적 협업.
+v3.1: 실시간 협업 가시성 로그 (_log_p2p) 추가.
 """
 from __future__ import annotations
 
@@ -99,6 +100,20 @@ def _short_id(prefix: str = "") -> str:
     return prefix + uuid.uuid4().hex[:4]
 
 
+def _log_p2p(action: str, details: str, from_node: str | None = None, to_node: str | None = None) -> None:
+    """실시간 협업 가시성을 위한 정형화된 로그 출력."""
+    if os.environ.get("P2P_VERBOSE") != "1":
+        # 루틴한 폴링/상태 조회는 기본적으로 숨김
+        routine = action.lower() in ("check", "status", "check-gate", "mark-read", "list-nodes", "consensus-check")
+        if routine: return
+    
+    n_from = from_node.upper() if from_node else "SYS"
+    n_to = to_node.upper() if to_node else "ALL"
+    
+    # [P2P] 프리픽스로 가시성 확보
+    print(f"  ━━ P2P [{n_from} → {n_to}] {action}: {details}", file=sys.stderr)
+
+
 def _strip_ansi(text: str) -> str:
     return re.sub(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])', '', text)
 
@@ -124,23 +139,6 @@ def _load_nodes(ai_root: Path) -> dict:
         data = _read_json(nodes_path)
         return data.get("nodes", {})
     return _default_nodes()["nodes"]
-
-
-def _resolve_node_cmd(to: str, query: str, ai_root: Path | None) -> list[str]:
-    nodes = _load_nodes(ai_root) if ai_root else _default_nodes()["nodes"]
-    node = nodes.get(to)
-    if node:
-        exe_name = node.get("invoke", to)
-        raw_args = node.get("invoke_args", ["-p", "{query}"])
-        args = [a.replace("{query}", query) for a in raw_args]
-    else:
-        exe_name = to
-        args = ["-p", query]
-    exe = shutil.which(exe_name)
-    if not exe:
-        print(f"[ERROR] {exe_name} CLI not found in PATH", file=sys.stderr)
-        sys.exit(1)
-    return [exe] + args
 
 
 # ─────────────────────────────────────────────────────────────
@@ -220,6 +218,7 @@ def action_init_session(ai_root: Path, agent: str, room_id: str | None = None) -
         state["members"] = members
         state["updated_at"] = _now()
         _write_json(ai_root / "state.json", state)
+        _log_p2p("JOIN", f"Room={state['room_id']} SID={sid}", from_node=agent)
     session_dir = ai_root / "sessions" / state["room_id"]
     session_dir.mkdir(parents=True, exist_ok=True)
     print(sid)
@@ -235,6 +234,7 @@ def action_end_session(ai_root: Path, agent: str) -> None:
         state["members"] = members
         state["updated_at"] = ts
         _write_json(ai_root / "state.json", state)
+        _log_p2p("EXIT", "Session ended", from_node=agent)
     if room_id:
         session_dir = ai_root / "sessions" / room_id
         session_dir.mkdir(parents=True, exist_ok=True)
@@ -264,10 +264,8 @@ def action_send(
     with _get_lock(ai_root, "mailbox"):
         mb = _read_json(ai_root / "mailbox.json")
         msgs = mb.get("messages", [])
-        # prune oldest read messages when approaching the cap
         if len(msgs) >= _MAILBOX_MAX:
             msgs = [m for m in msgs if m.get("status") != "read"]
-            # if still over cap (all unread), drop oldest to stay under limit
             if len(msgs) >= _MAILBOX_MAX:
                 msgs = msgs[-(  _MAILBOX_MAX - 1):]
         new_id = (msgs[-1]["id"] + 1) if msgs else 1
@@ -279,6 +277,7 @@ def action_send(
         mb["messages"] = msgs
         mb["unread_count"] = sum(1 for m in msgs if m.get("status") == "unread")
         _write_json(ai_root / "mailbox.json", mb)
+        _log_p2p("SEND", f"({msg_type}) {msg[:60]}...", from_node=from_, to_node=to)
     cc_str = f" cc={','.join(cc_list)}" if cc_list else ""
     ref_str = f" ref={ref_id}" if ref_id else ""
     print(f"[HUB] SENT  {from_}→{to} | thread={auto_thread} | id={new_id} type={msg_type}{cc_str}{ref_str}")
@@ -326,6 +325,7 @@ def action_update_status(ai_root: Path, mission: str, blocked: str | None, phase
         if phase is not None: state["phase"] = phase
         state["updated_at"] = _now()
         _write_json(ai_root / "state.json", state)
+        _log_p2p("STATUS", f"Mission={mission} Phase={phase}", from_node="SYSTEM")
     print(f"[STATUS] mission={mission}")
 
 
@@ -369,13 +369,14 @@ def action_register_node(
             "memory": memory, "timeout": timeout,
         }
         _write_json(ai_root / "nodes.json", data)
-    print(f"[HUB] REGISTER node={node_id} tier={tier} type={node_type}")
+    print(f"[REGISTER] {node_id} (tier={tier}, invoke={invoke})")
 
 
 def action_status(ai_root: Path) -> None:
     state = _read_json(ai_root / "state.json")
     mb = _read_json(ai_root / "mailbox.json")
     unread_count = mb.get("unread_count", 0)
+    
     print("### [ROOM STATUS]")
     print(f"**Room ID**: {state.get('room_id') or '없음'}")
     print(f"**Members**: {', '.join(state.get('members', {}).keys()) or '없음'}")
@@ -385,7 +386,6 @@ def action_status(ai_root: Path) -> None:
     print(f"**Updated**: {state.get('updated_at') or '없음'}")
     print(f"**Mailbox**: {unread_count} unread")
     
-    # 활성 합의 라운드 출력 (test_scenario_collab_rate 대응)
     consensus_dir = ai_root / "consensus"
     if consensus_dir.exists():
         active = []
@@ -419,21 +419,76 @@ def action_check_gate(ai_root: Path, agent: str) -> None:
 # ask 액션
 # ─────────────────────────────────────────────────────────────
 
+def _decode_output(data: bytes) -> str:
+    if not data:
+        return ""
+    # UTF-8, UTF-16-LE (Windows Claude), CP949 (Korean Windows CMD) 순서로 시도
+    for enc in ["utf-8", "utf-16-le", "cp949"]:
+        try:
+            return data.decode(enc).replace("\r\n", "\n")
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8", errors="replace")
+
+
 def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None) -> None:
     if query_file:
         qf = Path(query_file)
         if not qf.exists(): sys.exit(1)
-        query, _ = qf.read_text(encoding="utf-8"), qf.unlink()
-    cmd = _resolve_node_cmd(to, query, ai_root)
+        query = qf.read_text(encoding="utf-8")
+        qf.unlink()
+    
+    # 쿼리 전달 전략: 
+    # {query} 치환 방식은 Windows cmd/bat 호출 시 줄바꿈(\n)에서 인자가 잘리는 치명적 결함이 있음.
+    # 따라서 모든 노드 호출을 stdin(-p -) 방식으로 강제 전환하여 안정성 확보.
+    nodes = _load_nodes(ai_root) if ai_root else _default_nodes()["nodes"]
+    node = nodes.get(to, {})
+    exe_name = node.get("invoke", to)
+    raw_args = node.get("invoke_args", ["-p", "{query}"])
+    
+    cmd_args = []
+    use_stdin = False
+    for arg in raw_args:
+        if "{query}" in arg:
+            # {query}가 포함된 인자를 - (stdin) 지시자로 치환
+            cmd_args.append(arg.replace("{query}", "-"))
+            use_stdin = True
+        else:
+            cmd_args.append(arg)
+    
+    exe = shutil.which(exe_name)
+    if not exe:
+        print(f"[ERROR] {exe_name} CLI not found in PATH", file=sys.stderr)
+        sys.exit(1)
+    
+    cmd = [exe] + cmd_args
+    
     try:
         t0 = time.monotonic()
-        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", 
-                                timeout=timeout_sec if timeout_sec > 0 else None, env={**os.environ, "PYTHONUTF8": "1"})
-        elapsed, output = int(time.monotonic() - t0), _strip_ansi(result.stdout)
+        # env에 PYTHONUTF8=1 설정하여 대상 CLI가 Python인 경우 UTF-8 출력 유도
+        # bytes로 캡처하여 인코딩 중의적 처리
+        process_env = {**os.environ, "PYTHONUTF8": "1"}
+        
+        result = subprocess.run(
+            cmd,
+            input=query.encode("utf-8") if use_stdin else None,
+            capture_output=True,
+            timeout=timeout_sec if timeout_sec > 0 else None,
+            env=process_env
+        )
+        
+        elapsed = int(time.monotonic() - t0)
+        output = _decode_output(result.stdout)
+        output = _strip_ansi(output)
+        
         if result.returncode != 0:
-            print(f"[HUB:WARN] {to} exited {result.returncode}", file=sys.stderr)
+            err = _decode_output(result.stderr)
+            print(f"[HUB:WARN] {to} exited {result.returncode}\n{_strip_ansi(err)}", file=sys.stderr)
+        
         print(f"[HUB] REPLY {to} | chars={len(output)} | elapsed={elapsed}s\n{output.strip()}")
-    except Exception as e: print(f"[HUB:ERROR] ask 실패: {e}", file=sys.stderr); sys.exit(1)
+    except Exception as e:
+        print(f"[HUB:ERROR] ask 실패: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -445,6 +500,7 @@ def action_consensus_propose(ai_root: Path, subject: str, voters: list[str], pro
     data = {"round_id": round_id, "subject": subject, "proposed_by": proposed_by, "proposed_at": _now(), 
             "status": "voting", "voters": voters, "votes": {v: None for v in voters}}
     _write_json(ai_root / "consensus" / f"{round_id}.json", data)
+    _log_p2p("PROPOSE", f"ID={round_id} Subject='{subject}'", from_node=proposed_by)
     print(f"[HUB] PROPOSE {round_id} | subject={subject} | voters={','.join(voters)}")
 
 
@@ -463,7 +519,10 @@ def action_consensus_vote(ai_root: Path, round_id: str, voter: str, vote_val: st
         votes[voter] = {"vote": vote_val, "reason": reason, "ts": _now()}
         data["votes"] = votes
         total, cast = len(data["voters"]), sum(1 for v in votes.values() if v is not None)
+        
+        _log_p2p("VOTE", f"ID={round_id} Vote={vote_val} ({cast}/{total})", from_node=voter)
         print(f"[HUB] VOTE {round_id} | voter={voter} {vote_val} | {cast}/{total}")
+        
         if cast == total:
             has_disagree = any(v["vote"] == "disagree" for v in votes.values())
             all_agree = all(v["vote"] == "agree" for v in votes.values())
@@ -477,6 +536,7 @@ def action_consensus_vote(ai_root: Path, round_id: str, voter: str, vote_val: st
                 data["status"] = "finalized"
                 data["outcome"] = "abstain"
             _write_json(rpath, data)
+            _log_p2p("DECISION", f"ID={round_id} Status={data['status'].upper()} Outcome={data['outcome']}", from_node="SYSTEM")
             print(f"[HUB] DECISION {round_id} {data['status'].upper()} | {data['outcome']}")
             _append_consensus_history(ai_root, round_id, data["subject"], data["status"].upper())
         else: _write_json(rpath, data)
@@ -509,17 +569,17 @@ def action_consensus_check(ai_root: Path, round_id: str | None) -> None:
 # ─────────────────────────────────────────────────────────────
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="hub", description="AI 협업 허브 — P2P v3")
+    parser = argparse.ArgumentParser(prog="hub", description="AI 협업 허브 — P2P v3.1")
     parser.add_argument("action", choices=["init-session", "end-session", "send", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "consensus-propose", "consensus-vote", "consensus-check", "register-node", "list-nodes"])
     parser.add_argument("--agent")
     parser.add_argument("--room")
     parser.add_argument("--from", dest="from_")
     parser.add_argument("--to", dest="to_")
     parser.add_argument("--msg")
-    parser.add_argument("--thread-id") # 복구
-    parser.add_argument("--type", default="MSG") # 복구
-    parser.add_argument("--cc") # 복구
-    parser.add_argument("--ref", type=int) # 복구
+    parser.add_argument("--thread-id")
+    parser.add_argument("--type", default="MSG")
+    parser.add_argument("--cc")
+    parser.add_argument("--ref", type=int)
     parser.add_argument("--query", default="")
     parser.add_argument("--query-file")
     parser.add_argument("--target")

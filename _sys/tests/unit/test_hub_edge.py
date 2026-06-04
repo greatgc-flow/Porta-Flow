@@ -223,9 +223,19 @@ class TestRobustness:
             candidate = parent
         assert result == fake_project / ".ai"
 
-    def test_r2_drive_root_fallback(self, tmp_path):
-        """R-2: .git 없으면 CWD에 .ai/ 생성 (드라이브 루트 fallback)."""
+    def test_r2_drive_root_fallback(self, tmp_path, monkeypatch):
+        """R-2: .git/.ai 없으면 CWD에 .ai/ 반환 (드라이브 루트 fallback).
+        tmp_path가 워크스페이스 내부에 있어 상위 .ai/.git이 검색될 수 있으므로
+        Path.exists를 monkeypatch로 격리."""
         import os
+        from pathlib import Path
+        orig_exists = Path.exists
+        def _no_sentinel(self: Path):
+            if self.name in (".git", ".ai"):
+                return False
+            return orig_exists(self)
+        monkeypatch.setattr(Path, "exists", _no_sentinel)
+
         orig = os.getcwd()
         os.chdir(tmp_path)
         try:
