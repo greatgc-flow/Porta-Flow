@@ -101,9 +101,30 @@
                      ↓  round_id=r-xxxx 자동 발급, status=voting
 [참여 노드]   msg consensus-vote --round-id r-xxxx --voter {id} --vote agree|disagree|abstain
                      ↓
-          전원 agree     → FINALIZED  → handoff.md CONSENSUS_HISTORY 자동 기록
+          전원 agree     → [Final Call 단계 진입] (§P-3-FC)
           1명이라도 모호 → 열린 질문 및 대안 제안을 통한 지속 협의 (라운드 무제한 반복)
           교착 상태      → ESCALATED  → Human Gate 호출 가능
+```
+
+### §P-3-FC — Final Call (마지막 확인 질문)
+
+**적용 조건**: COLLAB_RATE >= 8 (Strict / Brain Sync) — CR < 8은 선택 적용.
+
+전원 agree 도달 후, 제안 노드가 **Final Call**을 발송한다:
+
+> "~~이렇게 진행할게. 추가 의견이나 놓친 맥락 있어?"
+> *(영문 형식: "Agreed path: [Brief Summary]. Any final blockers or missed context?")*
+
+- 모든 참여 노드가 **"없어" / "No additional input" / "Proceed"** 중 하나로 응답 → **FINALIZED**
+- 미해결 사안이 있을 경우: **P0/P1 블로커(이전에 다루지 않은 것)만** Final Call에서 제기 가능.
+  - 스타일 선호·이미 합의된 사항 재논쟁은 허용하지 않음.
+- Final Call에서 블로커 제기 시: 해당 라운드를 재개하여 협의 계속.
+
+```
+[전원 agree 후]  제안 노드 → Final Call 발송
+                     ↓
+          전원 "없어/Proceed"  → FINALIZED → handoff.md CONSENSUS_HISTORY 자동 기록
+          블로커 제기          → 라운드 재개 → §P-3 voting 단계로 복귀
 ```
 
 ---
@@ -252,6 +273,7 @@ handoff.md 6개 섹션 (단일 Room 내 공통 공유):
 
 | 날짜 | 버전 | 주요 변경 |
 |------|------|---------|
+| 2026-06-05 | **v3.2** | **Final Call 합의 마감 절차 추가.** §P-3-FC 신설: 전원 agree 후 제안 노드가 "추가 의견 있어?" 마지막 확인 → 전원 "없어" 응답 시 FINALIZED. CR>=8 필수. |
 | 2026-06-04 | **v3.1** | **제로토큰 대칭 기억 및 앵커 확장.** COLLAB_RATE 5단계 앵커 도입. Level 10 '절대 예외 없음' 명문화. §P-11 제로토큰 블랙보드 시스템 추가. |
 | 2026-06-03 | **v3.0** | **N-Tier Peer-to-Peer 대개편.** 수직적 계층(Tier) 폐지 및 노드 평등 권한 확립. 1:1 페어 세션을 N-Way Room 세션으로 확장. 합의 라운드 무제한화. `GEMINI_RATIO`를 `COLLAB_RATE`로 일반화. §P-10 협의 태도(Soft Skills) 및 §P-4 다중 노드 분업/교차검토 명문화. CC 독점 결정권 폐지. |
 | 2026-06-03 | **v2.0** | §META 신규. §P-7 Sync/Async, §P-8 노드별 로딩 파일. §M-1~M-3 상호 불가침·통신 공개·불변 규칙. |
