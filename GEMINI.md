@@ -18,7 +18,7 @@ You are the Gemini CLI agent operating within the **Portable Sandbox Dev Environ
 ## 2. Technical Mandates
 
 ### 2-1. Scripting Standards
-See `CONVENTION.md §1` (bat) and `§2` (ps1) for full rules.
+See `CONVENTION.md §1` (bat rules), `§3-1` (env var isolation), `§3-3` (no hardcoded paths) for full rules.
 
 ### 2-2. Tool Usage
 - **Gemini Mode:** Respect the `GEMINI_MODE` (ON/OFF).

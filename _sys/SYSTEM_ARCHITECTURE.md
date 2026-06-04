@@ -15,7 +15,7 @@
         ↓
 [상태]  .ai/  ← 프로젝트 로컬 AI 상태 (mailbox.json, state.json, sessions/)
         ↓
-[라이프사이클] _sys/hooks/ (session-end, log-write, ai-check, collab-log, ctx-save, ctx-end)
+[라이프사이클] _sys/hooks/ (session-end, log-write, raw-log, ai-check, collab-log, archive-data, ctx-save, ctx-end)
 [분석]  _sys/checks/ (check-risk, check-agents, check-deps, check-health, check-versions)
 [도구]  _sys/cli/ (git-draft, batch-review) + _sys/hooks/ (archive-data)
 ```
@@ -78,6 +78,7 @@
 ## [PENDING_ISSUES]     ← 현재 해결이 필요한 이슈
 ## [KEY_DECISIONS]      ← 만장일치로 합의된 결정 사항
 ## [CONSENSUS_HISTORY]  ← 무제한 합의 라운드 이력
+## [ACTIVE_THREADS]     ← 분업 진행 중인 태스크 체인
 ```
 
 ## 6. Batch 파일 구조 원칙
@@ -88,12 +89,20 @@
 
 ## 7. Collaborative Axis (일반화된 분석 도구)
 
-| Axis | 트리거 스크립트 | 용도 |
-|------|--------------|------|
-| A | portability-auditor | 이식성 정밀 감사 (GC 지원) |
-| I | `check-risk.bat` | 사전 위험 스캔 (GC 지원) |
-| H | `check-health.bat` | 컨텍스트 건강도 점검 (CC/GC 협업) |
-| G | `git-draft.bat` | 커밋 메시지 초안 생성 |
+토큰 예산 상세: `CONVENTION.md §3-4-D`
+
+| Axis | 트리거 스크립트 | 용도 | GC |
+|------|--------------|------|----|
+| A | `check-portability.bat` / portability-auditor | 이식성 전체 코퍼스 감사 | ✓ |
+| B | `check-versions.bat` | 런타임·도구 버전 확인 | ✓ |
+| C | `ctx-end.bat` | 세션 종료 요약 | ✓ |
+| D | inline syntax check | bat/py 문법 검사 | ✓ |
+| D+ | `ctx-save.bat` | 세션 중간 스냅샷 (opt-in) | ✓ |
+| E | `check-agents.bat` | agents/*.md 감사 | ✓ |
+| F | `check-deps.bat` | 스크립트 의존성 맵 | ✓ |
+| G | `git-draft.bat` | 커밋 메시지 초안 생성 | ✓ |
+| H | `check-health.bat` | 컨텍스트 건강도 점검 | ✓ |
+| I | `check-risk.bat` | 사전 위험 스캔 (Phase 1.5) | ✓ |
 
 ---
 

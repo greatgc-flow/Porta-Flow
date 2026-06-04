@@ -63,7 +63,7 @@ Full annotated tree: `README.md`
 - 메시지 발송 (P2P): `python _sys/core/hub.py send --from X --to Y --msg "..."`
 - 룸 상태 조회: `python _sys/core/hub.py status`
 
-## N-Tier Peer-to-Peer Collaboration (PROTOCOL.md v3)
+## P2P 협업 (PROTOCOL.md v3)
 
 이 프로젝트는 **N-Way 단일 공유 세션(Room)**과 **무제한 합의 루프**를 기반으로 운영됩니다.
 - **COLLAB_RATE (0~10)**: 모든 노드 간의 협업 깊이를 조절합니다. (R:10 = 100% 완전 협업)
@@ -79,5 +79,5 @@ Last updated: 2026-06-03 (P2P 평등 협업 구조 대개편 완료)
 
 ## Next Steps
 
-1. **Fresh PC setup**: install.bat (double-click) → _sys\setup.ps1
+1. **Fresh PC setup**: install.bat (double-click) → _sys\core\setup.py
 2. **Integration Testing**: Phase 3 MECE 시나리오 검증 (`test_integration_py.py` 업데이트 필요)

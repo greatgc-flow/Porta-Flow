@@ -23,7 +23,7 @@ CONTEXT.md = static topology only. Dynamic state → .ai/state.json.
 - Model: All nodes are P2P peers. Consensus required before execution (§P-3).
 - Directive: self-contained — include file path + error target + goal
 - Failure format: `<failure_report><reason>CODE</reason><details>...</details></failure_report>`
-- Memory split: Gemini = technical How-To only; Claude = orchestration What/Why
+- Division of Labor: Gemini = large-file analysis / full-corpus scan; Claude = file ops / tool calls (per §P-4)
 - Axis-A: max 3/day; quality limit ~500k tokens | Quota signal: `429` (not failure XML)
 
 ## Agent Team (current)
@@ -39,7 +39,7 @@ CONTEXT.md = static topology only. Dynamic state → .ai/state.json.
 - F: check-deps.bat → _archive/scans/script-deps.json | G: git-draft.bat → commit draft
 - H: check-health.bat → _archive/session-handoff.json
 - I: check-risk.bat → _archive/risk-scan.json (pre-flight risk, Phase 1.5)
-→ 기술 명세(스크립트 경로·출력·쿼터): `SYSTEM_ARCHITECTURE.md §9`
+→ 기술 명세(스크립트 경로·출력·쿼터): `SYSTEM_ARCHITECTURE.md §7` | 토큰 예산: `CONVENTION.md §3-4-D`
 
 ## Context Health Thresholds (Axis-H)
 GREEN <600KB | YELLOW 600KB–1.2MB | RED >1.2MB
