@@ -102,7 +102,19 @@ Status file: `.ai/consensus/{round_id}.json`
           Everyone agree     → [Enter Final Call stage] (§P-3-FC)
           Even one ambiguous → Continuous consultation via open questions and alternatives (unlimited rounds)
           Deadlock           → ESCALATED → Human Gate can be called
+          Timeout (>30min)   → Auto-escalated by consensus-sweep → outcome=timeout
 ```
+
+### §P-3-QR — Quorum & Timeout Rules
+
+| Scope | Quorum | Timeout |
+|-------|--------|---------|
+| General tasks (COLLAB_RATE < 10) | N/2 + 1 (majority) | 30 min → auto-escalate |
+| Constitutional documents (R:10) | 100% unanimous | No timeout (human gate required) |
+| Offline node | Auto-abstain after timeout | Counts toward quorum |
+
+**Auto-sweep**: Run `hub.py consensus-sweep --timeout 30` at session start and end to close stale rounds.
+**Offline recovery**: If a required voter is absent for >30 min, their vote is treated as `abstain`; majority vote proceeds unless the round requires R:10 unanimity.
 
 ### §P-3-FC — Final Call (Last Confirmation Question)
 
@@ -276,6 +288,8 @@ To prevent Context Decay due to context bloat, a **file-based blackboard system*
 1. **Blackboard Sharing**: All detailed summaries and architectural analyses are recorded in `.ai/sessions/room-{uuid}/summary_{agent}.md` (max 4KB) files. Only file paths are transmitted in the chat window.
 2. **Symmetric Checkpoint**: When executing `ctx-save`, the current state and mutual cross-summaries are recorded in both `CLAUDE.md` and `GEMINI.md` simultaneously to maintain equal memory between both nodes.
 3. **Re-orientation Phase**: Upon starting a new session or receiving instructions, the agent must first read the blackboard files and synchronize the project state before starting work.
+   - **Check**: Does `.ai/sessions/` contain a handoff.md? → Read it before any task begins.
+   - **Signal**: If skipping re-orientation, state explicitly: `[SKIPPED: no prior session found]`
 
 ---
 
@@ -283,6 +297,7 @@ To prevent Context Decay due to context bloat, a **file-based blackboard system*
 
 | Date | Version | Major Changes |
 |------|---------|---------------|
+| 2026-06-05 | **v3.4** | **§P-3-QR Quorum & Timeout rules added. Re-orientation enforcement signal added to §P-11. R:8 Multi-script row added to §C-0 Adaptive Rate table.** |
 | 2026-06-05 | **v3.3** | **Full English translation. Adaptive Rate rules added to §C-0. Token budget updated in §P-8. handoff.md rolling rule added to §P-6.** |
 | 2026-06-05 | **v3.2** | **Added Final Call consensus closing procedure.** New §P-3-FC: After everyone agrees, proposing node performs final check → FINALIZED upon everyone responding "None". Required for CR>=8. |
 | 2026-06-04 | **v3.1** | **Zero-Token Symmetric Memory and anchor expansion.** COLLAB_RATE 5 anchor levels. Level 10 'No Exceptions' codified. §P-11 Zero-Token Blackboard system added. |

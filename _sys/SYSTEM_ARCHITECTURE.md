@@ -91,18 +91,30 @@
 
 Token budget details: `CONVENTION.md §3-4-D`
 
-| Axis | Trigger Script | Purpose | GC |
-|------|---------------|---------|-----|
-| A | `check-portability.bat` / portability-auditor | Full corpus portability audit | ✓ |
-| B | `check-versions.bat` | Runtime & tool version check | ✓ |
-| C | `ctx-end.bat` | Session end summary | ✓ |
-| D | inline syntax check | bat/py syntax validation | ✓ |
-| D+ | `ctx-save.bat` | Mid-session snapshot (opt-in) | ✓ |
-| E | `check-agents.bat` | agents/*.md audit | ✓ |
-| F | `check-deps.bat` | Script dependency map | ✓ |
-| G | `git-draft.bat` | Commit message draft | ✓ |
-| H | `check-health.bat` | Context health check | ✓ |
-| I | `check-risk.bat` | Pre-flight risk scan (Phase 1.5) | ✓ |
+### 4-Axis Framework (Project Pillars)
+
+| Pillar | Axis | Core Question | Key Metric |
+|--------|------|---------------|-----------|
+| **Axis-1: Runtime Flow** | C, D+, H | "Where are we in this session?" | Time-to-resume |
+| **Axis-2: Social Consensus** | hub.py consensus | "Did all nodes agree?" | Rounds per task |
+| **Axis-3: Systemic Integrity** | E, F, I | "Has anything regressed?" | Policy violation count |
+| **Axis-4: Environmental Autonomy** | A, B | "Does it work on any PC?" | Clean-install success rate |
+
+### Axis Execution Map
+
+| Axis | Trigger Script | Purpose | Pillar | GC |
+|------|---------------|---------|--------|-----|
+| A | `check-portability.bat` / portability-auditor | Full corpus portability audit | Axis-4 | ✓ |
+| B | `check-versions.bat` | Runtime & tool version check | Axis-4 | ✓ |
+| C | `ctx-end.bat` | Session end summary | Axis-1 | ✓ |
+| D | inline syntax check | bat/py syntax validation | Axis-3 | ✓ |
+| D+ | `ctx-save.bat` | Mid-session snapshot (opt-in) | Axis-1 | ✓ |
+| E | `check-agents.bat` | agents/*.md audit | Axis-3 | ✓ |
+| F | `check-deps.bat` | Script dependency map | Axis-3 | ✓ |
+| G | `git-draft.bat` | Commit message draft | — | ✓ |
+| H | `check-health.bat` | Context health check | Axis-1 | ✓ |
+| I | `check-risk.bat` | Pre-flight risk scan (Phase 1.5) | Axis-3 | ✓ |
+| sweep | `hub.py consensus-sweep` | Auto-escalate stalled rounds | Axis-2 | — |
 
 ---
 

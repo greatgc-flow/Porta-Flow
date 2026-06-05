@@ -569,7 +569,38 @@ def action_consensus_check(ai_root: Path, round_id: str | None) -> None:
         if not f.exists(): continue
         r = _read_json(f)
         print(f"\n### [{r['round_id']}] {r['status'].upper()} - {r['subject']}")
-        for v, d in r['votes'].items(): print(f"  - {v}: {d['vote'] if d else '(미투표)'}")
+        for v, d in r['votes'].items(): print(f"  - {v}: {d['vote'] if d else '(pending)'}")
+
+
+def action_consensus_sweep(ai_root: Path, timeout_minutes: int = 30) -> None:
+    """Auto-escalate stalled voting rounds older than timeout_minutes."""
+    consensus_dir = ai_root / "consensus"
+    if not consensus_dir.exists(): return
+    now = datetime.now()
+    swept = 0
+    for f in sorted(consensus_dir.glob("*.json")):
+        r = _read_json(f)
+        if r.get("status") != "voting": continue
+        proposed_at_str = r.get("proposed_at", "")
+        try:
+            proposed_at = datetime.fromisoformat(proposed_at_str)
+            age_minutes = (now - proposed_at).total_seconds() / 60
+        except Exception:
+            age_minutes = 0
+        if age_minutes >= timeout_minutes:
+            with _get_lock(ai_root, f"consensus_{r['round_id']}"):
+                r = _read_json(f)
+                if r.get("status") != "voting": continue
+                r["status"] = "escalated"
+                r["outcome"] = "timeout"
+                r["outcome_at"] = _now()
+                _write_json(f, r)
+            _log_p2p("DECISION", f"ID={r['round_id']} Status=ESCALATED Outcome=timeout (age={age_minutes:.0f}m)", from_node="SYSTEM")
+            print(f"[HUB] SWEEP {r['round_id']} ESCALATED | timeout after {age_minutes:.0f}m | {r['subject'][:50]}")
+            _append_consensus_history(ai_root, r["round_id"], r["subject"], "ESCALATED(timeout)")
+            swept += 1
+    if swept == 0:
+        print(f"[HUB] SWEEP: no stalled rounds (timeout={timeout_minutes}m)")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -578,7 +609,7 @@ def action_consensus_check(ai_root: Path, round_id: str | None) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="hub", description="AI 협업 허브 — P2P v3.1")
-    parser.add_argument("action", choices=["init-session", "end-session", "send", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "consensus-propose", "consensus-vote", "consensus-check", "register-node", "list-nodes"])
+    parser.add_argument("action", choices=["init-session", "end-session", "send", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes"])
     parser.add_argument("--agent")
     parser.add_argument("--room")
     parser.add_argument("--from", dest="from_")
@@ -643,6 +674,7 @@ def main() -> None:
         action_consensus_propose(ai_root, args.subject, voters, args.from_ or "cc")
     elif act == "consensus-vote": action_consensus_vote(ai_root, args.round_id, args.voter, args.vote_val, args.reason)
     elif act == "consensus-check": action_consensus_check(ai_root, args.round_id)
+    elif act == "consensus-sweep": action_consensus_sweep(ai_root, args.timeout or 30)
     elif act == "list-nodes": action_list_nodes(ai_root)
     elif act == "register-node":
         action_register_node(

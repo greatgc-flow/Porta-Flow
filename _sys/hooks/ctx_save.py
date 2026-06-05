@@ -125,6 +125,19 @@ def main() -> None:
             except Exception:
                 pass
 
+    # Auto-sweep stalled consensus rounds (§P-3-QR)
+    try:
+        hub_py = _SYS_DIR / "core" / "hub.py"
+        sweep_result = subprocess.run(
+            [python, str(hub_py), "consensus-sweep", "--timeout", "30"],
+            capture_output=True, text=True, env=env, timeout=10,
+        )
+        sweep_out = sweep_result.stdout.strip()
+        if sweep_out and "no stalled rounds" not in sweep_out:
+            print(f"[ctx-save] Consensus sweep: {sweep_out}")
+    except Exception as exc:
+        print(f"[ctx-save] Consensus sweep skipped: {exc}")
+
     print("[ctx-save] Checkpoint complete.")
 
 
