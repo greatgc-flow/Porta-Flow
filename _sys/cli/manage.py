@@ -37,7 +37,7 @@ def write_relay_bat(base_dir: Path, ascii_key: str) -> Path:
     content = (
         "@echo off\r\n"
         f"set \"SANDBOX_ROOT={base_dir}\"\r\n"
-        "call \"%SANDBOX_ROOT%\\_sys\\cli\\launch.bat\" %*\r\n"
+        "call \"%SANDBOX_ROOT%\\_sys\\cli\\launch.bat\" \"%~1\"\r\n"
     )
     relay_path.write_bytes(content.encode("mbcs"))
     return relay_path
@@ -68,19 +68,23 @@ def set_gemini_portability(base_dir):
     
     gemini_portable.mkdir(parents=True, exist_ok=True)
     
-    if gemini_host.exists():
-        # Check if it's already a junction or a real directory
-        is_junction = False
-        try:
-            # Low-level check for junction on Windows
-            if os.path.islink(gemini_host) or (gemini_host.is_dir() and getattr(gemini_host.stat(), 'st_reparse_tag', 0) == 0xA0000003):
-                is_junction = True
-        except Exception:
-            pass
+    # Use lstat to safely check if it exists (even if broken junction)
+    host_exists = False
+    is_junction = False
+    try:
+        st = gemini_host.lstat()
+        host_exists = True
+        if os.path.islink(gemini_host) or getattr(st, 'st_reparse_tag', 0) == 0xA0000003:
+            is_junction = True
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
 
+    if host_exists:
         if is_junction:
             try:
-                subprocess.run(["cmd", "/c", f"rmdir \"{gemini_host}\""], check=True)
+                gemini_host.unlink()
                 print(f"  [Info] Removed existing junction: {gemini_host}")
             except Exception as e:
                 print(f"  [Warning] Could not remove existing junction: {e}")
@@ -110,9 +114,22 @@ def remove_gemini_portability(base_dir):
     gemini_host = Path(os.environ["USERPROFILE"]) / ".gemini"
     gemini_portable = base_dir / "_sys" / "gemini" / "config"
     
-    if gemini_host.exists():
+    # Use lstat to check for broken junctions
+    host_exists = False
+    is_junction = False
+    try:
+        st = gemini_host.lstat()
+        host_exists = True
+        if os.path.islink(gemini_host) or getattr(st, 'st_reparse_tag', 0) == 0xA0000003:
+            is_junction = True
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+
+    if host_exists:
         # Check if it's a junction
-        if os.path.islink(gemini_host) or (gemini_host.is_dir() and getattr(gemini_host.stat(), 'st_reparse_tag', 0) == 0xA0000003):
+        if is_junction:
             # Remove junction
             try:
                 subprocess.run(["cmd", "/c", f"rmdir \"{gemini_host}\""], check=True)
@@ -167,7 +184,7 @@ def global_cleanup(base_dir):
         (winreg.HKEY_CURRENT_USER, r"Software\Classes\lnkfile\shell")
     ]
     
-    target_pattern = rf"SandboxRun_.*({re.escape(leaf)}|_D_D_)"
+    current_key_name = get_registry_key_name(base_dir)
     
     for hkey, path in roots:
         to_delete = []
@@ -177,8 +194,30 @@ def global_cleanup(base_dir):
                 while True:
                     try:
                         subkey_name = winreg.EnumKey(key, i)
-                        if re.search(target_pattern, subkey_name, re.IGNORECASE):
-                            to_delete.append(subkey_name)
+                        if subkey_name.startswith("SandboxRun_"):
+                            is_target = (subkey_name == current_key_name)
+                            
+                            # Check if it's orphaned
+                            is_orphan = False
+                            if not is_target:
+                                # Extract ascii_key
+                                ascii_key = subkey_name
+                                relay_path = get_relay_path(ascii_key)
+                                if not relay_path.exists():
+                                    is_orphan = True
+                                else:
+                                    # Read relay_path and check if SANDBOX_ROOT exists
+                                    content = relay_path.read_text(encoding="mbcs", errors="ignore")
+                                    match = re.search(r'set "SANDBOX_ROOT=(.*?)"', content, re.IGNORECASE)
+                                    if match:
+                                        sandbox_root = Path(match.group(1))
+                                        if not sandbox_root.exists():
+                                            is_orphan = True
+                                    else:
+                                        is_orphan = True
+                                        
+                            if is_target or is_orphan:
+                                to_delete.append(subkey_name)
                         i += 1
                     except OSError:
                         break
@@ -189,7 +228,7 @@ def global_cleanup(base_dir):
             full_reg_path = f"HKCU\\{path}\\{subkey_name}"
             res = subprocess.run(["reg", "delete", full_reg_path, "/f"], capture_output=True)
             if res.returncode == 0:
-                print(f"  [OK] Removed Orphan Registry: {subkey_name}")
+                print(f"  [OK] Removed Registry: {subkey_name}")
                 delete_relay_bat(subkey_name)
             else:
                 print(f"  [Warning] Failed to delete registry key: {subkey_name}")
@@ -273,7 +312,7 @@ def action_register(base_dir):
             cmd_key = winreg.CreateKey(key, "command")
             # relay_path is always at ASCII-safe %LOCALAPPDATA% — avoids cmd.exe
             # parser failures caused by Korean chars or parentheses in base_dir.
-            cmd_str = f'cmd.exe /c ""{relay_path}" "{arg}""'
+            cmd_str = f'cmd.exe /c ""{relay_path}" "{arg}.""'
             winreg.SetValueEx(cmd_key, "", 0, winreg.REG_SZ, cmd_str)
             winreg.CloseKey(key)
         except Exception as e:
@@ -297,13 +336,16 @@ def action_register(base_dir):
         for line in content.splitlines():
             if ":: [/auto] Generated by" in line:
                 in_auto = True
-            if not in_auto:
+            
+            # Keep lines that are not in the auto block AND not a separator line
+            if not in_auto and "User Overrides" not in line:
                 user_lines.append(line)
+                
             if line.strip() == ":: [/auto]" and in_auto:
                 in_auto = False
         user_lines = [l for l in user_lines if l.strip()]  # remove blank-only lines
 
-    new_config = "\n".join(auto_block) + "\n\n:: ── User Overrides (edit below) ─────────────────────────────\n" + "\n".join(user_lines)
+    new_config = "\n".join(auto_block) + "\n\n:: -- User Overrides (edit below) -----------------------------\n" + "\n".join(user_lines)
     config_path.write_text(new_config.replace("\n", "\r\n"), encoding="utf-8")
     print("  [OK] State saved to local.config.bat")
     print("\n Registration complete!")
