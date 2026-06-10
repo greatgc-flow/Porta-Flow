@@ -173,6 +173,7 @@ def main():
 
         # Environment
         env = setup_environment(base_dir, sys_dir)
+        peers_raw = _load_json(sys_dir / "ai" / "peers.json").get("peers", {})
 
         # Determine Execution Target
         if not target:
