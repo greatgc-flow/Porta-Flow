@@ -13,8 +13,8 @@ import urllib.request
 from pathlib import Path
 
 
-def _load_runtimes() -> tuple[dict, dict]:
-    """Load V (versions) and URLS from _sys/runtimes.json."""
+def _load_runtimes() -> tuple[dict, dict, dict]:
+    """Load V (versions), URLS, and TOOLS from _sys/runtimes.json."""
     sys_dir = Path(__file__).parent.parent.resolve()
     runtimes_path = sys_dir / "runtimes.json"
     if not runtimes_path.exists():
@@ -23,7 +23,8 @@ def _load_runtimes() -> tuple[dict, dict]:
             f"  Expected: {runtimes_path}\n"
             f"  This file should be present in the git repo."
         )
-    data = json.loads(runtimes_path.read_text(encoding="utf-8")).get("runtimes", {})
+    raw = json.loads(runtimes_path.read_text(encoding="utf-8"))
+    data = raw.get("runtimes", {})
     V = {
         "Python": data.get("python", {}).get("version", ""),
         "NodeJS": data.get("nodejs", {}).get("version", ""),
@@ -38,10 +39,11 @@ def _load_runtimes() -> tuple[dict, dict]:
         "VSCode": data.get("vscode",  {}).get("url", ""),
         "Pwsh":   data.get("pwsh",    {}).get("url", ""),
     }
-    return V, URLS
+    TOOLS = raw.get("tools", {})
+    return V, URLS, TOOLS
 
 
-V, URLS = _load_runtimes()
+V, URLS, TOOLS = _load_runtimes()
 
 
 def get_paths() -> dict:
@@ -88,6 +90,77 @@ def extract_zip(zip_path: Path, dest_dir: Path) -> None:
         subprocess.run(["tar", "-xf", str(zip_path), "-C", str(dest_dir)], check=True)
 
 
+def install_tools(paths: dict, force: bool = False) -> None:
+    """Install all CLI tools from runtimes.json [tools] section."""
+    if not TOOLS:
+        print("  [--] No tools defined in runtimes.json")
+        return
+
+    tools_dir = paths["tools"]
+    setup_dir = paths["setup"]
+
+    for name, cfg in TOOLS.items():
+        url      = cfg.get("url", "")
+        kind     = cfg.get("type", "zip")   # "zip" | "exe"
+        bin_name = cfg.get("bin", f"{name}.exe")
+        extras   = cfg.get("extras", [])
+        dest_dir = tools_dir / name
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        sentinel = dest_dir / bin_name
+        if not force and sentinel.exists():
+            print(f"  [--] {name} (already installed)")
+            # extras (e.g. oh-my-posh themes) — also skip if dest exists
+            for extra in extras:
+                extra_dest = dest_dir / extra.get("dest", "extra")
+                if not extra_dest.exists():
+                    _install_tool_extra(name, extra, dest_dir, setup_dir)
+            continue
+
+        print(f"\n>>> Tool: {name} v{cfg.get('version', '?')}")
+
+        if kind == "exe":
+            # Direct single-exe download
+            dl_path = setup_dir / f"{name}-dl.exe"
+            download_file(url, dl_path, name)
+            shutil.copy2(str(dl_path), str(sentinel))
+            dl_path.unlink()
+            print(f"  [OK] {name} ready → {sentinel.name}")
+        else:
+            # Zip: extract all .exe files into dest_dir
+            zip_path = setup_dir / f"{name}.zip"
+            download_file(url, zip_path, name)
+            tmp_dir = setup_dir / f"_{name}_tmp"
+            tmp_dir.mkdir(exist_ok=True)
+            extract_zip(zip_path, tmp_dir)
+            for exe in tmp_dir.rglob("*.exe"):
+                shutil.copy2(str(exe), str(dest_dir / exe.name))
+            shutil.rmtree(tmp_dir)
+            zip_path.unlink(missing_ok=True)
+            print(f"  [OK] {name} ready")
+
+        # extras (e.g. oh-my-posh themes zip)
+        for extra in extras:
+            _install_tool_extra(name, extra, dest_dir, setup_dir)
+
+
+def _install_tool_extra(tool_name: str, extra: dict, dest_dir: Path, setup_dir: Path) -> None:
+    """Install an extra resource (e.g. themes zip) for a tool."""
+    url       = extra.get("url", "")
+    kind      = extra.get("type", "zip")
+    subfolder = extra.get("dest", "extra")
+    extra_dir = dest_dir / subfolder
+    if not url:
+        return
+    extra_dir.mkdir(parents=True, exist_ok=True)
+    if kind == "zip":
+        zip_path = setup_dir / f"{tool_name}-extra-{subfolder}.zip"
+        download_file(url, zip_path, f"{tool_name}/{subfolder}")
+        extract_zip(zip_path, extra_dir)
+        zip_path.unlink(missing_ok=True)
+        print(f"  [OK] {tool_name}/{subfolder} ready")
+
+
 def install_ai_peers(paths: dict, npm_exe: Path, env: dict, force: bool = False) -> None:
     """Install all enabled AI peer CLIs from peers.json."""
     peers = load_peers(paths["sys"])
@@ -111,9 +184,21 @@ def install_ai_peers(paths: dict, npm_exe: Path, env: dict, force: bool = False)
             print(f"  [--] {peer_id} CLI (already installed)")
 
 
+def check_python_version(paths: dict) -> None:
+    """현재 Python 버전과 runtimes.json 기대 버전 비교 후 안내."""
+    running = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    expected = V.get("Python", "")
+    if expected and running != expected:
+        print(f"  [!] Python 버전 불일치: 실행 중={running}, runtimes.json={expected}")
+        print(f"      PURGE 후 INSTALL.bat 재실행 시 {expected} 버전으로 교체됩니다.")
+    else:
+        print(f"  [OK] Python {running}")
+
+
 def run_setup(force: bool = False, skip_vscode: bool = False, skip_ai: bool = False) -> None:
     paths = get_paths()
     print(f"\n>>> Starting Setup (Force={force})")
+    check_python_version(paths)
 
     # 1. Folder Structure
     print("\n>>> Folder structure")
@@ -215,7 +300,11 @@ def run_setup(force: bool = False, skip_vscode: bool = False, skip_ai: bool = Fa
     subprocess.run([str(venv_py), "-m", "pip", "install", "filelock", "--quiet"], check=True)
     print("  [OK] filelock installed")
 
-    # 7. AI Peer CLIs (driven by peers.json)
+    # 7. CLI Tools (driven by runtimes.json [tools])
+    print("\n>>> CLI Tools (from _sys/runtimes.json)")
+    install_tools(paths, force=force)
+
+    # 8. AI Peer CLIs (driven by peers.json)
     if not skip_ai:
         print("\n>>> AI Peer CLIs (from _sys/ai/peers.json)")
         npm_global = paths["env"] / "nodejs" / "npm-global"
@@ -229,7 +318,7 @@ def run_setup(force: bool = False, skip_vscode: bool = False, skip_ai: bool = Fa
         npm_exe = paths["env"] / "nodejs" / "npm.cmd"
         install_ai_peers(paths, npm_exe, env, force=force)
 
-    # 8. Finalize with Registry (non-fatal — environment is usable even if registry fails)
+    # 9. Finalize with Registry (non-fatal — environment is usable even if registry fails)
     print("\n>>> Registering context menu and junctions")
     manage_py = paths["sys"] / "cli" / "manage.py"
     result = subprocess.run([sys.executable, str(manage_py), "Register"])

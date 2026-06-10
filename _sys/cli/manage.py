@@ -20,6 +20,88 @@ def get_base_dir():
     return config.get_base_dir()
 
 
+TARGET_MAP = {
+    "Directory/Background": (r"Software\Classes\Directory\Background\shell", "%V"),
+    "Directory":            (r"Software\Classes\Directory\shell",            "%V"),
+    "*":                    (r"Software\Classes\*\shell",                    "%1"),
+    "lnkfile":              (r"Software\Classes\lnkfile\shell",              "%1"),
+}
+
+
+def load_context_menu(sys_dir: Path) -> list:
+    """Load context menu entry definitions from _sys/context_menu.json."""
+    path = sys_dir / "context_menu.json"
+    if not path.exists():
+        return []
+    try:
+        return json.loads(path.read_text(encoding="utf-8")).get("entries", [])
+    except Exception:
+        return []
+
+
+def get_entry_key_name(base_key: str, entry_id: str) -> str:
+    """Build registry key name: {base_key}_{entry_id} with sanitization."""
+    safe_id = re.sub(r'[^A-Za-z0-9]', '_', entry_id)
+    safe_id = re.sub(r'_+', '_', safe_id).strip('_')
+    return f"{base_key}_{safe_id}"
+
+
+def _register_entry(base_dir: Path, entry: dict, base_key: str, relay_root: Path) -> None:
+    """Register a single context_menu.json entry into the Windows registry."""
+    entry_id   = entry.get("id", "entry")
+    label      = entry.get("label", entry_id)
+    icon_rel   = entry.get("icon", "")
+    cmd_tmpl   = entry.get("command", "")
+    targets    = entry.get("targets", list(TARGET_MAP.keys()))
+
+    reg_key_name = get_entry_key_name(base_key, entry_id)
+
+    # Relay bat: one per entry id
+    relay_path = relay_root / f"{reg_key_name}.bat"
+    relay_content = (
+        "@echo off\r\n"
+        f"set \"SANDBOX_ROOT={base_dir}\"\r\n"
+        "call \"%SANDBOX_ROOT%\\_sys\\start.bat\" \"%~1\"\r\n"
+    )
+    relay_path.write_bytes(relay_content.encode("mbcs"))
+
+    icon_path = base_dir / icon_rel.replace("/", "\\") if icon_rel else None
+
+    for target_name in targets:
+        if target_name not in TARGET_MAP:
+            print(f"  [Warning] Unknown target '{target_name}' in context_menu.json — skipped")
+            continue
+        path_base, arg = TARGET_MAP[target_name]
+        full_path = f"{path_base}\\{reg_key_name}"
+        try:
+            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, full_path)
+            winreg.SetValueEx(key, "",        0, winreg.REG_SZ, label)
+            winreg.SetValueEx(key, "MUIVerb", 0, winreg.REG_SZ, label)
+            if icon_path and icon_path.exists():
+                winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, str(icon_path))
+            cmd_key = winreg.CreateKey(key, "command")
+            # Safe quoting: only wrap relay path in quotes (no nested double-double)
+            cmd_str = f'cmd.exe /c "{relay_path}" "{arg}"'
+            winreg.SetValueEx(cmd_key, "", 0, winreg.REG_SZ, cmd_str)
+            winreg.CloseKey(key)
+        except Exception as e:
+            print(f"  [Warning] Registry error on {full_path}: {e}")
+
+    print(f"  [OK] Context menu entry registered: [{reg_key_name}] {label}")
+
+
+def _unregister_entry(base_key: str, entry_id: str, relay_root: Path) -> None:
+    """Remove a single context menu entry from registry and relay bat."""
+    reg_key_name = get_entry_key_name(base_key, entry_id)
+    for path_base, _ in TARGET_MAP.values():
+        full_reg_path = f"HKCU\\{path_base}\\{reg_key_name}"
+        subprocess.run(["reg", "delete", full_reg_path, "/f"], capture_output=True)
+    relay_path = relay_root / f"{reg_key_name}.bat"
+    if relay_path.exists():
+        relay_path.unlink()
+    print(f"  [OK] Context menu entry removed: {reg_key_name}")
+
+
 def load_peers(sys_dir: Path) -> dict:
     """Load AI peer definitions from _sys/ai/peers.json."""
     peers_path = sys_dir / "ai" / "peers.json"
@@ -319,6 +401,12 @@ def global_cleanup(base_dir):
             else:
                 print(f"  [Warning] Failed to delete registry key: {subkey_name}")
 
+    # Remove Windows 11 classic menu key (restore default simplified menu)
+    win11_key = r"Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}"
+    res = subprocess.run(["reg", "delete", f"HKCU\\{win11_key}", "/f"], capture_output=True)
+    if res.returncode == 0:
+        print(f"  [OK] Windows 11 classic menu key removed")
+
 def action_register(base_dir):
     print(f"\n{'='*50}")
     print(f" Registering: {base_dir.name}")
@@ -373,38 +461,27 @@ def action_register(base_dir):
         if peer_cfg.get("enabled", True) and peer_cfg.get("local_settings"):
             apply_local_settings(base_dir, peer_id, peer_cfg, drive)
 
-    target_key = get_registry_key_name(base_dir)
-    menu_label = f"Open in Sandbox: {base_dir.name}" + (f" ({base_dir} -> {assigned_letter}:)" if assigned_letter else f" ({base_dir})")
+    base_key   = get_registry_key_name(base_dir)
+    relay_root = Path(os.environ.get("LOCALAPPDATA", ""))
+    entries    = load_context_menu(sys_dir)
 
-    code_path = base_dir / "_sys" / "env" / "vscode" / "Code.exe"
+    if not entries:
+        print("  [Warning] context_menu.json has no entries — skipping context menu registration")
+    for entry in entries:
+        if entry.get("enabled", True):
+            _register_entry(base_dir, entry, base_key, relay_root)
+        else:
+            _unregister_entry(base_key, entry.get("id", "entry"), relay_root)
 
-    reg_paths = [
-        (r"Software\Classes\Directory\Background\shell", "%V"),
-        (r"Software\Classes\Directory\shell", "%V"),
-        (r"Software\Classes\*\shell", "%1"),
-        (r"Software\Classes\lnkfile\shell", "%1")
-    ]
-
-    relay_path = write_relay_bat(base_dir, target_key)
-    print(f"  [OK] Relay created: {relay_path}")
-
-    for path_base, arg in reg_paths:
-        full_path = f"{path_base}\\{target_key}"
-        try:
-            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, full_path)
-            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, menu_label)
-            winreg.SetValueEx(key, "HasLUAShield", 0, winreg.REG_SZ, "")
-            if os.path.exists(str(code_path)):
-                winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, str(code_path))
-
-            cmd_key = winreg.CreateKey(key, "command")
-            cmd_str = f'cmd.exe /c ""{relay_path}" "{arg}""'
-            winreg.SetValueEx(cmd_key, "", 0, winreg.REG_SZ, cmd_str)
-            winreg.CloseKey(key)
-        except Exception as e:
-            print(f"  [Warning] Registry error on {full_path}: {e}")
-            
-    print(f"  [OK] Context Menu registered: {menu_label}")
+    # Enable Windows 11 classic context menu (per-user, HKCU)
+    win11_key = r"Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32"
+    try:
+        k = winreg.CreateKey(winreg.HKEY_CURRENT_USER, win11_key)
+        winreg.SetValueEx(k, "", 0, winreg.REG_SZ, "")
+        winreg.CloseKey(k)
+        print(f"  [OK] Windows 11 classic context menu enabled")
+    except Exception as e:
+        print(f"  [Warning] Could not set Win11 classic menu key: {e}")
 
     # State Saving via ConfigManager
     config.set("SUBST_DRIVE_LETTER", assigned_letter)
@@ -423,7 +500,14 @@ def action_unregister(base_dir):
     print(f" Unregistering: {base_dir.name}")
     print(f"{'='*50}")
 
-    delete_relay_bat(get_registry_key_name(base_dir))
+    base_key   = get_registry_key_name(base_dir)
+    relay_root = Path(os.environ.get("LOCALAPPDATA", ""))
+    entries    = load_context_menu(base_dir / "_sys")
+    for entry in entries:
+        _unregister_entry(base_key, entry.get("id", "entry"), relay_root)
+
+    # Legacy relay cleanup (pre-JSON format)
+    delete_relay_bat(base_key)
     global_cleanup(base_dir)
 
     sys_dir = base_dir / "_sys"

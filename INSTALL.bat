@@ -18,6 +18,34 @@ if exist "!_RT!" (
     for /f "usebackq delims=" %%p in (`powershell -NoProfile -Command "((Get-Content '!_RT!')|ConvertFrom-Json).runtimes.python.get_pip_url"`) do set "GET_PIP_URL=%%p"
 )
 
+:: ── Auto-fetch latest stable Python (skip with --skip-update) ──
+set "_SKIP_UPDATE=0"
+for %%A in (%*) do if /i "%%A"=="--skip-update" set "_SKIP_UPDATE=1"
+
+if "!_SKIP_UPDATE!"=="0" (
+    echo ^>^>^> Checking for latest stable Python...
+    for /f "usebackq delims=" %%L in (`powershell -NoProfile -Command ^
+        "try { $r=(Invoke-RestMethod 'https://endoflife.date/api/python.json' -TimeoutSec 8 -EA Stop); $v=($r | Where-Object { $_.eol -eq $false -or $_.eol -eq $null -or ([datetime]$_.eol -gt (Get-Date)) } | Select-Object -First 1).latest; if ($v -match '^\d+\.\d+\.\d+$') { $v } else { '' } } catch { '' }"`) do set "_LATEST_VER=%%L"
+
+    if not "!_LATEST_VER!"=="" (
+        if not "!_LATEST_VER!"=="!PY_VER!" (
+            echo [i] New Python version available: !_LATEST_VER! (current: !PY_VER!)
+            set "_NEW_URL=https://www.python.org/ftp/python/!_LATEST_VER!/python-!_LATEST_VER!-embed-amd64.zip"
+            if exist "!_RT!" (
+                powershell -NoProfile -Command ^
+                    "$d=Get-Content '!_RT!' -Raw | ConvertFrom-Json; $d.runtimes.python.version='!_LATEST_VER!'; $d.runtimes.python.url='!_NEW_URL!'; [System.IO.File]::WriteAllText('!_RT!', ($d | ConvertTo-Json -Depth 10), (New-Object System.Text.UTF8Encoding($false)))"
+                echo [OK] runtimes.json updated to Python !_LATEST_VER!
+            )
+            set "PY_VER=!_LATEST_VER!"
+            set "PY_URL=!_NEW_URL!"
+        ) else (
+            echo [OK] Python !PY_VER! is already latest stable.
+        )
+    ) else (
+        echo [!] Could not fetch latest version. Using pinned: !PY_VER!
+    )
+)
+
 set "PY_DIR=%~dp0_sys\env\python"
 set "PY_EXE=%PY_DIR%\python.exe"
 

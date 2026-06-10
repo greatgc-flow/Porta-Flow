@@ -81,18 +81,18 @@
         "config_paths": ["tmp/"]
       }
     },
-    "chatgpt": {
-      "enabled": false,
-      "description": "OpenAI ChatGPT CLI — disabled by default, enable when ready",
-      "npm_package": "openai",
-      "root_dir": ".chatgpt",
-      "sys_subdir": "chatgpt",
+    "codex": {
+      "enabled": true,
+      "description": "OpenAI Codex CLI",
+      "npm_package": "@openai/codex",
+      "root_dir": ".codex",
+      "sys_subdir": "codex",
       "host_junction": null,
       "project_junction": null,
       "workspace": {
-        "shadow_subdir": ".ai/chatgpt",
-        "junction_name": ".chatgpt",
-        "glue_file": "CHATGPT.md",
+        "shadow_subdir": ".ai/codex",
+        "junction_name": ".codex",
+        "glue_file": "CODEX.md",
         "glue_template": "templates/workspace.md"
       },
       "env_vars": {},
