@@ -1,6 +1,6 @@
 {
-  "_version": "1.2",
-  "_help": "AI peer registry. Add a peer here — setup/cleanup/manage/workspace-init all driven by this file. No code changes needed.",
+  "_version": "1.3",
+  "_help": "AI peer registry. Add a peer here — setup/cleanup/manage/workspace-init/launcher all driven by this file. No code changes needed.",
   "peers": {
     "claude": {
       "enabled": true,
@@ -24,6 +24,27 @@
       },
       "env_vars": {
         "CLAUDE_CONFIG_DIR": "config"
+      },
+      "local_settings": [
+        {
+          "target": "project/settings.local.json",
+          "content": {
+            "permissions": {
+              "allow": [
+                "Bash(cmd /c \"{DRIVE}:\\_sys\\cli\\msg.bat\" *)",
+                "PowerShell(cmd /c \"{DRIVE}:\\_sys\\cli\\msg.bat\" *)",
+                "PowerShell(cmd /c \"{DRIVE}:\\_sys\\cli\\msg.bat\" ask *)",
+                "PowerShell(Get-ChildItem \"{DRIVE}:\\_sys\\ *)",
+                "PowerShell(Get-Content \"{DRIVE}:\\ *)"
+              ]
+            }
+          }
+        }
+      ],
+      "host_app": {
+        "env_base": "LOCALAPPDATA",
+        "rel_path": "Programs/Claude/Claude.exe",
+        "launch_on_start": true
       },
       "cleanup": {
         "peer_paths": [],
@@ -52,6 +73,8 @@
         "glue_template": "templates/workspace.md"
       },
       "env_vars": {},
+      "local_settings": [],
+      "host_app": null,
       "cleanup": {
         "peer_paths": ["usage.json", "session-map.json", "session.lock", "session-id.txt"],
         "peer_globs": ["cq-*.txt"],
@@ -73,6 +96,8 @@
         "glue_template": "templates/workspace.md"
       },
       "env_vars": {},
+      "local_settings": [],
+      "host_app": null,
       "cleanup": {
         "peer_paths": [],
         "peer_globs": [],

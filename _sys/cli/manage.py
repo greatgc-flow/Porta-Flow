@@ -227,23 +227,29 @@ def _remove_junction(host: Path) -> None:
 
 
 
-def update_claude_settings(base_dir, drive_letter):
-    if not drive_letter:
-        return
-    settings_path = base_dir / ".claude" / "settings.local.json"
-    settings_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    patterns = [
-        f"Bash(cmd /c \"{drive_letter}:\\_sys\\cli\\msg.bat\" *)",
-        f"PowerShell(cmd /c \"{drive_letter}:\\_sys\\cli\\msg.bat\" *)",
-        f"PowerShell(cmd /c \"{drive_letter}:\\_sys\\cli\\msg.bat\" ask *)",
-        f"PowerShell(Get-ChildItem \"{drive_letter}:\\_sys\\ *)",
-        f"PowerShell(Get-Content \"{drive_letter}:\\ *)"
-    ]
-    
-    c_config = {"permissions": {"allow": patterns}}
-    settings_path.write_text(json.dumps(c_config, indent=4), encoding="utf-8")
-    print(f"  [OK] .claude/settings.local.json updated (Drive {drive_letter}:)")
+def apply_local_settings(base_dir: Path, peer_id: str, peer_cfg: dict, drive: str = "") -> None:
+    """Write peer-specific local settings files driven by peers.json local_settings field.
+
+    Placeholders expanded in content strings:
+        {DRIVE}  — SUBST drive letter (may be empty if no SUBST mapping)
+    Target path is relative to _sys/{sys_subdir}/.
+    """
+    sys_dir = base_dir / "_sys"
+    peer_subdir = sys_dir / peer_cfg.get("sys_subdir", peer_id)
+
+    for spec in peer_cfg.get("local_settings", []):
+        target_rel = spec.get("target", "")
+        if not target_rel:
+            continue
+        target_path = peer_subdir / target_rel
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+
+        content_str = json.dumps(spec.get("content", {}))
+        content_str = content_str.replace("{DRIVE}", drive)
+        target_path.write_text(
+            json.dumps(json.loads(content_str), indent=4), encoding="utf-8"
+        )
+        print(f"  [OK] {peer_id}: {target_rel} written (drive={drive or 'none'})")
 
 def global_cleanup(base_dir):
     leaf = base_dir.name
@@ -319,8 +325,9 @@ def action_register(base_dir):
     print(f"{'='*50}")
 
     global_cleanup(base_dir)
-    
-    peers = config.get_peers_config()
+
+    sys_dir = base_dir / "_sys"
+    peers = load_peers(sys_dir)
     for peer_id, peer in peers.items():
         if peer.get("enabled", True):
             set_peer_portability(base_dir, peer_id, peer)
@@ -360,8 +367,11 @@ def action_register(base_dir):
                 except Exception:
                     continue
     
-    if assigned_letter:
-        update_claude_settings(base_dir, assigned_letter)
+    # Write per-peer local settings (e.g. settings.local.json with drive-specific permissions)
+    drive = assigned_letter or ""
+    for peer_id, peer_cfg in peers.items():
+        if peer_cfg.get("enabled", True) and peer_cfg.get("local_settings"):
+            apply_local_settings(base_dir, peer_id, peer_cfg, drive)
 
     target_key = get_registry_key_name(base_dir)
     menu_label = f"Open in Sandbox: {base_dir.name}" + (f" ({base_dir} -> {assigned_letter}:)" if assigned_letter else f" ({base_dir})")

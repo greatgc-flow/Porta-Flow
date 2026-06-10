@@ -104,6 +104,18 @@ def run_cleanup(tier: int = 1, all_yes: bool = False, dry_run: bool = False, bas
     total_freed += remove_path_safe(base_dir / "_state", r"AI 임시 상태 (_state)", dry_run)
     total_freed += remove_path_safe(base_dir / "WORKLOG.md", r"임시 작업 로그 (WORKLOG.md)", dry_run)
 
+    # Launcher session logs in _archive/ (keep latest 5)
+    archive_logs = base_dir / "_archive" / "logs"
+    if archive_logs.exists():
+        logs = sorted(list(archive_logs.glob("start_*.log")), key=os.path.getmtime, reverse=True)
+        to_del = logs[5:]
+        if to_del:
+            del_sz = sum(l.stat().st_size for l in to_del)
+            if not dry_run:
+                for l in to_del: l.unlink()
+            print(f"  [OK] 런처 로그 (_archive/logs) — {len(to_del)}개 삭제 ({format_size(del_sz)})")
+            total_freed += del_sz
+
     # Test caches
     total_freed += remove_path_safe(base_dir / ".pytest_cache", r"최상위 pytest 캐시", dry_run)
     total_freed += remove_path_safe(sys_dir / "tests" / ".pytest_cache", r"단위 테스트 캐시", dry_run)
@@ -232,7 +244,8 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--tier", type=int, default=None)
-    parser.add_argument("--all", action="store_true")
+    parser.add_argument("--all", "-y", action="store_true",
+                        help="Skip confirmation prompts (also -y for CI use)")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 

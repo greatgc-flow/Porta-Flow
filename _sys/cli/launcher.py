@@ -198,10 +198,22 @@ def main():
             else:
                 log(f"[Warning] VS Code not found at {vscode_exe}", log_file)
 
+            # Launch peer host apps (driven by peers.json host_app field)
             if not no_desktop:
-                claude_exe = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Claude" / "Claude.exe"
-                if claude_exe.exists():
-                    subprocess.Popen([str(claude_exe)], env=env)
+                for peer_id, cfg in peers_raw.items():
+                    if not cfg.get("enabled"):
+                        continue
+                    host_app = cfg.get("host_app") or {}
+                    if not host_app.get("launch_on_start"):
+                        continue
+                    env_base = host_app.get("env_base", "LOCALAPPDATA")
+                    rel_path = host_app.get("rel_path", "")
+                    if not rel_path:
+                        continue
+                    host_exe = Path(os.environ.get(env_base, "")) / Path(rel_path)
+                    if host_exe.exists():
+                        subprocess.Popen([str(host_exe)], env=env)
+                        log(f"[OK] Launched host app: {peer_id} ({host_exe.name})", log_file)
             
             if not target:
                 print(f"[Sandbox] Environment ready at {base_dir}")

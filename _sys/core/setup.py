@@ -1,7 +1,8 @@
 """
 setup.py - Portable Dev Environment Bootstrapper
-Handles downloading and installing all components: Node.js, FFmpeg, Git, VS Code, etc.
-AI CLI peers are driven by _sys/ai/peers.json — add a peer there, no code change needed.
+Runtime versions/URLs driven by _sys/runtimes.json.
+AI CLI peers driven by _sys/ai/peers.json.
+No hardcoded versions or URLs in this file.
 """
 import os
 import sys
@@ -11,33 +12,47 @@ import subprocess
 import urllib.request
 from pathlib import Path
 
-# --- Runtime Versions & URLs ---
-V = {
-    "Python": "3.13.4",
-    "NodeJS": "22.22.3",
-    "Git": "2.49.0",
-    "VSCode": "1.100.2",
-    "Pwsh": "7.6.2"
-}
 
-URLS = {
-    "NodeJS": f"https://nodejs.org/dist/v{V['NodeJS']}/node-v{V['NodeJS']}-win-x64.zip",
-    "Git": f"https://github.com/git-for-windows/git/releases/download/v{V['Git']}.windows.1/PortableGit-{V['Git']}-64-bit.7z.exe",
-    "FFmpeg": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip",
-    "VSCode": f"https://update.code.visualstudio.com/{V['VSCode']}/win32-x64-archive/stable",
-    "Pwsh": f"https://github.com/PowerShell/PowerShell/releases/download/v{V['Pwsh']}/PowerShell-{V['Pwsh']}-win-x64.zip"
-}
+def _load_runtimes() -> tuple[dict, dict]:
+    """Load V (versions) and URLS from _sys/runtimes.json."""
+    sys_dir = Path(__file__).parent.parent.resolve()
+    runtimes_path = sys_dir / "runtimes.json"
+    if not runtimes_path.exists():
+        raise FileNotFoundError(
+            f"[Error] _sys/runtimes.json not found.\n"
+            f"  Expected: {runtimes_path}\n"
+            f"  This file should be present in the git repo."
+        )
+    data = json.loads(runtimes_path.read_text(encoding="utf-8")).get("runtimes", {})
+    V = {
+        "Python": data.get("python", {}).get("version", ""),
+        "NodeJS": data.get("nodejs", {}).get("version", ""),
+        "Git":    data.get("git",    {}).get("version", ""),
+        "VSCode": data.get("vscode", {}).get("version", ""),
+        "Pwsh":   data.get("pwsh",   {}).get("version", ""),
+    }
+    URLS = {
+        "NodeJS": data.get("nodejs",  {}).get("url", ""),
+        "Git":    data.get("git",     {}).get("url", ""),
+        "FFmpeg": data.get("ffmpeg",  {}).get("url", ""),
+        "VSCode": data.get("vscode",  {}).get("url", ""),
+        "Pwsh":   data.get("pwsh",    {}).get("url", ""),
+    }
+    return V, URLS
+
+
+V, URLS = _load_runtimes()
 
 
 def get_paths() -> dict:
     sys_dir = Path(__file__).parent.parent.resolve()
     base_dir = sys_dir.parent
     return {
-        "base": base_dir,
-        "sys": sys_dir,
-        "env": sys_dir / "env",
+        "base":  base_dir,
+        "sys":   sys_dir,
+        "env":   sys_dir / "env",
         "tools": sys_dir / "tools",
-        "data": sys_dir / "data",
+        "data":  sys_dir / "data",
         "setup": sys_dir / "data" / "setup-files",
     }
 
@@ -109,14 +124,22 @@ def run_setup(force: bool = False, skip_vscode: bool = False, skip_ai: bool = Fa
         paths["tools"], paths["tools"] / "apps",
         paths["data"] / "logs", paths["data"] / "temp", paths["setup"],
         paths["base"] / "workspace",
-        paths["sys"] / "ai", paths["sys"] / "ai" / "common",
+        paths["sys"] / "ai",
+        paths["sys"] / "ai" / "common",
+        paths["sys"] / "ai" / "common" / "agents",
+        paths["sys"] / "ai" / "common" / "skills",
+        paths["sys"] / "ai" / "common" / "mcp",
+        paths["sys"] / "common",
+        paths["sys"] / "common" / "scripts",
+        paths["sys"] / "common" / "assets",
     ]
-    # Create config/ and project/ dirs for each registered peer
     peers = load_peers(paths["sys"])
     for peer_id, cfg in peers.items():
         subdir = paths["sys"] / cfg.get("sys_subdir", peer_id)
         dirs.append(subdir / "config")
         dirs.append(subdir / "project")
+        if cfg.get("sys_subdir"):
+            dirs.append(subdir / "templates")
 
     for d in dirs:
         d.mkdir(parents=True, exist_ok=True)
@@ -171,6 +194,8 @@ def run_setup(force: bool = False, skip_vscode: bool = False, skip_ai: bool = Fa
             extract_zip(zip_path, paths["env"] / "vscode")
             (paths["env"] / "vscode" / "data").mkdir(exist_ok=True)
             print("  [OK] VS Code ready")
+        else:
+            print("  [--] VS Code (already installed)")
 
     # 5. Python venv
     print("\n>>> Python virtual environment")
@@ -182,6 +207,8 @@ def run_setup(force: bool = False, skip_vscode: bool = False, skip_ai: bool = Fa
         print("  [i] Creating venv...")
         subprocess.run([sys.executable, "-m", "virtualenv", str(venv_dir)], check=True)
         print("  [OK] venv created")
+    else:
+        print("  [--] venv (already exists)")
 
     # 6. Install filelock
     print("  [i] Installing filelock...")
@@ -202,10 +229,15 @@ def run_setup(force: bool = False, skip_vscode: bool = False, skip_ai: bool = Fa
         npm_exe = paths["env"] / "nodejs" / "npm.cmd"
         install_ai_peers(paths, npm_exe, env, force=force)
 
-    # 8. Finalize with Registry
-    print("\n>>> Finalizing with Registry context menu")
+    # 8. Finalize with Registry (non-fatal — environment is usable even if registry fails)
+    print("\n>>> Registering context menu and junctions")
     manage_py = paths["sys"] / "cli" / "manage.py"
-    subprocess.run([sys.executable, str(manage_py), "Register"], check=True)
+    result = subprocess.run([sys.executable, str(manage_py), "Register"])
+    if result.returncode != 0:
+        print("  [Warning] Registry setup failed — environment still functional via start.bat.")
+        print("            Run register.bat manually after resolving permissions.")
+    else:
+        print("  [OK] Registration complete")
 
     print("\n======================================================")
     print("  Setup complete! All components installed.")
