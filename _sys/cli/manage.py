@@ -398,7 +398,7 @@ def action_register(base_dir):
                 winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, str(code_path))
 
             cmd_key = winreg.CreateKey(key, "command")
-            cmd_str = f'cmd.exe /c ""{relay_path}" "{arg}.""'
+            cmd_str = f'cmd.exe /c ""{relay_path}" "{arg}""'
             winreg.SetValueEx(cmd_key, "", 0, winreg.REG_SZ, cmd_str)
             winreg.CloseKey(key)
         except Exception as e:
