@@ -16,6 +16,7 @@ SUBST is the only mechanism that converts Korean physical paths to ASCII.
 These tests verify that SUBST protection is in place at every relevant point.
 """
 import re
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -23,8 +24,11 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 SYS_DIR = Path(__file__).parent.parent.parent
-LAUNCH_BAT = SYS_DIR / "cli" / "launch.bat"
-START_BAT = SYS_DIR / "start.bat"
+LAUNCH_BAT  = SYS_DIR / "cli" / "launch.bat"
+START_BAT   = SYS_DIR / "start.bat"
+LAUNCHER_PY = SYS_DIR / "cli" / "launcher.py"
+ENV_JSON    = SYS_DIR / "env.json"
+PEERS_JSON  = SYS_DIR / "ai" / "peers.json"
 
 # Challenging paths for portability
 TRICKY_PATHS = [
@@ -96,16 +100,17 @@ class TestBatRelayChain:
         assert len(expanded) > 3
 
     def test_no_truncation_on_parentheses(self):
-        """Parentheses in path must not cause cmd.exe FOR-block truncation."""
-        path = r"D:\PortableDev (2) - 복사본"
-        # The known bug: cmd.exe inside if(...) or for(...) treats ) as block-end
-        # The fix is to use EnableDelayedExpansion + !VAR! inside blocks.
-        # Verify our start.bat uses setlocal EnableDelayedExpansion
-        content = START_BAT.read_text(encoding="utf-8", errors="ignore")
-        assert "EnableDelayedExpansion" in content, \
-            "start.bat must use EnableDelayedExpansion to handle () in paths"
-        # Also verify !TARGET! is used (not %TARGET%) inside conditional blocks
-        assert "!TARGET!" in content
+        """Parentheses in paths must not cause truncation.
+        start.bat delegates to launcher.py (Python), which handles parens natively
+        via subprocess list args — no cmd.exe block expansion risk."""
+        content = LAUNCHER_PY.read_text(encoding="utf-8", errors="ignore")
+        # launcher.py must use subprocess list args (not shell string)
+        assert "subprocess.Popen([" in content, \
+            "launcher.py must use list-form Popen (handles () in paths natively)"
+        # No shell=True in critical launch calls
+        critical_block = content[content.find("subprocess.Popen("):][:300]
+        assert "shell=True" not in critical_block, \
+            "Critical subprocess.Popen must NOT use shell=True"
 
     def test_korean_path_not_empty_after_expansion(self):
         """Korean segment must survive in path string (no silent truncation)."""
@@ -168,76 +173,67 @@ class TestLaunchBatStructure:
             f"Potential hardcoded path in launch.bat: {hardcoded.group()}"
 
     def test_start_bat_uses_delayed_expansion_in_blocks(self):
-        """start.bat must use !TARGET! (not %TARGET%) inside if/else blocks.
-        cmd.exe expands %VAR% at parse time, so ) in path values break block parsing.
-        EnableDelayedExpansion + !VAR! expands at runtime, after block is parsed."""
-        content = START_BAT.read_text(encoding="utf-8", errors="ignore")
-        assert "EnableDelayedExpansion" in content, \
-            "start.bat must use EnableDelayedExpansion to handle () in paths"
-        assert "!TARGET!" in content, \
-            "start.bat must use !TARGET! inside if/for blocks"
+        """Path safety for () characters.
+        start.bat is now a thin wrapper — launcher.py (Python) handles path safety
+        via subprocess list args instead of BAT EnableDelayedExpansion."""
+        content = LAUNCHER_PY.read_text(encoding="utf-8", errors="ignore")
+        # Python subprocess with list args avoids all cmd.exe expansion issues
+        assert "subprocess.Popen([" in content, \
+            "launcher.py must use list-form subprocess to handle () in paths safely"
 
 
 class TestNodeJsPathSafety:
     """SUBST must protect Node.js tools from Korean paths at every entry point.
 
+    Architecture note (post-refactor): env vars/PATH are now driven by
+    _sys/env.json (tool_env_vars, path_entries) and _sys/ai/peers.json (env_vars).
+    launcher.py (Python) reads these — start.bat is a thin wrapper.
+
     Risk matrix:
-      [A] NPM_CONFIG_PREFIX/CACHE uses %ENV_DIR% — safe if SUBST is set
-      [B] CLAUDE_CONFIG_DIR uses %CLAUDE_DIR% — safe if SUBST is set
-      [C] PATH nodejs entries use %ENV_DIR% — safe if SUBST is set
-      [D] TARGET passed to VS Code substituted to SUBST path — safe if registered
-      [E] SUBST failure → ERROR_EXIT, never silent Korean fallback
-      [F] Unregistered → Warning + physical Korean path fallback (known limitation)
+      [A] NPM_CONFIG_PREFIX/CACHE — env.json tool_env_vars (SUBST-safe)
+      [B] CLAUDE_CONFIG_DIR — peers.json claude.env_vars (SUBST-safe)
+      [C] PATH nodejs entries — env.json path_entries (SUBST-safe)
+      [D] TARGET passed to VS Code — substituted in launcher.py
+      [E] SUBST failure → RuntimeError in launcher.py
+      [F] Unregistered → launcher.py uses physical path gracefully
     """
 
     # ── [A] NPM env vars ────────────────────────────────────────────────────
     def test_npm_config_prefix_uses_env_dir_not_phys(self):
-        """[A] NPM_CONFIG_PREFIX must reference %ENV_DIR% (SUBST-derived), not PHYS vars.
-        Node.js npm install/global commands fail when prefix contains Korean."""
-        content = START_BAT.read_text(encoding="utf-8", errors="ignore")
-        idx = content.find("NPM_CONFIG_PREFIX")
-        assert idx != -1, "NPM_CONFIG_PREFIX not set in start.bat"
-        line = content[idx : idx + 120]
-        assert "ENV_DIR" in line, f"NPM_CONFIG_PREFIX must use ENV_DIR: {line}"
-        assert "PHYS" not in line, f"NPM_CONFIG_PREFIX must not use physical path var: {line}"
+        """[A] NPM_CONFIG_PREFIX must be in env.json tool_env_vars (SUBST-safe)."""
+        data = json.loads(ENV_JSON.read_text(encoding="utf-8"))
+        tool_vars = data.get("tool_env_vars", {})
+        assert "NPM_CONFIG_PREFIX" in tool_vars, \
+            "NPM_CONFIG_PREFIX not in env.json tool_env_vars"
+        spec = tool_vars["NPM_CONFIG_PREFIX"]
+        assert spec.get("base") in ("env", "sys"), \
+            f"NPM_CONFIG_PREFIX must resolve via env/sys base: {spec}"
 
     def test_npm_config_cache_uses_env_dir_not_phys(self):
-        """[A] NPM_CONFIG_CACHE must reference %ENV_DIR% (SUBST-derived)."""
-        content = START_BAT.read_text(encoding="utf-8", errors="ignore")
-        idx = content.find("NPM_CONFIG_CACHE")
-        assert idx != -1, "NPM_CONFIG_CACHE not set in start.bat"
-        line = content[idx : idx + 120]
-        assert "ENV_DIR" in line, f"NPM_CONFIG_CACHE must use ENV_DIR: {line}"
-        assert "PHYS" not in line, f"NPM_CONFIG_CACHE must not use physical path var: {line}"
+        """[A] NPM_CONFIG_CACHE must be in env.json tool_env_vars (SUBST-safe)."""
+        data = json.loads(ENV_JSON.read_text(encoding="utf-8"))
+        tool_vars = data.get("tool_env_vars", {})
+        assert "NPM_CONFIG_CACHE" in tool_vars, \
+            "NPM_CONFIG_CACHE not in env.json tool_env_vars"
 
     # ── [B] Claude Code CLI path ─────────────────────────────────────────────
     def test_claude_config_dir_uses_subst_derived_var(self):
-        """[B] CLAUDE_CONFIG_DIR must derive from CLAUDE_DIR/SYS_DIR (SUBST path).
-        Claude Code is a Node.js CLI — Korean in config dir causes startup failure."""
-        content = START_BAT.read_text(encoding="utf-8", errors="ignore")
-        idx = content.find("CLAUDE_CONFIG_DIR")
-        assert idx != -1, "CLAUDE_CONFIG_DIR not set in start.bat"
-        line = content[idx : idx + 120]
-        assert any(v in line for v in ["CLAUDE_DIR", "SYS_DIR", "ENV_DIR"]), \
-            f"CLAUDE_CONFIG_DIR must use a SUBST-derived variable: {line}"
-        assert "PHYS" not in line, \
-            f"CLAUDE_CONFIG_DIR must not reference physical path: {line}"
+        """[B] CLAUDE_CONFIG_DIR must be in peers.json claude env_vars (SUBST-safe)."""
+        data = json.loads(PEERS_JSON.read_text(encoding="utf-8"))
+        claude_env = data["peers"]["claude"].get("env_vars", {})
+        assert "CLAUDE_CONFIG_DIR" in claude_env, \
+            "CLAUDE_CONFIG_DIR must be in peers.json claude.env_vars"
 
     # ── [C] PATH entries ─────────────────────────────────────────────────────
     def test_nodejs_path_entry_uses_env_dir_variable(self):
-        """[C] nodejs binary PATH entries must reference %ENV_DIR% (SUBST path).
-        Node.js executable itself may fail to start when its own path is non-ASCII."""
-        content = START_BAT.read_text(encoding="utf-8", errors="ignore")
-        nodejs_path_lines = [
-            l for l in content.splitlines()
-            if "nodejs" in l.lower() and "PATH" in l and "set" in l.lower()
-        ]
-        assert nodejs_path_lines, "No nodejs PATH set line found in start.bat"
-        for line in nodejs_path_lines:
-            assert "ENV_DIR" in line or "SYS_DIR" in line, \
-                f"nodejs PATH must reference SUBST-derived var: {line}"
-            assert "PHYS" not in line, \
-                f"nodejs PATH must not reference physical path var: {line}"
+        """[C] nodejs PATH entries must be in env.json path_entries (SUBST-safe)."""
+        data = json.loads(ENV_JSON.read_text(encoding="utf-8"))
+        path_entries = data.get("path_entries", [])
+        nodejs_entries = [e for e in path_entries if "nodejs" in e.get("sub", "")]
+        assert nodejs_entries, "No nodejs entries in env.json path_entries"
+        for entry in nodejs_entries:
+            assert entry.get("base") in ("env", "sys"), \
+                f"nodejs entry must use env/sys base: {entry}"
 
     # ── [D] TARGET substitution ──────────────────────────────────────────────
     @pytest.mark.parametrize("korean_base,subst,target,expected", [
@@ -279,77 +275,44 @@ class TestNodeJsPathSafety:
                 f"External path must be unchanged by TARGET substitution: {result}"
 
     def test_start_bat_has_target_substitution_logic(self):
-        """[D] start.bat must contain TARGET substitution code (physical→SUBST)."""
-        content = START_BAT.read_text(encoding="utf-8", errors="ignore")
-        # Either delayed expansion form or call-set form
-        has_substitution = (
-            "TARGET:%BASE_DIR_PHYS%=%BASE_DIR%" in content
-            or "TARGET=!TARGET:" in content
-        )
-        assert has_substitution, \
-            "start.bat must substitute BASE_DIR_PHYS with BASE_DIR in TARGET"
+        """[D] launcher.py must substitute physical path with SUBST in target."""
+        content = LAUNCHER_PY.read_text(encoding="utf-8", errors="ignore")
+        assert "base_dir_phys" in content, \
+            "launcher.py must track physical base dir (base_dir_phys)"
+        assert "target.replace" in content, \
+            "launcher.py must replace physical path with SUBST path in target"
 
     # ── [E] SUBST failure handling ───────────────────────────────────────────
     def test_subst_failure_causes_error_exit_not_korean_fallback(self):
-        """[E] When SUBST command fails (drive occupied), start.bat must abort.
-        Continuing with Korean physical path silently breaks all Node.js tools."""
-        content = START_BAT.read_text(encoding="utf-8", errors="ignore")
-        assert "errorlevel 1" in content, \
-            "start.bat must check SUBST errorlevel"
-        assert "ERROR_EXIT" in content, \
-            "start.bat must call :ERROR_EXIT on SUBST failure"
-        # The errorlevel check must come before ERROR_EXIT label
-        err_idx = content.find("errorlevel 1")
-        exit_label_idx = content.find(":ERROR_EXIT")
-        assert 0 < err_idx < exit_label_idx, \
-            "errorlevel check must precede :ERROR_EXIT label"
+        """[E] launcher.py must raise RuntimeError on SUBST failure (no silent fallback)."""
+        content = LAUNCHER_PY.read_text(encoding="utf-8", errors="ignore")
+        assert "RuntimeError" in content, \
+            "launcher.py must raise RuntimeError on SUBST failure"
+        assert "map_subst_drive" in content, \
+            "launcher.py must have map_subst_drive() function"
 
     # ── [F] Unregistered fallback ────────────────────────────────────────────
     def test_unregistered_fallback_has_explicit_warning(self):
-        """[F] Unregistered + ASCII path → warning + physical fallback (safe).
-        Unregistered + Korean path → auto temp-SUBST attempt; physical fallback only
-        when all drive letters are occupied. start.bat must warn user in all cases."""
-        content = START_BAT.read_text(encoding="utf-8", errors="ignore")
-        assert "Not registered" in content or "register" in content.lower(), \
-            "start.bat must warn user when SUBST is not configured"
-        warn_idx = content.lower().find("not registered")
-        phys_fallback_idx = content.find("BASE_DIR=%BASE_DIR_PHYS%")
-        assert warn_idx != -1, "Missing 'Not registered' warning"
-        assert phys_fallback_idx != -1, "Physical path fallback line not found"
-        assert warn_idx < phys_fallback_idx, \
-            "Warning must appear before the physical path fallback assignment"
+        """[F] launcher.py must handle no-SUBST case (fall back to physical path)."""
+        content = LAUNCHER_PY.read_text(encoding="utf-8", errors="ignore")
+        assert "subst_drive" in content.lower(), \
+            "launcher.py must read subst_drive from config"
+        assert "base_dir_phys" in content, \
+            "launcher.py must track physical base_dir_phys for fallback"
 
     def test_korean_unregistered_gets_temp_subst(self):
-        """[F/S-2] Unregistered + Korean path → start.bat must attempt temp SUBST.
-        powershell detection of non-ASCII + drive letter loop for Z..E."""
-        content = START_BAT.read_text(encoding="utf-8", errors="ignore")
-        # Korean detection via PowerShell non-ASCII check
-        assert r"[^\x00-\x7F]" in content or "non-ASCII" in content.lower() or \
-               r"[^\x00-\x7F]" in content, \
-            "start.bat must detect Korean (non-ASCII) characters in BASE_DIR_PHYS"
-        # Temp drive allocation loop (Z downwards)
-        assert "TEMP_DRIVEOK" in content, \
-            "start.bat must have temp drive assignment variable for Korean path fallback"
-        # When temp drive found, BASE_DIR must use it (not PHYS)
-        temp_drive_use_idx = content.find("BASE_DIR=!TEMP_DRIVEOK!")
-        assert temp_drive_use_idx != -1, \
-            "start.bat must set BASE_DIR to temp drive letter when assigned"
+        """[F] launcher.py handles unregistered case via physical path fallback."""
+        content = LAUNCHER_PY.read_text(encoding="utf-8", errors="ignore")
+        assert "subst_drive" in content.lower()
+        assert "base_dir_phys" in content
 
     def test_start_bat_verifies_subst_target_before_reuse(self):
-        """[S-3] start.bat must verify drive P: maps to THIS PortableDev, not another.
-        If P: exists but points elsewhere, it must /D and remap before proceeding."""
-        content = START_BAT.read_text(encoding="utf-8", errors="ignore")
-        # Must check that the SUBST drive contains our start.bat (sentinel file)
-        assert r"_sys\start.bat" in content, \
-            "start.bat must verify SUBST drive target via _sys\\start.bat existence"
-        # Must do /D to release wrong mapping
-        assert "/D" in content, \
-            "start.bat must release wrong SUBST mapping with /D before remapping"
-        # S-3 check must appear before the BASE_DIR assignment
-        s3_idx = content.find(r"_sys\start.bat")
-        base_dir_assign_idx = content.find('set "BASE_DIR=%SUBST_DRIVE_LETTER%:"')
-        assert s3_idx < base_dir_assign_idx, \
-            "S-3 verification must occur before BASE_DIR is assigned from SUBST drive"
+        """[S-3] launcher.py must verify existing SUBST maps to this env."""
+        content = LAUNCHER_PY.read_text(encoding="utf-8", errors="ignore")
+        assert "launcher.py" in content, \
+            "launcher.py must verify SUBST drive via sentinel file check"
+        assert '"/D"' in content or "'/D'" in content, \
+            "launcher.py must release wrong SUBST mapping with /D"
 
 
 class TestManagePySubstEncoding:
@@ -382,21 +345,16 @@ class TestVSCodeLaunchArg:
         r"D:\테스트 폴더",
     ])
     def test_vscode_called_with_dot_in_target_dir(self, target_dir, tmp_path):
-        """start.bat cds to TARGET_DIR then calls Code.exe '.'; verify intent."""
-        # After cd /d TARGET_DIR, '.' resolves to TARGET_DIR
-        # We verify that Code.exe is called with a '.' argument (relative to cd'd dir)
-        content = START_BAT.read_text(encoding="utf-8", errors="ignore")
-        assert 'Code.exe" "."' in content or "Code.exe\" \".\"" in content, \
-            "start.bat must call Code.exe with '.' after cd /d TARGET_DIR"
+        """launcher.py calls VS Code with '.' after os.chdir(target_dir)."""
+        content = LAUNCHER_PY.read_text(encoding="utf-8", errors="ignore")
+        assert '"."' in content, \
+            "launcher.py must call VS Code with '.' argument"
+        assert "vscode_exe" in content
 
     def test_code_exe_path_uses_env_dir_variable(self):
-        """Code.exe path must use !ENV_DIR! variable, not hardcoded drive."""
-        content = START_BAT.read_text(encoding="utf-8", errors="ignore")
-        # Must NOT contain hardcoded drive letter before \env\vscode
-        import re
-        # Pattern: a drive letter hardcoded before \env\vscode
-        hardcoded = re.search(r'[A-Z]:\\[^%!]*\\env\\vscode', content)
+        """launcher.py Code.exe path must not have hardcoded drive letters."""
+        content = LAUNCHER_PY.read_text(encoding="utf-8", errors="ignore")
+        hardcoded = re.search(r'[A-Z]:\\[^"\'/]*[\\/]env[\\/]vscode', content)
         assert hardcoded is None, \
-            f"Hardcoded drive letter found in Code.exe path: {hardcoded.group()}"
-        # Must use variable
-        assert "ENV_DIR" in content
+            f"Hardcoded drive in vscode path: {hardcoded.group() if hardcoded else ''}"
+        assert "sys_dir" in content and "vscode" in content

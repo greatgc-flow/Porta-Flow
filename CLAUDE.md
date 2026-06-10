@@ -35,8 +35,8 @@ with all tools (Python, Node.js, FFmpeg, Git, etc.) pre-configured.
     ├── templates/ ← CLAUDE_*.md, GEMINI.md templates
     ├── docs/      ← TAXONOMY*.md, design docs
     ├── git-config/
-    ├── env/       ← downloaded runtimes (NOT in git)
-    ├── tools/     ← downloaded utilities (NOT in git)
+    ├── env/       ← downloaded runtimes (NOT in git — bootstrapped by install.bat)
+    ├── tools/     ← pre-bundled utilities (git-tracked: bat, delta, fd, fzf, gh, jq, omp, rg, sqlite)
     └── data/      ← temp/ logs/ setup-files/ (NOT in git)
 ```
 Full annotated tree: `README.md`
@@ -179,5 +179,13 @@ Created on first run by `setup.py` or `start.bat`:
 | `start.bat "file.exe"` | Open with Windows default handler |
 
 ## Current State
-Last checkpoint: 2026-06-05 08:59 -- See .ai/ blackboard for details
+Last checkpoint: 2026-06-10 — install/cleanup/register/workspace-init pipeline complete.
+Core architecture: runtimes.json, peers.json, env.json all no-code config-driven.
 → See `_sys/claude/agent/CONTEXT.md` for static topology and agent team.
+
+## Next Steps
+- workspace-init: manage.py workspace-init tested end-to-end
+- tools.json / version upgrade flow
+- External workspace support (workspace outside BASE_DIR)
+- Per-workspace AI config isolation (manage.py workspace-init hook)
+- Update unit tests for new Python-based launcher architecture

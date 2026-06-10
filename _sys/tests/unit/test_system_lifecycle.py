@@ -38,37 +38,44 @@ class TestSystemLifecycle:
         
         return base_dir
 
+    @patch("manage.config")
     @patch("winreg.CreateKey")
     @patch("winreg.SetValueEx")
     @patch("subprocess.run")
     @patch("subprocess.check_output", return_value="")
     @patch("winreg.OpenKey", side_effect=OSError)
-    def test_registration_flow_sys_r1_r2(self, mock_open_key, mock_check_out, mock_run, mock_set_val, mock_create_key, mock_env):
+    def test_registration_flow_sys_r1_r2(self, mock_open_key, mock_check_out, mock_run, mock_set_val, mock_create_key, mock_cfg, mock_env):
         """SYS-R1, SYS-R2: 등록 및 해제 흐름 검증."""
         os.environ.setdefault("USERPROFILE", str(mock_env.parent))
+        mock_cfg.get.return_value = None  # No pre-existing SUBST config
+        mock_cfg.get_peers_config.return_value = {}
+        mock_cfg.get_base_dir.return_value = mock_env
+        mock_cfg.get_sys_dir.return_value = mock_env / "_sys"
+
         # 1. Register 실행
         manage.action_register(mock_env)
-        
+
         # subst 호출 확인
         assert any("subst" in str(call.args[0]) for call in mock_run.call_args_list)
         # registry 호출 확인
         assert mock_create_key.called
         assert mock_set_val.called
-        
-        # local.config.bat 생성 확인
-        config = (mock_env / "_sys" / "local.config.bat").read_text(encoding="utf-8")
-        assert "SUBST_DRIVE_LETTER" in config
-        assert "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS" in config
+
+        # config.set("SUBST_DRIVE_LETTER", ...) 호출 확인
+        set_calls = {c.args[0]: c.args[1] for c in mock_cfg.set.call_args_list}
+        assert "SUBST_DRIVE_LETTER" in set_calls, \
+            "register must call config.set('SUBST_DRIVE_LETTER', ...)"
 
         # 2. Unregister 실행
         mock_run.reset_mock()
         mock_check_out.reset_mock()
+        mock_cfg.set.reset_mock()
         manage.action_unregister(mock_env)
 
-        # local.config.bat 정리 확인 (auto 블록 삭제됨)
-        config_after = (mock_env / "_sys" / "local.config.bat").read_text(encoding="utf-8")
-        assert "SUBST_DRIVE_LETTER" not in config_after
-        assert ":: user config" in config_after
+        # unregister 후 SUBST_DRIVE_LETTER → None
+        unset_calls = {c.args[0]: c.args[1] for c in mock_cfg.set.call_args_list}
+        assert unset_calls.get("SUBST_DRIVE_LETTER") is None, \
+            "unregister must call config.set('SUBST_DRIVE_LETTER', None)"
 
     def test_cleanup_tiers_sys_c1(self, mock_env):
         """SYS-C1: 클린업 티어별 MECE 검증."""
@@ -95,12 +102,12 @@ class TestSystemLifecycle:
         assert not (mock_env / "_sys" / "local.config.bat").exists()
 
     @patch("manage.global_cleanup")
-    @patch("manage.set_gemini_portability")
+    @patch("manage.set_peer_portability")
     @patch("winreg.CreateKey")
     @patch("winreg.SetValueEx")
     @patch("subprocess.run")
     @patch("subprocess.check_output", return_value="")
-    def test_registration_migration_sys_r3(self, mock_co, mock_run, mock_set_val, mock_create_key, mock_sgp, mock_gc, mock_env, tmp_path):
+    def test_registration_migration_sys_r3(self, mock_co, mock_run, mock_set_val, mock_create_key, mock_spp, mock_gc, mock_env, tmp_path):
         """SYS-R3: 경로 이동 후 재등록 시 이전 정보 정리 검증."""
         # 1. 첫 번째 경로 등록
         manage.action_register(mock_env)
@@ -168,15 +175,24 @@ class TestSystemLifecycle:
         assert assigned[0] != assigned[1], f"두 인스턴스가 같은 드라이브 사용: {assigned}"
 
     def test_cleanup_tier3_resets_runtime(self, mock_env):
-        """SYS-C3: Tier 3이 env/, tools/ 삭제하되 workspace는 유지함을 검증."""
-        (mock_env / "_sys" / "env" / "python").mkdir(parents=True)
+        """SYS-C3: Tier 3이 env/ 런타임을 삭제(python 제외)하되 tools/와 workspace는 유지.
+        tools/는 git-tracked pre-bundled 바이너리이므로 Tier 3에서 삭제하지 않음."""
+        env_dir = mock_env / "_sys" / "env"
+        (env_dir / "python").mkdir(parents=True)
+        (env_dir / "nodejs").mkdir(parents=True)
         (mock_env / "_sys" / "tools" / "rg").mkdir(parents=True)
         (mock_env / "_sys" / "claude").mkdir(parents=True)
 
         cleanup.run_cleanup(tier=3, all_yes=True, base_dir=mock_env)
 
-        assert not (mock_env / "_sys" / "env").exists(), "Tier3: env/ 삭제되어야 함"
-        assert not (mock_env / "_sys" / "tools").exists(), "Tier3: tools/ 삭제되어야 함"
+        # env/nodejs 등 비-python 런타임은 삭제
+        assert not (env_dir / "nodejs").exists(), "Tier3: env/nodejs 삭제되어야 함"
+        # env/python은 제외 (bootstrap Python은 유지)
+        assert (env_dir / "python").exists(), "Tier3: env/python은 유지되어야 함"
+        # tools/는 pre-bundled, git-tracked → 유지
+        assert (mock_env / "_sys" / "tools").exists(), \
+            "Tier3: tools/는 git-tracked이므로 유지되어야 함"
+        # workspace 유지
         assert (mock_env / "workspace").exists(), "Tier3: workspace는 유지되어야 함"
 
     def test_cleanup_tier4_source_files_survive(self, mock_env):
