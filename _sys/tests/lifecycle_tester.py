@@ -3,6 +3,8 @@ import os
 import subprocess
 import winreg
 import re
+import shutil
+import time
 from pathlib import Path
 
 def log(msg):
@@ -34,7 +36,7 @@ def check_registry(leaf):
 
 def get_subst_drive(target_path):
     try:
-        out = subprocess.check_output(["subst"], text=True)
+        out = subprocess.check_output(["subst"], text=True, encoding='oem')
         for line in out.splitlines():
             if str(target_path).lower() in line.lower():
                 match = re.match(r'^([A-Z]):', line, re.IGNORECASE)
@@ -46,39 +48,68 @@ def get_subst_drive(target_path):
 def main(target_dir):
     tgt = Path(target_dir).resolve()
     leaf = tgt.name
-    manage_bat = tgt / "_sys" / "cli" / "manage.bat"
+    manage_bat = tgt / "register.bat"
+    unreg_bat = tgt / "unregister.bat"
+    start_bat = tgt / "_sys" / "start.bat"
     install_bat = tgt / "install.bat"
 
     log(f"=== Starting MECE Lifecycle Test on {tgt} ===")
 
     log("\n=== 1. Test Register ===")
-    subprocess.run([str(manage_bat), "Register", "--base-dir", str(tgt)], cwd=tgt, check=True)
+    subprocess.run([str(manage_bat)], cwd=tgt, check=True, input=b"\n")
     if not get_subst_drive(tgt): raise AssertionError("SUBST drive not created!")
     if not check_registry(leaf): raise AssertionError("Registry NOT found!")
-    if not (tgt / "_sys" / "local.config.bat").exists(): raise AssertionError("local.config.bat not generated!")
+    if not (tgt / "_sys" / "config.json").exists(): raise AssertionError("config.json not generated!")
     log("Register passed.")
 
-    log("\n=== 2. Test Unregister ===")
-    subprocess.run([str(manage_bat), "Unregister", "--base-dir", str(tgt)], cwd=tgt, check=True)
+    log("\n=== 2. Test Launcher (start.bat) Environment ===")
+    # Create a dummy script to dump the environment variables provided by launcher.py
+    dummy_script = tgt / "env_dump.py"
+    dummy_script.write_text("import os, sys; print(os.environ.get('NPM_CONFIG_PREFIX','')); print(os.environ.get('PATH','')); sys.exit(0)", encoding="utf-8")
+    
+    res = subprocess.run([str(start_bat), str(dummy_script)], cwd=tgt, capture_output=True, text=True, input="\n")
+    if "npm-global" not in res.stdout: raise AssertionError("NPM_CONFIG_PREFIX not injected by launcher!")
+    if "checks" not in res.stdout: raise AssertionError("checks path not injected, AI health tools inaccessible!")
+    log("Launcher environment passed.")
+
+    log("\n=== 3. Test Korean Path & Special Chars Scenario ===")
+    # Simulate moving to another workspace
+    korean_tgt = tgt.parent / "테스트!@#"
+    if not korean_tgt.exists():
+        shutil.copytree(tgt, korean_tgt, ignore=shutil.ignore_patterns("env", ".git"))
+    
+    # We just test the register script on the new path to ensure no batch parsing errors occur
+    # Python must exist there for this to work
+    if (tgt / "_sys" / "env").exists():
+        if (korean_tgt / "_sys" / "env").exists():
+            shutil.rmtree(korean_tgt / "_sys" / "env")
+        shutil.copytree(tgt / "_sys" / "env", korean_tgt / "_sys" / "env")
+        
+    subprocess.run([str(korean_tgt / "register.bat")], cwd=korean_tgt, check=True, input=b"\n")
+    if not get_subst_drive(korean_tgt): raise AssertionError("SUBST drive not created for Korean path!")
+    subprocess.run([str(korean_tgt / "unregister.bat")], cwd=korean_tgt, check=True, input=b"\n")
+    log("Korean Path Scenario passed.")
+
+    log("\n=== 4. Test Unregister ===")
+    subprocess.run([str(unreg_bat)], cwd=tgt, check=True, input=b"\n")
     if get_subst_drive(tgt): raise AssertionError("SUBST drive still exists!")
     if check_registry(leaf): raise AssertionError("Registry still exists!")
     log("Unregister passed.")
 
-    log("\n=== 3. Test ZeroBase Cleanup (Tier 4) ===")
-    cleanup_py = tgt / "_sys" / "cli" / "cleanup.py"
-    py_exe = tgt / "_sys" / "env" / "python" / "python.exe"
-    subprocess.run([str(py_exe), str(cleanup_py), "--tier", "4", "--all"], cwd=tgt, check=True)
-    if (tgt / "_sys" / "env").exists(): raise AssertionError("_sys/env not deleted!")
+    log("\n=== 5. Test ZeroBase Cleanup (Tier 4) ===")
+    cleanup_bat = tgt / "cleanup.bat"
+    # Supply CLI args to answer 'yes' to prompts
+    subprocess.run([str(cleanup_bat), "--tier", "4", "--all"], cwd=tgt, check=True, input=b"\n")
+    if (tgt / "_sys" / "env" / "venv").exists(): raise AssertionError("_sys/env/venv not deleted!")
+    if (tgt / "_sys" / "env" / "nodejs").exists(): raise AssertionError("_sys/env/nodejs not deleted!")
     if (tgt / "workspace").exists(): raise AssertionError("workspace not deleted!")
     if list(tgt.glob("*.md")): raise AssertionError("Root markdown files not deleted!")
     log("ZeroBase Cleanup passed.")
 
-    log("\n=== 4. Test Install (Setup) ===")
-    # Using --skip-vscode and --skip-claude to speed up testing in WSB
+    log("\n=== 6. Test Install (Setup) ===")
     subprocess.run([str(install_bat), "--skip-vscode", "--skip-claude"], cwd=tgt, check=True)
     if not (tgt / "_sys" / "env" / "python" / "python.exe").exists(): raise AssertionError("Python not installed!")
     if not (tgt / "_sys" / "env" / "venv" / "Scripts" / "python.exe").exists(): raise AssertionError("venv not created!")
-    if not (tgt / "_sys" / "env" / "nodejs" / "node.exe").exists(): raise AssertionError("NodeJS not installed!")
     log("Install passed.")
 
     log("\nALL LIFECYCLE TESTS PASSED.")

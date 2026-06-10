@@ -8,7 +8,7 @@
   <!--   C:\TestResults   = writable, mapped back to host       -->
   <!--   C:\TestWork      = writable workspace (sandbox-local)  -->
   <VGpu>Disable</VGpu>
-  <Networking>Disable</Networking>
+  <Networking>Default</Networking>
   <MappedFolders>
     <MappedFolder>
       <HostFolder>__PORTABLE_ROOT__</HostFolder>
@@ -22,6 +22,6 @@
     </MappedFolder>
   </MappedFolders>
   <LogonCommand>
-    <Command>cmd.exe /c "C:\PortableDev\_sys\test\sandbox-test.bat" &amp; pause</Command>
+    <Command>cmd.exe /c "C:\PortableDev\_sys\tests\wsb-entry.bat" &amp; pause</Command>
   </LogonCommand>
 </Configuration>

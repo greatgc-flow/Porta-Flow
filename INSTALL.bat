@@ -12,7 +12,7 @@ set "PY_URL=https://www.python.org/ftp/python/%PY_VER%/python-%PY_VER%-embed-amd
 set "PY_DIR=%~dp0_sys\env\python"
 set "PY_EXE=%PY_DIR%\python.exe"
 
-echo >>> Checking for Portable Python...
+echo ^>^>^> Checking for Portable Python...
 
 if not exist "%PY_EXE%" (
     echo [i] Python not found. Bootstrapping Python %PY_VER%...
@@ -30,7 +30,7 @@ if not exist "%PY_EXE%" (
     
     echo [i] Extracting Python...
     if not exist "%PY_DIR%" mkdir "%PY_DIR%"
-    tar -xf "!ZIP_PATH!" -C "%PY_DIR%"
+    powershell -NoProfile -Command "Expand-Archive -Force -Path '!ZIP_PATH!' -DestinationPath '%PY_DIR%'"
     if errorlevel 1 (
         echo [Error] Failed to extract Python.
         if "%CI%"=="" pause
@@ -49,13 +49,7 @@ if not exist "%PY_EXE%" (
 )
 
 echo [OK] Python is ready. Handing over to setup.py...
-"%PY_EXE%" "%~dp0_sys\core\setup.py" %*
+"%PY_EXE%" "%~dp0_sys\core\setup.py" %* || (echo [FATAL] Setup failed. & pause & exit /b 1)
 
-if errorlevel 1 (
-    echo [Error] Setup failed.
-    if "%CI%"=="" pause
-) else (
-    echo [OK] Setup completed successfully.
-)
-
+echo [OK] Setup completed successfully.
 endlocal

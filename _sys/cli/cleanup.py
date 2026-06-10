@@ -86,7 +86,12 @@ def run_cleanup(tier=1, all_yes=False, dry_run=False, base_dir=None):
         confirm = all_yes or input("\n  [?] 환경 리셋 (런타임 및 설정 삭제) 계속할까요? [y/N]: ").lower().startswith('y')
         if confirm:
             print("\n[Tier 3] 런타임 리셋 (전체 재설치 필요)")
-            total_freed += remove_path_safe(env_dir, r"Portable Runtimes (_sys\env)", dry_run)
+            if env_dir.exists():
+                for item in env_dir.iterdir():
+                    if item.name == "python":
+                        # Attempt to delete contents of python except python.exe if possible, or just skip
+                        continue
+                    total_freed += remove_path_safe(item, f"Runtime ({item.name})", dry_run)
             total_freed += remove_path_safe(tools_dir, r"Portable Tools (_sys\tools)", dry_run)
             total_freed += remove_path_safe(sys_dir / "claude", r"Claude Config (_sys\claude)", dry_run)
             total_freed += remove_path_safe(sys_dir / "gemini" / "config", r"Gemini Config (_sys\gemini\config)", dry_run)

@@ -1,60 +1,77 @@
-# Porta-Flow: Minimal Core Git Ignore
+# Porta-Flow: Minimal Core Git Ignore (MECE)
 
-# 1. Huge Binary Environments (Managed by install.bat)
-_sys/env/**
-!_sys/env/vscode/
-!_sys/env/vscode/data/
-!_sys/env/vscode/data/user-data/
-!_sys/env/vscode/data/user-data/User/
-!_sys/env/vscode/data/user-data/User/settings.json
-!_sys/env/vscode/data/user-data/User/keybindings.json
-_sys/tools/
-_sys/data/temp/
-_sys/data/setup-files/
-
-# 2. User Data & Workspaces (Mandatory Exclusion)
+# =================================================================
+# 1. User Workspaces, Data, and Archives
+# =================================================================
 workspace/
 _workspace/
 _archive/
+WORKLOG.md
 
-# 3. Project-local AI State (.ai/ - ephemeral IPC)
+# =================================================================
+# 2. Ephemeral State & IPC (Inter-Process Communication)
+# =================================================================
 .ai/
 _state/
 
-# Work Logs (ephemeral — archived in _archive/)
-WORKLOG.md
+# =================================================================
+# 3. Downloaded Environments, Binaries, and Runtimes
+# =================================================================
+# Everything inside env and tools is bootstrapped via install.bat
+_sys/env/
+_sys/tools/
+_sys/data/temp/
+_sys/data/setup-files/
+_sys/data/logs/
 
-# 4. Claude/Gemini Private State, Config & History (Dynamic)
+# =================================================================
+# 4. Local Configurations & Device-Specific State
+# =================================================================
+# Do not track drive letters, context menu states, or local overrides
+**/local.config.bat
+_sys/config.json
+_sys/core/config.json
 .claude/settings.local.json
-_sys/claude/config/
-!_sys/claude/config/CLAUDE.md
-!_sys/claude/config/settings.json
-!_sys/claude/config/statusline-command.sh
+.env
+
+# =================================================================
+# 5. Agent Dynamic Data & Status Logs
+# =================================================================
+# Claude Local Status
+_sys/claude/status.json
+_sys/claude/config/tmp/
+# Gemini Local Status & Sessions
 _sys/gemini/status.json
 _sys/gemini/usage.json
 _sys/gemini/session-id.txt
 _sys/gemini/session-map.json
 _sys/gemini/session.lock
-_sys/gemini/config/
-!_sys/gemini/config.json
-!_sys/gemini/config/policies/
+_sys/gemini/config/tmp/
+_sys/gemini/cq-*.txt
+.gemini/settings.json
 
-# 5. Local Configs & Secrets
-**/local.config.bat
-.env
-*.log
+# =================================================================
+# 6. Test Environments & Results
+# =================================================================
+_sys/tests/results/
+_sys/tests/local_test_tmp/
+_sys/tests/integration/parallel_test_tmp/
+_sys/tests/integration/recovery_test_tmp/
+_sys/tests/integration/local_test_tmp/
+.pytest_cache/
+setup_test_env.py
 
-# 6. OS & IDE
+# =================================================================
+# 7. System, Editor, & Cache Garbage
+# =================================================================
 .DS_Store
 Thumbs.db
 .vscode/
 node_modules/
 __pycache__/
 *.pyc
-
-# 7. Test Results
-_sys/tests/results/
-_sys/tests/local_test_tmp/
-_sys/tests/integration/parallel_test_tmp/
-_sys/tests/integration/recovery_test_tmp/
-.pytest_cache/
+*.pyo
+*.pyd
+*.log
+*.tmp
+*.bak

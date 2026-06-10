@@ -1,7 +1,3 @@
-"""
-manage.py - Unified Sandbox Environment Manager (Python Refactored)
-Handles PC registration, drive mapping, registry context menus, and Gemini portability.
-"""
 import os
 import sys
 import json
@@ -9,11 +5,18 @@ import re
 import shutil
 import subprocess
 import winreg
+import traceback
 from pathlib import Path
 
+# Add sys path to allow importing core modules
+sys_dir = Path(__file__).parent.parent.resolve()
+if str(sys_dir) not in sys.path:
+    sys.path.insert(0, str(sys_dir))
+
+from core.config import config
+
 def get_base_dir():
-    # Assume script is in _sys/cli/manage.py or similar
-    return Path(__file__).parent.parent.parent.resolve()
+    return config.get_base_dir()
 
 def get_registry_key_name(base_dir):
     leaf = base_dir.name
@@ -33,11 +36,11 @@ def get_relay_path(ascii_key: str) -> Path:
 
 def write_relay_bat(base_dir: Path, ascii_key: str) -> Path:
     relay_path = get_relay_path(ascii_key)
-    launch_script = base_dir / "_sys" / "cli" / "launch.bat"
+    # The relay simply calls the newly refactored launcher with the target
     content = (
         "@echo off\r\n"
         f"set \"SANDBOX_ROOT={base_dir}\"\r\n"
-        "call \"%SANDBOX_ROOT%\\_sys\\cli\\launch.bat\" \"%~1\"\r\n"
+        "call \"%SANDBOX_ROOT%\\start.bat\" \"%~1\"\r\n"
     )
     relay_path.write_bytes(content.encode("mbcs"))
     return relay_path
@@ -54,7 +57,6 @@ def get_subst_mappings():
     try:
         out = subprocess.check_output(["subst"], text=True, encoding='oem')
         for line in out.splitlines():
-            # Format: P:\: => D:\Path
             match = re.match(r'^([A-Z]):\\: => (.*)$', line, re.IGNORECASE)
             if match:
                 mappings[match.group(1).upper()] = Path(match.group(2).strip())
@@ -68,7 +70,6 @@ def set_gemini_portability(base_dir):
     
     gemini_portable.mkdir(parents=True, exist_ok=True)
     
-    # Use lstat to safely check if it exists (even if broken junction)
     host_exists = False
     is_junction = False
     try:
@@ -99,11 +100,9 @@ def set_gemini_portability(base_dir):
                     print(f"  [Warning] Could not backup host Gemini config: {e}")
                     return
             else:
-                # If backup exists, we might be in a broken state. Try to remove the .gemini folder if it's empty or just skip.
                 print("  [Warning] .gemini and .gemini.host_backup both exist. Skipping junction to prevent data loss.")
                 return
 
-    # Create Junction via CMD
     try:
         subprocess.run(["cmd", "/c", f"mklink /J \"{gemini_host}\" \"{gemini_portable}\""], check=True, capture_output=True)
         print("  [OK] Gemini Portability enabled (Junction created)")
@@ -114,7 +113,6 @@ def remove_gemini_portability(base_dir):
     gemini_host = Path(os.environ["USERPROFILE"]) / ".gemini"
     gemini_portable = base_dir / "_sys" / "gemini" / "config"
     
-    # Use lstat to check for broken junctions
     host_exists = False
     is_junction = False
     try:
@@ -128,9 +126,7 @@ def remove_gemini_portability(base_dir):
         pass
 
     if host_exists:
-        # Check if it's a junction
         if is_junction:
-            # Remove junction
             try:
                 subprocess.run(["cmd", "/c", f"rmdir \"{gemini_host}\""], check=True)
                 print("  [OK] Gemini Portability disabled (Junction removed)")
@@ -156,15 +152,14 @@ def update_claude_settings(base_dir, drive_letter):
         f"PowerShell(Get-Content \"{drive_letter}:\\ *)"
     ]
     
-    config = {"permissions": {"allow": patterns}}
-    settings_path.write_text(json.dumps(config, indent=4), encoding="utf-8")
+    c_config = {"permissions": {"allow": patterns}}
+    settings_path.write_text(json.dumps(c_config, indent=4), encoding="utf-8")
     print(f"  [OK] .claude/settings.local.json updated (Drive {drive_letter}:)")
 
 def global_cleanup(base_dir):
     leaf = base_dir.name
     print(f"  [Info] Performing global cleanup for {leaf}...")
     
-    # 1. SUBST cleanup
     try:
         out = subprocess.check_output(["subst"], text=True, encoding='oem')
         for line in out.splitlines():
@@ -176,7 +171,6 @@ def global_cleanup(base_dir):
     except Exception:
         pass
 
-    # 2. Registry cleanup
     roots = [
         (winreg.HKEY_CURRENT_USER, r"Software\Classes\Directory\Background\shell"),
         (winreg.HKEY_CURRENT_USER, r"Software\Classes\Directory\shell"),
@@ -197,16 +191,13 @@ def global_cleanup(base_dir):
                         if subkey_name.startswith("SandboxRun_"):
                             is_target = (subkey_name == current_key_name)
                             
-                            # Check if it's orphaned
                             is_orphan = False
                             if not is_target:
-                                # Extract ascii_key
                                 ascii_key = subkey_name
                                 relay_path = get_relay_path(ascii_key)
                                 if not relay_path.exists():
                                     is_orphan = True
                                 else:
-                                    # Read relay_path and check if SANDBOX_ROOT exists
                                     content = relay_path.read_text(encoding="mbcs", errors="ignore")
                                     match = re.search(r'set "SANDBOX_ROOT=(.*?)"', content, re.IGNORECASE)
                                     if match:
@@ -241,11 +232,9 @@ def action_register(base_dir):
     global_cleanup(base_dir)
     set_gemini_portability(base_dir)
 
-    # 1. Drive Mapping
     assigned_letter = None
     subst_map = get_subst_mappings()
     
-    # Check if we already have a mapping for THIS base_dir
     for letter, path in subst_map.items():
         if path.resolve() == base_dir.resolve():
             assigned_letter = letter
@@ -254,20 +243,20 @@ def action_register(base_dir):
             
     if not assigned_letter:
         prefer = base_dir.name[0].upper()
+        if not ('A' <= prefer <= 'Z'):
+            prefer = 'P'
         reserved = ['A', 'B', 'C']
         candidates = [prefer] + [chr(x) for x in range(65, 91) if chr(x) not in reserved and chr(x) != prefer]
         
         for letter in candidates:
-            # Check if drive letter is taken by SUBST
             if letter in subst_map:
                 mapped_path = subst_map[letter]
                 if not mapped_path.exists():
                     print(f"  [Info] Drive {letter}: points to dead path. Releasing.")
                     subprocess.run(["subst", f"{letter}:", "/D"], capture_output=True)
                 else:
-                    continue # Truly occupied
+                    continue
 
-            # Check if drive letter exists (physical or network)
             drive_path = f"{letter}:\\"
             if not os.path.exists(drive_path):
                 try:
@@ -281,13 +270,9 @@ def action_register(base_dir):
     if assigned_letter:
         update_claude_settings(base_dir, assigned_letter)
 
-    # 2. Context Menu
     target_key = get_registry_key_name(base_dir)
     menu_label = f"Open in Sandbox: {base_dir.name}" + (f" ({base_dir} -> {assigned_letter}:)" if assigned_letter else f" ({base_dir})")
 
-    # Always use physical path so the command works even after reboot (SUBST not yet mapped).
-    # start.bat restores the SUBST mapping itself once it runs.
-    launch_script = base_dir / "_sys" / "cli" / "launch.bat"
     code_path = base_dir / "_sys" / "env" / "vscode" / "Code.exe"
 
     reg_paths = [
@@ -310,8 +295,6 @@ def action_register(base_dir):
                 winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, str(code_path))
 
             cmd_key = winreg.CreateKey(key, "command")
-            # relay_path is always at ASCII-safe %LOCALAPPDATA% — avoids cmd.exe
-            # parser failures caused by Korean chars or parentheses in base_dir.
             cmd_str = f'cmd.exe /c ""{relay_path}" "{arg}.""'
             winreg.SetValueEx(cmd_key, "", 0, winreg.REG_SZ, cmd_str)
             winreg.CloseKey(key)
@@ -320,34 +303,16 @@ def action_register(base_dir):
             
     print(f"  [OK] Context Menu registered: {menu_label}")
 
-    # 3. State Saving
-    config_path = base_dir / "_sys" / "local.config.bat"
-    auto_block = [
-        ":: [/auto] Generated by manage.py - do not edit this block",
-        f"set \"SUBST_DRIVE_LETTER={assigned_letter or ''}\"",
-        "set \"CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1\"",
-        ":: [/auto]"
-    ]
+    # State Saving via ConfigManager
+    config.set("SUBST_DRIVE_LETTER", assigned_letter)
+    print("  [OK] State saved to config.json")
     
-    user_lines = []
-    if config_path.exists():
-        content = config_path.read_text(encoding="utf-8")
-        in_auto = False
-        for line in content.splitlines():
-            if ":: [/auto] Generated by" in line:
-                in_auto = True
-            
-            # Keep lines that are not in the auto block AND not a separator line
-            if not in_auto and "User Overrides" not in line:
-                user_lines.append(line)
-                
-            if line.strip() == ":: [/auto]" and in_auto:
-                in_auto = False
-        user_lines = [l for l in user_lines if l.strip()]  # remove blank-only lines
+    # Optional cleanup of legacy file
+    legacy_config = base_dir / "_sys" / "local.config.bat"
+    if legacy_config.exists():
+        legacy_config.unlink()
+        print("  [OK] Legacy local.config.bat removed.")
 
-    new_config = "\n".join(auto_block) + "\n\n:: -- User Overrides (edit below) -----------------------------\n" + "\n".join(user_lines)
-    config_path.write_text(new_config.replace("\n", "\r\n"), encoding="utf-8")
-    print("  [OK] State saved to local.config.bat")
     print("\n Registration complete!")
 
 def action_unregister(base_dir):
@@ -364,29 +329,53 @@ def action_unregister(base_dir):
         settings_path.unlink()
         print("  [OK] .claude/settings.local.json removed")
 
-    config_path = base_dir / "_sys" / "local.config.bat"
-    if config_path.exists():
-        # Keep only user lines
-        content = config_path.read_text(encoding="utf-8")
-        user_lines = [line for line in content.splitlines() if "[/auto]" not in line and "set \"" not in line]
-        if any(l.strip() for l in user_lines):
-            config_path.write_text("\n".join(user_lines).replace("\n", "\r\n"), encoding="utf-8")
-        else:
-            config_path.unlink()
-        print("  [OK] local.config.bat cleaned")
+    # Clear SUBST mapping from config
+    config.set("SUBST_DRIVE_LETTER", None)
+    print("  [OK] config.json cleared of drive mapping")
 
     print("\n Unregistration complete.")
 
-if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=["Register", "Unregister"])
-    parser.add_argument("--base-dir", type=str)
-    args = parser.parse_args()
-
-    bdir = Path(args.base_dir).resolve() if args.base_dir else get_base_dir()
-    
-    if args.action == "Register":
-        action_register(bdir)
+def action_cleanup(base_dir):
+    # Delegate to cleanup.py
+    cleanup_py = base_dir / "_sys" / "cli" / "cleanup.py"
+    if cleanup_py.exists():
+        subprocess.run([sys.executable, str(cleanup_py)] + sys.argv[2:])
     else:
-        action_unregister(bdir)
+        print("[Error] cleanup.py not found.")
+        sys.exit(1)
+
+def main():
+    try:
+        import argparse
+        parser = argparse.ArgumentParser()
+        # Accept 'register', 'unregister', 'cleanup' (case-insensitive due to batch %~n0)
+        parser.add_argument("action", type=str)
+        parser.add_argument("--base-dir", type=str, default="")
+        # Allow trailing unknown args for cleanup
+        args, unknown = parser.parse_known_args()
+
+        action = args.action.lower()
+        bdir = Path(args.base_dir).resolve() if args.base_dir else get_base_dir()
+        
+        if action == "register":
+            action_register(bdir)
+        elif action == "unregister":
+            action_unregister(bdir)
+        elif action == "cleanup":
+            action_cleanup(bdir)
+        else:
+            print(f"[Error] Unknown action: {action}")
+            sys.exit(1)
+            
+    except Exception as e:
+        print(f"\n[FATAL ERROR] An unexpected error occurred:")
+        print(f"  {e}\n")
+        print("--- Stack Trace ---")
+        traceback.print_exc()
+        print("-------------------")
+        print("\nPress any key to exit...")
+        os.system("pause >nul")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

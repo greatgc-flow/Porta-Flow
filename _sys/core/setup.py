@@ -137,8 +137,10 @@ def run_setup(force=False, skip_vscode=False, skip_claude=False):
     venv_dir = paths["env"] / "venv"
     venv_py = venv_dir / "Scripts" / "python.exe"
     if force or not venv_py.exists():
+        print("  [i] Installing virtualenv...")
+        subprocess.run([sys.executable, "-m", "pip", "install", "virtualenv", "--quiet"], check=True)
         print("  [i] Creating venv...")
-        subprocess.run([sys.executable, "-m", "venv", str(venv_dir)], check=True)
+        subprocess.run([sys.executable, "-m", "virtualenv", str(venv_dir)], check=True)
         print("  [OK] venv created")
     
     # 6. Install filelock
@@ -175,10 +177,19 @@ def run_setup(force=False, skip_vscode=False, skip_claude=False):
 
 if __name__ == "__main__":
     import argparse
+    import traceback
     parser = argparse.ArgumentParser()
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--skip-vscode", action="store_true")
     parser.add_argument("--skip-claude", action="store_true")
     args = parser.parse_args()
     
-    run_setup(force=args.force, skip_vscode=args.skip_vscode, skip_claude=args.skip_claude)
+    try:
+        run_setup(force=args.force, skip_vscode=args.skip_vscode, skip_claude=args.skip_claude)
+    except Exception as e:
+        print(f"\n[FATAL ERROR] Setup failed:")
+        print(f"  {e}\n")
+        print("--- Stack Trace ---")
+        traceback.print_exc()
+        print("-------------------")
+        sys.exit(1)
