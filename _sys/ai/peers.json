@@ -124,8 +124,8 @@
       "root_dir": ".agy",
       "sys_subdir": "antigravity",
       "host_junction": {
-        "host_env": "LOCALAPPDATA",
-        "host_dirname": "agy",
+        "host_env": "USERPROFILE",
+        "host_dirname": ".gemini\\antigravity-cli",
         "portable_subpath": "config"
       },
       "project_junction": {
@@ -137,7 +137,10 @@
         "glue_file": "AGY.md",
         "glue_template": "templates/workspace.md"
       },
-      "env_vars": {},
+      "env_vars": {
+        "AGY_CONFIG_HOME": "config",
+        "GEMINI_DIR": "config"
+      },
       "local_settings": [],
       "host_app": null,
       "cleanup": {

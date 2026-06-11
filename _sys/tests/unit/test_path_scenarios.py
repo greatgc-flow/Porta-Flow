@@ -53,11 +53,22 @@ class TestPathScenarios:
         mock_check_output.return_value = "" # No existing SUBST
         mock_run.return_value = MagicMock(returncode=0)
         
-        with patch("manage.config") as mock_cfg:
+        with patch("manage.config") as mock_cfg, \
+             patch("manage.load_context_menu") as mock_load_menu:
             mock_cfg.get.return_value = None
             mock_cfg.get_peers_config.return_value = {}
             mock_cfg.get_base_dir.return_value = mock_env
             mock_cfg.get_sys_dir.return_value = mock_env / "_sys"
+            mock_load_menu.return_value = [
+                {
+                    "id": "sandbox_open",
+                    "label": "Open in Sandbox ({DRIVE}:)",
+                    "icon": "_sys/env/vscode/Code.exe",
+                    "command": "_sys/start.bat \"{target}\"",
+                    "targets": ["Directory/Background", "Directory", "Drive", "*", "lnkfile"],
+                    "enabled": True
+                }
+            ]
             manage.action_register(mock_env)
             # config.set("SUBST_DRIVE_LETTER", ...) 호출 확인
             set_calls = {c.args[0]: c.args[1] for c in mock_cfg.set.call_args_list}
@@ -69,10 +80,8 @@ class TestPathScenarios:
         subst_call = next(call for call in mock_run_calls_inner if "subst" in str(call.args[0]))
         assert any(str(mock_env).lower() == str(arg).lower() for arg in subst_call.args[0])
 
-        # 3. Registry key name should be safe
-        # manage.py: key_base = f"{drive}_{parent}_{leaf}"
-        # leaf is "PortableDev", parent is "테스트_폴더"
-        expected_key_part = "PortableDev"
+        # 3. Registry key name should be safe (contains SandboxRun_ prefix and drive key)
+        expected_key_part = "SandboxRun_P"
         assert any(expected_key_part in str(call.args[1]) for call in mock_create_key.call_args_list)
 
     @patch("winreg.CreateKey")
@@ -121,6 +130,7 @@ class TestPathScenarios:
         mock_check_output.return_value = f"P:\\: => {mock_env}"
         mock_enum_key.side_effect = OSError() # No registry keys found
         mock_run.return_value = MagicMock(returncode=0)
+        mock_exists.return_value = False
         
         manage.action_unregister(mock_env)
         
@@ -164,7 +174,18 @@ class TestPathScenarios:
         mock_check_output.return_value = ""
         mock_run.return_value = MagicMock(returncode=0)
 
-        manage.action_register(mock_env)
+        with patch("manage.load_context_menu") as mock_load_menu:
+            mock_load_menu.return_value = [
+                {
+                    "id": "sandbox_open",
+                    "label": "Open in Sandbox ({DRIVE}:)",
+                    "icon": "_sys/env/vscode/Code.exe",
+                    "command": "_sys/start.bat \"{target}\"",
+                    "targets": ["Directory/Background", "Directory", "Drive", "*", "lnkfile"],
+                    "enabled": True
+                }
+            ]
+            manage.action_register(mock_env)
 
         # SetValueEx 중 레지스트리 command 값 확인 (relay bat → cmd.exe /c "" 패턴)
         all_set_calls = mock_set_val.call_args_list
@@ -198,7 +219,18 @@ class TestPathScenarios:
         mock_check_output.return_value = ""
         mock_run.return_value = MagicMock(returncode=0)
 
-        manage.action_register(spaced_korean_base)
+        with patch("manage.load_context_menu") as mock_load_menu:
+            mock_load_menu.return_value = [
+                {
+                    "id": "sandbox_open",
+                    "label": "Open in Sandbox ({DRIVE}:)",
+                    "icon": "_sys/env/vscode/Code.exe",
+                    "command": "_sys/start.bat \"{target}\"",
+                    "targets": ["Directory/Background", "Directory", "Drive", "*", "lnkfile"],
+                    "enabled": True
+                }
+            ]
+            manage.action_register(spaced_korean_base)
 
         # SUBST 매핑 확인
         subst_calls = [c for c in mock_run.call_args_list if "subst" in str(c.args[0]).lower() and "/D" not in str(c.args[0])]
@@ -224,24 +256,35 @@ class TestPathScenarios:
         mock_check_output.return_value = ""  # subst 출력: 이전 매핑 없음 (USB 분리 후 상태)
         mock_run.return_value = MagicMock(returncode=0)
 
-        # 1차 등록
-        manage.action_register(mock_env)
-        first_subst_calls = [c for c in mock_run.call_args_list if "subst" in str(c.args[0]).lower() and "/D" not in str(c.args[0])]
-        assert first_subst_calls, "1차 SUBST 등록 실패"
+        with patch("manage.load_context_menu") as mock_load_menu:
+            mock_load_menu.return_value = [
+                {
+                    "id": "sandbox_open",
+                    "label": "Open in Sandbox ({DRIVE}:)",
+                    "icon": "_sys/env/vscode/Code.exe",
+                    "command": "_sys/start.bat \"{target}\"",
+                    "targets": ["Directory/Background", "Directory", "Drive", "*", "lnkfile"],
+                    "enabled": True
+                }
+            ]
+            # 1차 등록
+            manage.action_register(mock_env)
+            first_subst_calls = [c for c in mock_run.call_args_list if "subst" in str(c.args[0]).lower() and "/D" not in str(c.args[0])]
+            assert first_subst_calls, "1차 SUBST 등록 실패"
 
-        # USB 재삽입 시뮬레이션: SUBST가 사라진 상태로 재등록
-        mock_run.reset_mock()
-        mock_set_val.reset_mock()
-        mock_check_output.return_value = ""  # 여전히 빈 subst 목록
+            # USB 재삽입 시뮬레이션: SUBST가 사라진 상태로 재등록
+            mock_run.reset_mock()
+            mock_set_val.reset_mock()
+            mock_check_output.return_value = ""  # 여전히 빈 subst 목록
 
-        manage.action_register(mock_env)
-        second_subst_calls = [c for c in mock_run.call_args_list if "subst" in str(c.args[0]).lower() and "/D" not in str(c.args[0])]
-        assert second_subst_calls, "재삽입 후 SUBST 재등록 실패"
+            manage.action_register(mock_env)
+            second_subst_calls = [c for c in mock_run.call_args_list if "subst" in str(c.args[0]).lower() and "/D" not in str(c.args[0])]
+            assert second_subst_calls, "재삽입 후 SUBST 재등록 실패"
 
-        # 재등록 후에도 레지스트리 명령이 올바른 이중인용부호 패턴 유지
-        cmd_values = [str(c.args[4]) for c in mock_set_val.call_args_list
-                      if len(c.args) >= 5 and 'cmd.exe /c ""' in str(c.args[4])]
-        assert cmd_values, "재등록 후 레지스트리 cmd.exe /c \"\" 명령이 없음"
+            # 재등록 후에도 레지스트리 명령이 올바른 이중인용부호 패턴 유지
+            cmd_values = [str(c.args[4]) for c in mock_set_val.call_args_list
+                          if len(c.args) >= 5 and 'cmd.exe /c ""' in str(c.args[4])]
+            assert cmd_values, "재등록 후 레지스트리 cmd.exe /c \"\" 명령이 없음"
         for cmd in cmd_values:
             assert cmd.startswith('cmd.exe /c ""'), f"재등록 후 레지스트리 명령 포맷 오류: {cmd}"
 

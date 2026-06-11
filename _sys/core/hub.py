@@ -554,11 +554,41 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
     
     cmd = [exe] + cmd_args
     
+    # ── Environment Variable Injection ─────────────────────────
+    process_env = {**os.environ, "PYTHONUTF8": "1"}
+    
+    # Load peers to apply peer-specific env_vars (e.g. AGY_CONFIG_HOME)
+    peers = _load_peers()
+    target_peer_id = None
+    target_peer_cfg = None
+
+    # Heuristic to find the peer corresponding to the node or invoke name
+    if to in peers:
+        target_peer_id = to
+        target_peer_cfg = peers[to]
+    else:
+        for pid, pcfg in peers.items():
+            native = pcfg.get("native_binary")
+            if native and native.get("bin_name") == exe_name:
+                target_peer_id = pid
+                target_peer_cfg = pcfg
+                break
+            if pcfg.get("npm_package") and (to in pid or pid in to):
+                target_peer_id = pid
+                target_peer_cfg = pcfg
+                break
+
+    if target_peer_cfg:
+        sys_dir = Path(__file__).parent.parent
+        peer_subdir = sys_dir / target_peer_cfg.get("sys_subdir", target_peer_id)
+        for k, rel in target_peer_cfg.get("env_vars", {}).items():
+            # Resolve relative path
+            process_env[k] = str((peer_subdir / rel).resolve())
+
     try:
         t0 = time.monotonic()
         # env에 PYTHONUTF8=1 설정하여 대상 CLI가 Python인 경우 UTF-8 출력 유도
         # bytes로 캡처하여 인코딩 중의적 처리
-        process_env = {**os.environ, "PYTHONUTF8": "1"}
         
         result = subprocess.run(
             cmd,

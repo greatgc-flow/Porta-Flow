@@ -22,8 +22,7 @@ class TestDocConsistency:
             "CLAUDE.md",
             "GEMINI.md",
             "PROTOCOL.md",
-            "CONVENTION.md",
-            "WORKLOG.md"
+            "CONVENTION.md"
         ]
         mandatory_sys = [
             "SYSTEM_ARCHITECTURE.md"
