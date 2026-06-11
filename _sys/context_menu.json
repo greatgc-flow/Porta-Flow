@@ -2,10 +2,10 @@
   "entries": [
     {
       "id": "sandbox_open",
-      "label": "Open in Sandbox (PortableDev)",
+      "label": "Open in Sandbox ({DRIVE}:)",
       "icon": "_sys/env/vscode/Code.exe",
-      "command": "start.bat \"{target}\"",
-      "targets": ["Directory/Background", "Directory", "*", "lnkfile"],
+      "command": "_sys/start.bat \"{target}\"",
+      "targets": ["Directory/Background", "Directory", "Drive", "*", "lnkfile"],
       "enabled": true
     }
   ]

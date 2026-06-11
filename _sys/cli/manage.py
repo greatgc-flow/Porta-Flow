@@ -23,6 +23,7 @@ def get_base_dir():
 TARGET_MAP = {
     "Directory/Background": (r"Software\Classes\Directory\Background\shell", "%V"),
     "Directory":            (r"Software\Classes\Directory\shell",            "%V"),
+    "Drive":                (r"Software\Classes\Drive\shell",                "%1"),
     "*":                    (r"Software\Classes\*\shell",                    "%1"),
     "lnkfile":              (r"Software\Classes\lnkfile\shell",              "%1"),
 }
@@ -46,26 +47,51 @@ def get_entry_key_name(base_key: str, entry_id: str) -> str:
     return f"{base_key}_{safe_id}"
 
 
-def _register_entry(base_dir: Path, entry: dict, base_key: str, relay_root: Path) -> None:
-    """Register a single context_menu.json entry into the Windows registry."""
+def _register_entry(base_dir: Path, entry: dict, base_key: str, relay_root: Path,
+                    phys_dir: Path = None, drive: str = "") -> None:
+    """Register a single context_menu.json entry into the Windows registry.
+
+    base_dir: path baked into the relay (SUBST drive if assigned).
+    phys_dir: physical path fallback for when the SUBST drive is not mapped (e.g. after reboot).
+    drive:    SUBST drive letter — expands the {DRIVE} placeholder in labels (e.g. "Open ({DRIVE}:)").
+    """
     entry_id   = entry.get("id", "entry")
     label      = entry.get("label", entry_id)
+    label      = label.replace("{DRIVE}", drive) if drive else re.sub(r"\s*\(?\{DRIVE\}:?\)?", "", label)
     icon_rel   = entry.get("icon", "")
     cmd_tmpl   = entry.get("command", "")
     targets    = entry.get("targets", list(TARGET_MAP.keys()))
 
     reg_key_name = get_entry_key_name(base_key, entry_id)
 
-    # Relay bat: one per entry id
+    # Relay bat: one per entry id. Falls back to the physical path if SUBST is unmapped.
     relay_path = relay_root / f"{reg_key_name}.bat"
-    relay_content = (
-        "@echo off\r\n"
-        f"set \"SANDBOX_ROOT={base_dir}\"\r\n"
-        "call \"%SANDBOX_ROOT%\\_sys\\start.bat\" \"%~1\"\r\n"
-    )
+    primary  = str(base_dir).rstrip("\\")
+    fallback = str(phys_dir).rstrip("\\") if phys_dir and phys_dir != base_dir else None
+    lines = [
+        "@echo off",
+        f"set \"SANDBOX_ROOT={primary}\"",
+    ]
+    if fallback:
+        lines.append(
+            f"if not exist \"%SANDBOX_ROOT%\\_sys\\start.bat\" set \"SANDBOX_ROOT={fallback}\""
+        )
+    lines.append("call \"%SANDBOX_ROOT%\\_sys\\start.bat\" \"%~1\"")
+    relay_content = "\r\n".join(lines) + "\r\n"
     relay_path.write_bytes(relay_content.encode("mbcs"))
 
     icon_path = base_dir / icon_rel.replace("/", "\\") if icon_rel else None
+    # Extracting icons from a large .exe slows down Explorer menus — cache a small .ico locally
+    if icon_path and icon_path.suffix.lower() == ".exe" and icon_path.exists():
+        ico_cache = relay_root / f"{reg_key_name}.ico"
+        ps = (
+            "Add-Type -AssemblyName System.Drawing; "
+            f"$i=[System.Drawing.Icon]::ExtractAssociatedIcon('{icon_path}'); "
+            f"$s=[System.IO.File]::Create('{ico_cache}'); $i.Save($s); $s.Close()"
+        )
+        res = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True)
+        if res.returncode == 0 and ico_cache.exists():
+            icon_path = ico_cache
 
     for target_name in targets:
         if target_name not in TARGET_MAP:
@@ -80,8 +106,8 @@ def _register_entry(base_dir: Path, entry: dict, base_key: str, relay_root: Path
             if icon_path and icon_path.exists():
                 winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, str(icon_path))
             cmd_key = winreg.CreateKey(key, "command")
-            # Safe quoting: only wrap relay path in quotes (no nested double-double)
-            cmd_str = f'cmd.exe /c "{relay_path}" "{arg}"'
+            # Outer quotes are required: cmd /c "a" "b" mis-strips quotes without them
+            cmd_str = f'cmd.exe /c ""{relay_path}" "{arg}""'
             winreg.SetValueEx(cmd_key, "", 0, winreg.REG_SZ, cmd_str)
             winreg.CloseKey(key)
         except Exception as e:
@@ -96,9 +122,10 @@ def _unregister_entry(base_key: str, entry_id: str, relay_root: Path) -> None:
     for path_base, _ in TARGET_MAP.values():
         full_reg_path = f"HKCU\\{path_base}\\{reg_key_name}"
         subprocess.run(["reg", "delete", full_reg_path, "/f"], capture_output=True)
-    relay_path = relay_root / f"{reg_key_name}.bat"
-    if relay_path.exists():
-        relay_path.unlink()
+    for ext in (".bat", ".ico"):
+        p = relay_root / f"{reg_key_name}{ext}"
+        if p.exists():
+            p.unlink()
     print(f"  [OK] Context menu entry removed: {reg_key_name}")
 
 
@@ -349,10 +376,7 @@ def global_cleanup(base_dir):
         pass
 
     roots = [
-        (winreg.HKEY_CURRENT_USER, r"Software\Classes\Directory\Background\shell"),
-        (winreg.HKEY_CURRENT_USER, r"Software\Classes\Directory\shell"),
-        (winreg.HKEY_CURRENT_USER, r"Software\Classes\*\shell"),
-        (winreg.HKEY_CURRENT_USER, r"Software\Classes\lnkfile\shell")
+        (winreg.HKEY_CURRENT_USER, path_base) for path_base, _ in TARGET_MAP.values()
     ]
     
     current_key_name = get_registry_key_name(base_dir)
@@ -461,7 +485,9 @@ def action_register(base_dir):
         if peer_cfg.get("enabled", True) and peer_cfg.get("local_settings"):
             apply_local_settings(base_dir, peer_id, peer_cfg, drive)
 
-    base_key   = get_registry_key_name(base_dir)
+    # Use SUBST drive path in relay bat to avoid Korean/special chars in physical path
+    relay_base_dir = Path(f"{assigned_letter}:\\") if assigned_letter else base_dir
+    base_key   = get_registry_key_name(relay_base_dir)
     relay_root = Path(os.environ.get("LOCALAPPDATA", ""))
     entries    = load_context_menu(sys_dir)
 
@@ -469,7 +495,8 @@ def action_register(base_dir):
         print("  [Warning] context_menu.json has no entries — skipping context menu registration")
     for entry in entries:
         if entry.get("enabled", True):
-            _register_entry(base_dir, entry, base_key, relay_root)
+            _register_entry(relay_base_dir, entry, base_key, relay_root,
+                            phys_dir=base_dir, drive=assigned_letter or "")
         else:
             _unregister_entry(base_key, entry.get("id", "entry"), relay_root)
 

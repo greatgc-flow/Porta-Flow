@@ -1,86 +1,86 @@
 {
-  "_comment": "Runtime version and download URL registry. Single source of truth for INSTALL.bat and setup.py.",
-  "runtimes": {
-    "python": {
-      "version": "3.13.4",
-      "url": "https://www.python.org/ftp/python/3.13.4/python-3.13.4-embed-amd64.zip",
-      "get_pip_url": "https://bootstrap.pypa.io/get-pip.py"
-    },
-    "nodejs": {
-      "version": "22.22.3",
-      "url": "https://nodejs.org/dist/v22.22.3/node-v22.22.3-win-x64.zip"
-    },
-    "git": {
-      "version": "2.49.0",
-      "url": "https://github.com/git-for-windows/git/releases/download/v2.49.0.windows.1/PortableGit-2.49.0-64-bit.7z.exe"
-    },
-    "vscode": {
-      "version": "1.100.2",
-      "url": "https://update.code.visualstudio.com/1.100.2/win32-x64-archive/stable"
-    },
-    "pwsh": {
-      "version": "7.6.2",
-      "url": "https://github.com/PowerShell/PowerShell/releases/download/v7.6.2/PowerShell-7.6.2-win-x64.zip"
-    },
-    "ffmpeg": {
-      "version": "latest",
-      "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip"
-    }
-  },
-  "tools": {
-    "ripgrep": {
-      "version": "15.1.0",
-      "url": "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-pc-windows-msvc.zip",
-      "type": "zip"
-    },
-    "bat": {
-      "version": "0.26.1",
-      "url": "https://github.com/sharkdp/bat/releases/download/v0.26.1/bat-v0.26.1-x86_64-pc-windows-msvc.zip",
-      "type": "zip"
-    },
-    "fd": {
-      "version": "10.4.2",
-      "url": "https://github.com/sharkdp/fd/releases/download/v10.4.2/fd-v10.4.2-x86_64-pc-windows-msvc.zip",
-      "type": "zip"
-    },
-    "delta": {
-      "version": "0.19.2",
-      "url": "https://github.com/dandavison/delta/releases/download/0.19.2/delta-0.19.2-x86_64-pc-windows-msvc.zip",
-      "type": "zip"
-    },
-    "fzf": {
-      "version": "0.73.1",
-      "url": "https://github.com/junegunn/fzf/releases/download/v0.73.1/fzf-0.73.1-windows_amd64.zip",
-      "type": "zip"
-    },
-    "jq": {
-      "version": "1.8.1",
-      "url": "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-windows-amd64.exe",
-      "type": "exe",
-      "bin": "jq.exe"
-    },
-    "gh": {
-      "version": "2.93.0",
-      "url": "https://github.com/cli/cli/releases/download/v2.93.0/gh_2.93.0_windows_amd64.zip",
-      "type": "zip"
-    },
-    "sqlite": {
-      "version": "3.53.1",
-      "url": "https://www.sqlite.org/2026/sqlite-tools-win-x64-3530100.zip",
-      "type": "zip"
-    },
-    "oh-my-posh": {
-      "version": "29.14.0",
-      "url": "https://github.com/JanDeDobbeleer/oh-my-posh/releases/download/v29.14.0/posh-windows-amd64.exe",
-      "type": "exe",
-      "bin": "oh-my-posh.exe",
-      "extras": [
-        {
-          "url": "https://github.com/JanDeDobbeleer/oh-my-posh/releases/download/v29.14.0/themes.zip",
-          "type": "zip",
-          "dest": "themes"
-        }
-      ]
-    }
-  }
+    "_comment":  "Runtime version and download URL registry. Single source of truth for INSTALL.bat and setup.py.",
+    "runtimes":  {
+                     "python":  {
+                                    "version":  "3.14.5",
+                                    "url":  "https://www.python.org/ftp/python/3.14.5/python-3.14.5-embed-amd64.zip",
+                                    "get_pip_url":  "https://bootstrap.pypa.io/get-pip.py"
+                                },
+                     "nodejs":  {
+                                    "version":  "22.22.3",
+                                    "url":  "https://nodejs.org/dist/v22.22.3/node-v22.22.3-win-x64.zip"
+                                },
+                     "git":  {
+                                 "version":  "2.49.0",
+                                 "url":  "https://github.com/git-for-windows/git/releases/download/v2.49.0.windows.1/PortableGit-2.49.0-64-bit.7z.exe"
+                             },
+                     "vscode":  {
+                                    "version":  "1.100.2",
+                                    "url":  "https://update.code.visualstudio.com/1.100.2/win32-x64-archive/stable"
+                                },
+                     "pwsh":  {
+                                  "version":  "7.6.2",
+                                  "url":  "https://github.com/PowerShell/PowerShell/releases/download/v7.6.2/PowerShell-7.6.2-win-x64.zip"
+                              },
+                     "ffmpeg":  {
+                                    "version":  "latest",
+                                    "url":  "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip"
+                                }
+                 },
+    "tools":  {
+                  "ripgrep":  {
+                                  "version":  "15.1.0",
+                                  "url":  "https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-pc-windows-msvc.zip",
+                                  "type":  "zip"
+                              },
+                  "bat":  {
+                              "version":  "0.26.1",
+                              "url":  "https://github.com/sharkdp/bat/releases/download/v0.26.1/bat-v0.26.1-x86_64-pc-windows-msvc.zip",
+                              "type":  "zip"
+                          },
+                  "fd":  {
+                             "version":  "10.4.2",
+                             "url":  "https://github.com/sharkdp/fd/releases/download/v10.4.2/fd-v10.4.2-x86_64-pc-windows-msvc.zip",
+                             "type":  "zip"
+                         },
+                  "delta":  {
+                                "version":  "0.19.2",
+                                "url":  "https://github.com/dandavison/delta/releases/download/0.19.2/delta-0.19.2-x86_64-pc-windows-msvc.zip",
+                                "type":  "zip"
+                            },
+                  "fzf":  {
+                              "version":  "0.73.1",
+                              "url":  "https://github.com/junegunn/fzf/releases/download/v0.73.1/fzf-0.73.1-windows_amd64.zip",
+                              "type":  "zip"
+                          },
+                  "jq":  {
+                             "version":  "1.8.1",
+                             "url":  "https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-windows-amd64.exe",
+                             "type":  "exe",
+                             "bin":  "jq.exe"
+                         },
+                  "gh":  {
+                             "version":  "2.93.0",
+                             "url":  "https://github.com/cli/cli/releases/download/v2.93.0/gh_2.93.0_windows_amd64.zip",
+                             "type":  "zip"
+                         },
+                  "sqlite":  {
+                                 "version":  "3.53.1",
+                                 "url":  "https://www.sqlite.org/2026/sqlite-tools-win-x64-3530100.zip",
+                                 "type":  "zip"
+                             },
+                  "oh-my-posh":  {
+                                     "version":  "29.14.0",
+                                     "url":  "https://github.com/JanDeDobbeleer/oh-my-posh/releases/download/v29.14.0/posh-windows-amd64.exe",
+                                     "type":  "exe",
+                                     "bin":  "oh-my-posh.exe",
+                                     "extras":  [
+                                                    {
+                                                        "url":  "https://github.com/JanDeDobbeleer/oh-my-posh/releases/download/v29.14.0/themes.zip",
+                                                        "type":  "zip",
+                                                        "dest":  "themes"
+                                                    }
+                                                ]
+                                 }
+              }
 }
