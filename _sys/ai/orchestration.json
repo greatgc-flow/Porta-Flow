@@ -13,6 +13,7 @@
   "hub_nodes": [
     {
       "node_id": "cc",
+      "aliases": ["claude", "anthropic"],
       "type": "peer",
       "invoke": "claude",
       "invoke_args": ["-p", "{query}"],
@@ -21,6 +22,7 @@
     },
     {
       "node_id": "ca",
+      "aliases": ["claude-alt"],
       "type": "peer",
       "invoke": "claude",
       "invoke_args": ["-p", "{query}"],
@@ -29,6 +31,7 @@
     },
     {
       "node_id": "gc",
+      "aliases": ["gemini", "google"],
       "type": "peer",
       "invoke": "gemini",
       "invoke_args": ["-p", "{query}", "-o", "text", "-y"],
@@ -37,6 +40,7 @@
     },
     {
       "node_id": "ag",
+      "aliases": ["antigravity", "agy"],
       "type": "peer",
       "invoke": "agy",
       "invoke_args": ["--dangerously-skip-permissions", "-p", "{query}"],
@@ -46,9 +50,10 @@
     },
     {
       "node_id": "cx",
+      "aliases": ["codex"],
       "type": "peer",
       "invoke": "codex",
-      "invoke_args": ["exec", "{query}"],
+      "invoke_args": ["exec", "{query}", "--json", "--ephemeral", "--ignore-rules"],
       "memory": "session",
       "timeout": 0
     }

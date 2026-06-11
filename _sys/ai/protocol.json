@@ -1,0 +1,216 @@
+{
+    "_version":  "1.0",
+    "_protocol_version":  "4.0",
+    "_help":  "Universal multi-peer collaboration protocol config. Single source of truth. All peers read this. No hardcoding.",
+    "_updated":  "2026-06-11",
+    "_peers_voted":  [
+                         "cc",
+                         "gc",
+                         "ag",
+                         "cx"
+                     ],
+    "collab_rate":  {
+                        "current":  10,
+                        "review_interval_min":  5,
+                        "last_review_ts":  null,
+                        "risk_table":  {
+                                           "readonly":  0,
+                                           "workspace":  3,
+                                           "sys_single":  5,
+                                           "sys_multi":  8,
+                                           "constitutional":  10
+                                       }
+                    },
+    "health":  {
+                   "thresholds":  {
+                                      "claude":  {
+                                                     "green_mb":  0.6,
+                                                     "yellow_mb":  1.2,
+                                                     "unit":  "jsonl_mb"
+                                                 },
+                                      "gemini":  {
+                                                     "green_mb":  0.6,
+                                                     "yellow_mb":  1.2,
+                                                     "unit":  "jsonl_mb"
+                                                 },
+                                      "antigravity":  {
+                                                          "green_mb":  0.6,
+                                                          "yellow_mb":  1.2,
+                                                          "unit":  "jsonl_mb"
+                                                      },
+                                      "codex":  {
+                                                    "green_mb":  0.6,
+                                                    "yellow_mb":  1.2,
+                                                    "unit":  "jsonl_mb"
+                                                }
+                                  },
+                   "failure_warn":  3,
+                   "failure_error":  5
+               },
+    "session":  {
+                    "handoff_staleness_hours":  24,
+                    "resume_window_hours":  4,
+                    "context_fill_sections":  [
+                                                  "GOAL",
+                                                  "PENDING_ISSUES",
+                                                  "KEY_DECISIONS",
+                                                  "ACTIVE_THREADS"
+                                              ],
+                    "full_sections":  [
+                                          "GOAL",
+                                          "RECENT_COMPLETED",
+                                          "PENDING_ISSUES",
+                                          "KEY_DECISIONS",
+                                          "CONSENSUS_HISTORY",
+                                          "ACTIVE_THREADS"
+                                      ]
+                },
+    "consensus":  {
+                      "r10_voters":  [
+                                         "cc",
+                                         "ca",
+                                         "gc",
+                                         "ag",
+                                         "cx"
+                                     ],
+                      "default_voters":  [
+                                             "cc",
+                                             "gc"
+                                         ],
+                      "default_proposer":  "cc",
+                      "timeout_minutes":  30,
+                      "offline_auto_abstain_minutes":  30,
+                      "tiebreak_rule":  "domain_weight_recommend_to_human"
+                  },
+    "workload":  {
+                     "capability_registry":  {
+                                                 "cc":  [
+                                                            "architecture",
+                                                            "implementation",
+                                                            "_sys-scripts",
+                                                            "orchestration",
+                                                            "persistent-memory"
+                                                        ],
+                                                 "ca":  [
+                                                            "testing",
+                                                            "verification",
+                                                            "cross-check",
+                                                            "targeted-implementation"
+                                                        ],
+                                                 "gc":  [
+                                                            "documentation",
+                                                            "large-corpus-analysis",
+                                                            "axis-d",
+                                                            "global-dependency-mapping",
+                                                            "zero-shot-tool-integration"
+                                                        ],
+                                                 "ag":  [
+                                                            "shell-scripts",
+                                                            "quick-cli",
+                                                            "file-ops",
+                                                            "system-orchestration",
+                                                            "real-time-feedback-loop",
+                                                            "image-generation"
+                                                        ],
+                                                 "cx":  [
+                                                            "code-generation",
+                                                            "refactoring",
+                                                            "focused-implementation",
+                                                            "code-review",
+                                                            "bug-fixing",
+                                                            "test-authoring",
+                                                            "patch-planning",
+                                                            "repo-local-reasoning",
+                                                            "cli-tooling",
+                                                            "developer-workflow"
+                                                        ]
+                                             },
+                     "fill_depth_multiplier":  {
+                                                   "gc":  3,
+                                                   "cc":  1,
+                                                   "ca":  1,
+                                                   "ag":  1,
+                                                   "cx":  1
+                                               },
+                     "routing_rules":  [
+                                           {
+                                               "task_type":  "doc",
+                                               "preferred":  [
+                                                                 "gc",
+                                                                 "cc"
+                                                             ],
+                                               "fallback":  "cc"
+                                           },
+                                           {
+                                               "task_type":  "script",
+                                               "preferred":  [
+                                                                 "cc",
+                                                                 "ag"
+                                                             ],
+                                               "fallback":  "cc"
+                                           },
+                                           {
+                                               "task_type":  "verify",
+                                               "preferred":  [
+                                                                 "ca"
+                                                             ],
+                                               "fallback":  "cc"
+                                           },
+                                           {
+                                               "task_type":  "code",
+                                               "preferred":  [
+                                                                 "cx",
+                                                                 "cc"
+                                                             ],
+                                               "fallback":  "cc"
+                                           },
+                                           {
+                                               "task_type":  "code-review",
+                                               "preferred":  [
+                                                                 "cx",
+                                                                 "ca"
+                                                             ],
+                                               "fallback":  "cc"
+                                           },
+                                           {
+                                               "task_type":  "large-corpus",
+                                               "preferred":  [
+                                                                 "gc"
+                                                             ],
+                                               "fallback":  "cc"
+                                           },
+                                           {
+                                               "task_type":  "shell-ops",
+                                               "preferred":  [
+                                                                 "ag",
+                                                                 "cc"
+                                                             ],
+                                               "fallback":  "cc"
+                                           }
+                                       ],
+                     "user_communication":  {
+                                                "rule":  "any_peer_equal",
+                                                "note":  "Any peer may communicate directly with the Human. No fixed coordinator. Domain expertise guides who leads.",
+                                                "domain_leads":  {
+                                                                     "code_review_impl":  "cx",
+                                                                     "large_doc_analysis":  "gc",
+                                                                     "shell_interactive":  "ag",
+                                                                     "architecture_session":  "cc",
+                                                                     "verification":  "ca"
+                                                                 }
+                                            }
+                 },
+    "active_constraints":  {
+                               "forbidden_paths":  [
+
+                                                   ],
+                               "require_consensus_for":  [
+                                                             "_sys/ changes",
+                                                             "PROTOCOL.md edits",
+                                                             "peers.json edits",
+                                                             "protocol.json edits"
+                                                         ],
+                               "current_collab_rate":  10,
+                               "ipc_query_file_naming":  "{peer_id}-{YYYYMMDDHHMMSS}-{rand4}.txt"
+                           }
+}

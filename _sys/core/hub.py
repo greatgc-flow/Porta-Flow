@@ -54,6 +54,30 @@ def _load_orchestration() -> dict:
         return {}
 
 
+def _load_protocol_cfg() -> dict:
+    """_sys/ai/protocol.json 로드 (협업 정책 마스터 설정)."""
+    path = Path(__file__).parent.parent / "ai" / "protocol.json"
+    try:
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    except Exception:
+        return {}
+
+
+def _peer_sys_dir(peer_id: str) -> Path:
+    """peers.json의 sys_subdir로 _sys/{subdir}/ 해석 — 하드코딩 없음.
+
+    node_id(cc, ca, gc, ag, cx) → peers.json key(claude, gemini, antigravity, codex) 매핑 포함.
+    """
+    # node_id → peers.json key 매핑 (orchestration.json 또는 기본값)
+    _NODE_TO_PEER: dict[str, str] = {"cc": "claude", "ca": "claude", "gc": "gemini", "ag": "antigravity", "cx": "codex"}
+    peers = _load_peers()
+    peer_data = peers.get("peers", peers)
+    peer_key = _NODE_TO_PEER.get(peer_id, peer_id)
+    cfg = peer_data.get(peer_key, {})
+    subdir = cfg.get("sys_subdir", peer_key)
+    return Path(__file__).parent.parent / subdir
+
+
 def _load_peers() -> dict:
     """_sys/ai/peers.json 로드."""
     path = Path(__file__).parent.parent / "ai" / "peers.json"
@@ -136,6 +160,72 @@ def _strip_ansi(text: str) -> str:
     return re.sub(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])', '', text)
 
 
+def _extract_jsonl_text(raw: str, peer_id: str, ai_root: Path | None) -> str:
+    """JSONL 스트림(--json 플래그)에서 텍스트만 추출, .ai/out/<peer>.last.md에 저장.
+
+    지원 이벤트 형식:
+    - codex: {"type":"item.completed","item":{"text":"..."}}
+    - codex delta: {"type":"item.delta","item":{"type":"text","text":"..."}}
+    - codex message: {"type":"message","role":"assistant","content":[{"type":"text","text":"..."}]}
+    - 일반: {"text":"..."} / {"content":"..."} / {"message":"..."}
+    """
+    texts: list[str] = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        t = obj.get("type", "")
+        # codex item.completed
+        if t == "item.completed":
+            item = obj.get("item", {})
+            val = item.get("text") or item.get("content", "")
+            if val:
+                texts.append(val)
+        # codex item.delta (streaming)
+        elif t == "item.delta":
+            delta = obj.get("item", {})
+            if delta.get("type") == "text":
+                val = delta.get("text", "")
+                if val:
+                    texts.append(val)
+        # codex / openai message event
+        elif t == "message":
+            role = obj.get("role", "")
+            if role in ("assistant", ""):
+                content = obj.get("content", "")
+                if isinstance(content, str) and content:
+                    texts.append(content)
+                elif isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            val = block.get("text", "")
+                            if val:
+                                texts.append(val)
+        # 일반 플랫 필드
+        elif "text" in obj and obj["text"]:
+            texts.append(obj["text"])
+        elif "content" in obj and isinstance(obj["content"], str) and obj["content"]:
+            texts.append(obj["content"])
+        elif "message" in obj and isinstance(obj["message"], str) and obj["message"]:
+            texts.append(obj["message"])
+
+    # delta 누적은 그대로, completed는 마지막 것만 의미 있으므로 중복 제거
+    seen: set[str] = set()
+    deduped = [t for t in texts if not (t in seen or seen.add(t))]  # type: ignore[func-returns-value]
+    result = "\n\n".join(deduped).strip() or raw.strip()
+
+    # .ai/out/<peer>.last.md 에 저장
+    if ai_root:
+        out_dir = ai_root / "out"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / f"{peer_id}.last.md").write_text(result, encoding="utf-8")
+    return result
+
+
 # ─────────────────────────────────────────────────────────────
 # filelock 헬퍼
 # ─────────────────────────────────────────────────────────────
@@ -152,11 +242,15 @@ def _get_lock(ai_root: Path, resource: str):
 # ─────────────────────────────────────────────────────────────
 
 def _load_nodes(ai_root: Path) -> dict:
+    """orchestration.json을 base로 로드. nodes.json은 custom 추가 노드만 병합."""
+    base = _default_nodes()["nodes"]
     nodes_path = ai_root / "nodes.json"
     if nodes_path.exists():
         data = _read_json(nodes_path)
-        return data.get("nodes", {})
-    return _default_nodes()["nodes"]
+        custom = data.get("nodes", {})
+        # orchestration 노드가 우선, custom은 신규 노드만 추가
+        return {**custom, **base}
+    return base
 
 
 # ─────────────────────────────────────────────────────────────
@@ -506,20 +600,34 @@ def _decode_output(data: bytes) -> str:
     if not data:
         return ""
     
-    # 윈도우 파이프에서 UTF-16-LE로 반환되는 경우 널 바이트(0x00)가 포함됨
+    # 1. BOM Check
+    if data.startswith(b'\xff\xfe'): # UTF-16-LE BOM
+        return data[2:].decode("utf-16-le", errors="replace").replace("\r\n", "\n")
+    if data.startswith(b'\xfe\xff'): # UTF-16-BE BOM
+        return data[2:].decode("utf-16-be", errors="replace").replace("\r\n", "\n")
+    if data.startswith(b'\xef\xbb\xbf'): # UTF-8 BOM
+        return data[3:].decode("utf-8", errors="replace").replace("\r\n", "\n")
+
+    # 2. Heuristic for UTF-16 if null bytes are present (common in Windows pipes)
     if b'\x00' in data:
         try:
-            # 널 바이트가 제거되어 한칸씩 벌어지는 현상 방지
+            # decode as utf-16-le and remove any residual nulls
             return data.decode("utf-16-le").replace("\x00", "").replace("\r\n", "\n")
         except UnicodeDecodeError:
-            pass
+            try:
+                return data.decode("utf-16-be").replace("\x00", "").replace("\r\n", "\n")
+            except UnicodeDecodeError:
+                pass
             
+    # 3. Standard encodings
     for enc in ["utf-8", "cp949"]:
         try:
             return data.decode(enc).replace("\r\n", "\n")
         except UnicodeDecodeError:
             continue
-    return data.decode("utf-8", errors="replace")
+            
+    # 4. Fallback
+    return data.decode("utf-8", errors="replace").replace("\r\n", "\n")
 
 
 def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: dict) -> None:
@@ -564,7 +672,13 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
     # {query} 치환 방식은 Windows cmd/bat 호출 시 줄바꿈(\n)에서 인자가 잘리는 치명적 결함이 있음.
     # 따라서 일반 노드는 stdin(-p -) 방식으로 강제 전환.
     # requires_pty 노드(agy 등)는 pywinpty 사용 + query 직접 인라인.
+    # aliases는 orchestration.json 각 노드의 "aliases" 필드에서 동적 로드
     nodes = _load_nodes(ai_root) if ai_root else _default_nodes()["nodes"]
+    if to not in nodes:
+        for nid, ncfg in nodes.items():
+            if to in ncfg.get("aliases", []):
+                to = nid
+                break
     node = nodes.get(to, {})
     exe_name = node.get("invoke", to)
     raw_args = node.get("invoke_args", ["-p", "{query}"])
@@ -643,11 +757,15 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         elapsed = int(time.monotonic() - t0)
         output = _decode_output(result.stdout)
         output = _strip_ansi(output)
-        
+
+        # JSONL 응답(--json 플래그 사용 노드, 예: cx) → 텍스트만 추출 후 artifact 저장
+        if node.get("invoke_args") and "--json" in node.get("invoke_args", []):
+            output = _extract_jsonl_text(output, to, ai_root)
+
         if result.returncode != 0:
             err = _decode_output(result.stderr)
             print(f"[HUB:WARN] {to} exited {result.returncode}\n{_strip_ansi(err)}", file=sys.stderr)
-        
+
         print(f"[HUB] REPLY {to} | chars={len(output)} | elapsed={elapsed}s\n{output.strip()}")
     except Exception as e:
         print(f"[HUB:ERROR] ask 실패: {e}", file=sys.stderr)
@@ -759,12 +877,189 @@ def action_consensus_sweep(ai_root: Path, timeout_minutes: int = 30) -> None:
 
 
 # ─────────────────────────────────────────────────────────────
+# 건강 관리 액션 (Protocol v4.0)
+# ─────────────────────────────────────────────────────────────
+
+def action_health_update(peer_id: str, status: str, jsonl_mb: float = 0.0, failures: int = 0, extra: dict | None = None) -> None:
+    """피어 건강 파일 갱신 — 제로토큰, 로컬 파일만."""
+    peer_dir = _peer_sys_dir(peer_id)
+    health_path = peer_dir / "health.json"
+    with _get_lock(peer_dir.parent.parent / ".ai", f"health_{peer_id}"):
+        data: dict = {}
+        if health_path.exists():
+            try:
+                data = json.loads(health_path.read_text(encoding="utf-8"))
+            except Exception:
+                data = {}
+        cfg = _load_protocol_cfg()
+        thresholds = cfg.get("health", {}).get("thresholds", {})
+        peer_name = peer_id.rstrip("ca")  # cc/ca → claude
+        if peer_name not in thresholds:
+            peer_name = peer_id
+        th = thresholds.get(peer_name, {"green_mb": 0.6, "yellow_mb": 1.2})
+        computed_status = status
+        if status == "AUTO":
+            if jsonl_mb >= th["yellow_mb"]:
+                computed_status = "RED"
+            elif jsonl_mb >= th["green_mb"]:
+                computed_status = "YELLOW"
+            else:
+                computed_status = "GREEN"
+        ctx = data.setdefault("context_health", {})
+        ctx["status"] = computed_status
+        ctx["jsonl_mb"] = jsonl_mb
+        ctx["checked_at"] = datetime.now().strftime("%Y%m%dT%H%M%S")
+        ctx["source"] = "self"
+        sh = data.setdefault("session_health", {})
+        sh["consecutive_failures"] = failures
+        today = datetime.now().strftime("%Y%m%d")
+        if sh.get("session_date") != today:
+            sh["session_count_today"] = 0
+            sh["session_date"] = today
+        if extra:
+            ctx.update(extra)
+        health_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    _log_p2p("HEALTH", f"peer={peer_id} status={computed_status} jsonl={jsonl_mb:.2f}MB failures={failures}")
+    print(f"[HUB] HEALTH-UPDATE {peer_id} | status={computed_status} jsonl={jsonl_mb:.2f}MB")
+
+
+def _pid_alive(pid: int) -> bool:
+    """PID가 현재 살아있는지 확인 (제로토큰)."""
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
+
+
+def action_health_check(peer_filter: str | None = None) -> None:
+    """전체(또는 특정) 피어 건강 상태 출력. GREEN이지만 PID 종료 시 STALE로 표시."""
+    peers_data = _load_peers()
+    all_peers_cfg = peers_data.get("peers", peers_data)
+    results = []
+    targets = [peer_filter] if peer_filter else list(all_peers_cfg.keys())
+    for peer_name in targets:
+        peer_dir = Path(__file__).parent.parent / all_peers_cfg.get(peer_name, {}).get("sys_subdir", peer_name)
+        health_path = peer_dir / "health.json"
+        if not health_path.exists():
+            results.append(f"{peer_name}=UNKNOWN")
+            continue
+        try:
+            h = json.loads(health_path.read_text(encoding="utf-8"))
+            ctx = h.get("context_health", {})
+            st = ctx.get("status", "UNKNOWN")
+            mb = ctx.get("jsonl_mb", 0.0)
+            # lazy PID 검증: GREEN인데 active_pid가 죽어있으면 STALE로 표시 후 갱신
+            active_pid = h.get("availability", {}).get("active_pid")
+            if st == "GREEN" and active_pid and not _pid_alive(active_pid):
+                st = "STALE"
+                h.setdefault("context_health", {})["status"] = "STALE"
+                h.setdefault("availability", {}).pop("active_pid", None)
+                health_path.write_text(json.dumps(h, ensure_ascii=False, indent=2), encoding="utf-8")
+            results.append(f"{peer_name}={st}({mb:.1f}MB)")
+        except Exception:
+            results.append(f"{peer_name}=ERROR")
+    print(f"[HUB:GATE] HEALTH | {' '.join(results)}")
+
+
+def action_peer_status() -> None:
+    """모든 피어 건강 + 게이트 통합 테이블 출력 — check-gate 대체."""
+    peers_data = _load_peers()
+    all_peers_cfg = peers_data.get("peers", peers_data)
+    print("┌─────────────────────────────────────────────────────┐")
+    print("│  PEER STATUS (Protocol v4.0)                        │")
+    print("├──────────┬──────────┬──────────┬────────────────────┤")
+    print("│ Peer     │ Gate     │ Health   │ Details            │")
+    print("├──────────┼──────────┼──────────┼────────────────────┤")
+    for peer_name, pcfg in all_peers_cfg.items():
+        if not pcfg.get("enabled", True):
+            continue
+        sys_subdir = pcfg.get("sys_subdir", peer_name)
+        peer_dir = Path(__file__).parent.parent / sys_subdir
+        # 게이트 확인
+        gate_cfg = pcfg.get("gate")
+        if gate_cfg:
+            gate_file = Path(__file__).parent.parent / gate_cfg["status_file"]
+            try:
+                gd = json.loads(gate_file.read_text(encoding="utf-8"))
+                gate = "ON" if gd.get(gate_cfg["mode_key"]) == gate_cfg["mode_on_value"] else "OFF"
+            except Exception:
+                gate = "?"
+        else:
+            gate = "OPEN"
+        # 건강 확인
+        health_path = peer_dir / "health.json"
+        if health_path.exists():
+            try:
+                h = json.loads(health_path.read_text(encoding="utf-8"))
+                ctx = h.get("context_health", {})
+                health = ctx.get("status", "?")
+                mb = ctx.get("jsonl_mb", 0.0)
+                details = f"{mb:.1f}MB"
+            except Exception:
+                health, details = "ERR", ""
+        else:
+            health, details = "NO FILE", ""
+        print(f"│ {peer_name:<8} │ {gate:<8} │ {health:<8} │ {details:<18} │")
+    print("└──────────┴──────────┴──────────┴────────────────────┘")
+
+
+def action_checkpoint(ai_root: Path, agent: str, note: str) -> None:
+    """세션 중간에 handoff.md에 체크포인트 항목 추가 — 다른 피어가 즉시 확인 가능."""
+    state = _read_json(ai_root / "state.json")
+    room_id = state.get("room_id")
+    if not room_id:
+        print("[HUB] CHECKPOINT: no active room", file=sys.stderr)
+        sys.exit(1)
+    handoff_path = ai_root / "sessions" / room_id / "handoff.md"
+    handoff_path.parent.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    entry = f"\n- [{ts}] ({agent}) {note}"
+    with _get_lock(ai_root, "handoff"):
+        existing = handoff_path.read_text(encoding="utf-8") if handoff_path.exists() else ""
+        # ACTIVE_THREADS 섹션에 추가, 없으면 파일 끝에 추가
+        if "## ACTIVE_THREADS" in existing:
+            updated = existing.replace(
+                "## ACTIVE_THREADS",
+                f"## ACTIVE_THREADS{entry}",
+                1
+            )
+        else:
+            updated = existing + f"\n## ACTIVE_THREADS{entry}\n"
+        handoff_path.write_text(updated, encoding="utf-8")
+    _log_p2p("CHECKPOINT", f"agent={agent} room={room_id} note={note[:60]}")
+    print(f"[HUB] CHECKPOINT {agent} | room={room_id} | {note[:80]}")
+
+
+def action_context_fill(ai_root: Path, sections: list[str] | None = None) -> None:
+    """handoff.md에서 지정 섹션만 읽어 컨텍스트 채우기용 블록 출력 — 제로토큰."""
+    cfg = _load_protocol_cfg()
+    default_sections = cfg.get("session", {}).get("context_fill_sections", ["GOAL", "PENDING_ISSUES", "KEY_DECISIONS", "ACTIVE_THREADS"])
+    wanted = set(sections or default_sections)
+    state = _read_json(ai_root / "state.json")
+    room_id = state.get("room_id")
+    if not room_id:
+        print("[HUB] CONTEXT-FILL: no active room")
+        return
+    handoff_path = ai_root / "sessions" / room_id / "handoff.md"
+    if not handoff_path.exists():
+        print("[HUB] CONTEXT-FILL: no handoff.md found")
+        return
+    parsed = _parse_handoff(handoff_path.read_text(encoding="utf-8"))
+    print(f"<!-- context-fill | room={room_id} | sections={','.join(wanted)} -->")
+    for section, content in parsed.items():
+        if section in wanted and content.strip():
+            print(f"\n## [{section}]\n{content.strip()}")
+    print("<!-- /context-fill -->")
+
+
+# ─────────────────────────────────────────────────────────────
 # CLI 진입점
 # ─────────────────────────────────────────────────────────────
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="hub", description="AI 협업 허브 — P2P v3.1")
-    parser.add_argument("action", choices=["init-session", "end-session", "send", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes"])
+    parser.add_argument("action", choices=["init-session", "end-session", "send", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint"])
     parser.add_argument("--agent")
     parser.add_argument("--room")
     parser.add_argument("--from", dest="from_")
@@ -800,6 +1095,10 @@ def main() -> None:
     parser.add_argument("--invoke", default="")
     parser.add_argument("--invoke-args", dest="invoke_args_str", default="-p,{query}")
     parser.add_argument("--memory", default="short-term")
+    parser.add_argument("--peer")
+    parser.add_argument("--jsonl-mb", dest="jsonl_mb", type=float, default=0.0)
+    parser.add_argument("--failures", type=int, default=0)
+    parser.add_argument("--sections")
 
     args = parser.parse_args()
     if args.action == "ask":
@@ -848,6 +1147,20 @@ def main() -> None:
             args.invoke or "", args.invoke_args_str or "-p,{query}",
             args.memory or "short-term", int(args.timeout or 0),
         )
+    elif act == "health-update":
+        action_health_update(args.peer or "cc", args.status_val or "GREEN", args.jsonl_mb, args.failures)
+    elif act == "health-check":
+        action_health_check(args.peer)
+    elif act == "peer-status":
+        action_peer_status()
+    elif act == "context-fill":
+        sections = [s.strip() for s in args.sections.split(",")] if args.sections else None
+        action_context_fill(ai_root, sections)
+    elif act == "checkpoint":
+        note = args.msg or ""
+        if not note:
+            print("[HUB] checkpoint requires --msg", file=sys.stderr); sys.exit(1)
+        action_checkpoint(ai_root, args.agent or "unknown", note)
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,25 @@
+{
+  "_version": "1.0",
+  "peer_id": "gc",
+  "context_health": {
+    "status": "GREEN",
+    "jsonl_mb": 0.5,
+    "context_window_usage_percent": 0.0,
+    "checked_at": "20260611T204148",
+    "source": "self"
+  },
+  "session_health": {
+    "consecutive_failures": 0,
+    "last_failure_reason": null,
+    "last_success_at": null,
+    "session_count_today": 0,
+    "session_date": "20260611"
+  },
+  "availability": {
+    "installed": true,
+    "authenticated": true,
+    "gate_open": true,
+    "last_gate_check": null,
+    "active_pid": null
+  }
+}

@@ -215,6 +215,8 @@ check-deps.bat, git-draft.bat, check-risk.bat (risk-scan uses exit /b 0 — non-
 
 ### 3-5. Collaboration Protocol
 → See **PROTOCOL.md §P-0~§P-10** (P2P Common Core), **§C-0** (COLLAB_RATE).
+→ Protocol config (single source of truth): **`_sys/ai/protocol.json`** (collab_rate, health thresholds, consensus voters, workload routing).
+→ Composable domain docs: `_sys/docs/protocol-*.md`.
 
 ## §3-7 — Gemini-first Analysis Rule
 When Gemini should be prioritized as an analysis tool → See **SYSTEM_ARCHITECTURE.md §7** (Axis Table).

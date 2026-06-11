@@ -112,7 +112,7 @@ After execution, `collab-log.bat` automatically records to `_archive\collab-log\
 
 ## ACTION: RATIO
 
-Query or change GEMINI_RATIO. (Based on `_sys\gemini\config.json`)
+Query or change collab_rate. (Source: `_sys\ai\protocol.json` → `collab_rate.current`)
 
 **No arg** (`/gemini ratio`): Show current ratio and level description.
 **With arg** (`/gemini ratio 7`): Change ratio to N (0~10).
@@ -124,7 +124,7 @@ Query or change GEMINI_RATIO. (Based on `_sys\gemini\config.json`)
 ### Change (arg = N)
 1. PowerShell (timeout 10000):
    ```
-   cmd /c "P:\_sys\gemini\gemini-set-ratio.bat {N}"
+   cmd /c "P:\_sys\cli\set-collab-rate.bat {N}"
    ```
 2. Report change result.
 

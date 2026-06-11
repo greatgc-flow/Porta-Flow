@@ -88,8 +88,8 @@ class TestConsensusAdvanced:
     def test_consensus_history_auto_recording(self, ai_dir, capsys):
         """합의 종결 시 handoff.md에 자동 기록되는지 검증."""
         # 세션 초기화 필수
-        hub.action_init_session(ai_dir, "claude")
-        hub.action_init_session(ai_dir, "gemini")
+        hub.action_init_session(ai_dir, "cc")
+        hub.action_init_session(ai_dir, "gc")
         state = json.loads((ai_dir / "state.json").read_text("utf-8"))
         room_id = state["room_id"]
         

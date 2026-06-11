@@ -9,35 +9,35 @@ import hub
 
 # ─── init-session ───────────────────────────────────────────
 class TestInitSession:
-    def test_claude_creates_sid(self, ai_dir, capsys):
-        hub.action_init_session(ai_dir, "claude")
+    def test_cc_creates_sid(self, ai_dir, capsys):
+        hub.action_init_session(ai_dir, "cc")
         state = json.loads((ai_dir / "state.json").read_text("utf-8"))
-        assert state["members"]["claude"] is not None
-        assert state["members"]["claude"].startswith("c")
+        assert state["members"]["cc"] is not None
+        assert state["members"]["cc"].startswith("c")
 
-    def test_gemini_creates_sid(self, ai_dir, capsys):
-        hub.action_init_session(ai_dir, "gemini")
+    def test_gc_creates_sid(self, ai_dir, capsys):
+        hub.action_init_session(ai_dir, "gc")
         state = json.loads((ai_dir / "state.json").read_text("utf-8"))
-        assert state["members"]["gemini"] is not None
-        assert state["members"]["gemini"].startswith("g")
+        assert state["members"]["gc"] is not None
+        assert state["members"]["gc"].startswith("g")
 
     def test_room_id_format(self, ai_dir, capsys):
-        hub.action_init_session(ai_dir, "claude")
-        hub.action_init_session(ai_dir, "gemini")
+        hub.action_init_session(ai_dir, "cc")
+        hub.action_init_session(ai_dir, "gc")
         state = json.loads((ai_dir / "state.json").read_text("utf-8"))
         room_id = state["room_id"]
         assert room_id is not None
-        assert "cc" in state["members"] or "claude" in state["members"]
+        assert "cc" in state["members"]
 
     def test_output_is_sid_only(self, ai_dir, capsys):
-        hub.action_init_session(ai_dir, "claude")
+        hub.action_init_session(ai_dir, "cc")
         out = capsys.readouterr().out.strip()
         # SID만 출력 (단 1줄, 5자: prefix + 4 hex)
         assert len(out) == 5
         assert out.startswith("c")
 
     def test_session_dir_created(self, ai_dir):
-        hub.action_init_session(ai_dir, "claude")
+        hub.action_init_session(ai_dir, "cc")
         state = json.loads((ai_dir / "state.json").read_text("utf-8"))
         assert (ai_dir / "sessions" / state["room_id"]).exists()
 
@@ -45,7 +45,7 @@ class TestInitSession:
 # ─── send + check ────────────────────────────────────────────
 class TestSendCheck:
     def test_send_creates_message(self, ai_dir):
-        hub.action_send(ai_dir, "claude", "gemini", "hello")
+        hub.action_send(ai_dir, "cc", "gc", "hello")
         mb = json.loads((ai_dir / "mailbox.json").read_text("utf-8"))
         assert len(mb["messages"]) == 1
         assert mb["messages"][0]["content"] == "hello"
@@ -53,23 +53,23 @@ class TestSendCheck:
         assert mb["unread_count"] == 1
 
     def test_check_pretty_print(self, ai_dir, capsys):
-        hub.action_send(ai_dir, "claude", "gemini", "full message content")
-        hub.action_check(ai_dir, "gemini")
+        hub.action_send(ai_dir, "cc", "gc", "full message content")
+        hub.action_check(ai_dir, "gc")
         out = capsys.readouterr().out
-        assert "1 messages for gemini" in out   # 3TCP v1 [HUB] READ 형식
+        assert "1 messages for gc" in out   # 3TCP v1 [HUB] READ 형식
         assert "full message content" in out  # 전문 출력 확인
 
     def test_check_empty(self, ai_dir, capsys):
-        hub.action_check(ai_dir, "claude")
+        hub.action_check(ai_dir, "cc")
         out = capsys.readouterr().out
         assert "inbox empty" in out
 
     def test_check_shows_all_messages(self, ai_dir, capsys):
         for i in range(3):
-            hub.action_send(ai_dir, "gemini", "claude", f"msg content {i}")
-        hub.action_check(ai_dir, "claude")
+            hub.action_send(ai_dir, "gc", "cc", f"msg content {i}")
+        hub.action_check(ai_dir, "cc")
         out = capsys.readouterr().out
-        assert "3 messages for claude" in out  # 3TCP v1 [HUB] READ 형식
+        assert "3 messages for cc" in out  # 3TCP v1 [HUB] READ 형식
         for i in range(3):
             assert f"msg content {i}" in out  # 전문 모두 출력
 
@@ -77,16 +77,16 @@ class TestSendCheck:
 # ─── mark-read ───────────────────────────────────────────────
 class TestMarkRead:
     def test_mark_all(self, ai_dir):
-        hub.action_send(ai_dir, "claude", "gemini", "m1")
-        hub.action_send(ai_dir, "claude", "gemini", "m2")
-        hub.action_mark_read(ai_dir, "gemini", all_=True, msg_id=None)
+        hub.action_send(ai_dir, "cc", "gc", "m1")
+        hub.action_send(ai_dir, "cc", "gc", "m2")
+        hub.action_mark_read(ai_dir, "gc", all_=True, msg_id=None)
         mb = json.loads((ai_dir / "mailbox.json").read_text("utf-8"))
         assert mb["unread_count"] == 0
 
     def test_mark_by_id(self, ai_dir):
-        hub.action_send(ai_dir, "claude", "gemini", "m1")
-        hub.action_send(ai_dir, "claude", "gemini", "m2")
-        hub.action_mark_read(ai_dir, "gemini", all_=False, msg_id=1)
+        hub.action_send(ai_dir, "cc", "gc", "m1")
+        hub.action_send(ai_dir, "cc", "gc", "m2")
+        hub.action_mark_read(ai_dir, "gc", all_=False, msg_id=1)
         mb = json.loads((ai_dir / "mailbox.json").read_text("utf-8"))
         assert mb["unread_count"] == 1
 
@@ -94,7 +94,7 @@ class TestMarkRead:
 # ─── update-status + status ──────────────────────────────────
 class TestStatus:
     def test_update_and_status(self, ai_dir, capsys):
-        hub.action_init_session(ai_dir, "claude")
+        hub.action_init_session(ai_dir, "cc")
         capsys.readouterr()  # SID 출력 flush
         hub.action_update_status(ai_dir, "test mission", None, "2")
         hub.action_status(ai_dir)
@@ -104,13 +104,13 @@ class TestStatus:
         assert "Phase" in out
 
     def test_status_shows_mailbox_counts(self, ai_dir, capsys):
-        hub.action_send(ai_dir, "gemini", "claude", "hi claude")
+        hub.action_send(ai_dir, "gc", "cc", "hi cc")
         hub.action_status(ai_dir)
         out = capsys.readouterr().out
         assert "1 unread" in out
 
     def test_status_shows_handoff(self, ai_dir, capsys):
-        hub.action_init_session(ai_dir, "claude")
+        hub.action_init_session(ai_dir, "cc")
         capsys.readouterr()
         state = json.loads((ai_dir / "state.json").read_text("utf-8"))
         sd = ai_dir / "sessions" / state["room_id"]
@@ -125,44 +125,44 @@ class TestStatus:
 # ─── end-session ─────────────────────────────────────────────
 class TestEndSession:
     def test_end_cleans_read_messages(self, ai_dir):
-        hub.action_init_session(ai_dir, "claude")
-        hub.action_send(ai_dir, "gemini", "claude", "done")
-        hub.action_mark_read(ai_dir, "claude", all_=True, msg_id=None)
-        hub.action_end_session(ai_dir, "claude")
+        hub.action_init_session(ai_dir, "cc")
+        hub.action_send(ai_dir, "gc", "cc", "done")
+        hub.action_mark_read(ai_dir, "cc", all_=True, msg_id=None)
+        hub.action_end_session(ai_dir, "cc")
         mb = json.loads((ai_dir / "mailbox.json").read_text("utf-8"))
         assert len(mb["messages"]) == 0
 
     def test_end_updates_handoff(self, ai_dir):
-        hub.action_init_session(ai_dir, "claude")
+        hub.action_init_session(ai_dir, "cc")
         state = json.loads((ai_dir / "state.json").read_text("utf-8"))
-        hub.action_end_session(ai_dir, "claude")
+        hub.action_end_session(ai_dir, "cc")
         handoff = (ai_dir / "sessions" / state["room_id"] / "handoff.md").read_text("utf-8")
-        assert "claude: 세션 종료" in handoff
+        assert "cc: 세션 종료" in handoff
 
 
 # ─── ask (동기 subprocess) ───────────────────────────────────
 class TestAsk:
     # subprocess는 bytes 캡처 (capture_output=True, text 없음) → mock.stdout = bytes
-    def test_ask_gemini_calls_subprocess(self, tmp_path):
+    def test_ask_gc_calls_subprocess(self, tmp_path):
         mock_result = MagicMock()
         mock_result.stdout = b"Gemini raw response"
         mock_result.stderr = b""
         mock_result.returncode = 0
         with patch("shutil.which", return_value="/usr/bin/gemini"), \
              patch("subprocess.run", return_value=mock_result) as mock_run:
-            hub.action_ask("gemini", "test query", None, 120, None)
+            hub.action_ask("gc", "test query", None, 120, None)
             call_args = mock_run.call_args[0][0]
             assert "gemini" in call_args[0]
             assert "-p" in call_args
 
-    def test_ask_claude_calls_subprocess(self, tmp_path):
+    def test_ask_cc_calls_subprocess(self, tmp_path):
         mock_result = MagicMock()
         mock_result.stdout = b"Claude raw response"
         mock_result.stderr = b""
         mock_result.returncode = 0
         with patch("shutil.which", return_value="/usr/bin/claude"), \
              patch("subprocess.run", return_value=mock_result) as mock_run:
-            hub.action_ask("claude", "test query", None, 120, None)
+            hub.action_ask("cc", "test query", None, 120, None)
             call_args = mock_run.call_args[0][0]
             assert "claude" in call_args[0]
             assert "-p" in call_args
@@ -174,7 +174,7 @@ class TestAsk:
         mock_result.returncode = 0
         with patch("shutil.which", return_value="/usr/bin/gemini"), \
              patch("subprocess.run", return_value=mock_result):
-            hub.action_ask("gemini", "test", None, 120, None)
+            hub.action_ask("gc", "test", None, 120, None)
         out = capsys.readouterr().out
         assert "\x1b" not in out
         assert "colored response" in out
@@ -183,12 +183,12 @@ class TestAsk:
         with patch("shutil.which", return_value="/usr/bin/gemini"), \
              patch("subprocess.run", side_effect=subprocess.TimeoutExpired("gemini", 120)):
             with pytest.raises(SystemExit):
-                hub.action_ask("gemini", "test", None, 120, None)
+                hub.action_ask("gc", "test", None, 120, None)
 
     def test_ask_not_found_exits(self):
         with patch("shutil.which", return_value=None):
             with pytest.raises(SystemExit):
-                hub.action_ask("gemini", "test", None, 120, None)
+                hub.action_ask("gc", "test", None, 120, None)
 
     def test_ask_query_file(self, tmp_path, capsys):
         qf = tmp_path / "query.txt"
@@ -199,7 +199,7 @@ class TestAsk:
         mock_result.returncode = 0
         with patch("shutil.which", return_value="/usr/bin/gemini"), \
              patch("subprocess.run", return_value=mock_result):
-            hub.action_ask("gemini", "", str(qf), 120, None)
+            hub.action_ask("gc", "", str(qf), 120, None)
         assert not qf.exists()
 
     def test_ask_nonzero_exit_warns(self, capsys):
@@ -209,9 +209,9 @@ class TestAsk:
         mock_result.returncode = 1
         with patch("shutil.which", return_value="/usr/bin/gemini"), \
              patch("subprocess.run", return_value=mock_result):
-            hub.action_ask("gemini", "test", None, 120, None)
+            hub.action_ask("gc", "test", None, 120, None)
         out, err = capsys.readouterr()
-        assert "[HUB:WARN] gemini exited 1" in err
+        assert "[HUB:WARN] gc exited 1" in err
         assert "partial response" in out
 
 
@@ -296,7 +296,7 @@ class TestMessageEnvelope:
         assert "verify result" in out
 
     def test_backward_compat_old_format(self, ai_dir):
-        hub.action_send(ai_dir, "claude", "gemini", "old style msg")
+        hub.action_send(ai_dir, "cc", "gc", "old style msg")
         mb = json.loads((ai_dir / "mailbox.json").read_text("utf-8"))
         msg = mb["messages"][0]
         assert msg["type"] == "MSG"

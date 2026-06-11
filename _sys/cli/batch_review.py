@@ -1,7 +1,7 @@
 """batch_review.py — Axis-R: Batch review of uncommitted changes via Gemini.
 
 Called by: Stop hook or manually.
-Requires: GEMINI_RATIO >= 7, time gate, git changes present.
+Requires: collab_rate >= 7, time gate, git changes present.
 Output: _archive/gemini-reviews/YYYYMMDD_HHMMSS.md + latest.md
 """
 import json
@@ -16,15 +16,24 @@ from _common import (  # noqa: E402
 )
 
 _CFG_FILE = _SYS_DIR / "ai" / "config.json"
+_PROTOCOL_FILE = _SYS_DIR / "ai" / "protocol.json"
 
 
 def _ratio_ok(threshold: int) -> bool:
-    if not _CFG_FILE.exists():
-        return False
+    # protocol.json 우선, fallback → config.json (deprecated)
     try:
-        return int(json.loads(_CFG_FILE.read_text(encoding="utf-8")).get("ratio", 0)) >= threshold
+        if _PROTOCOL_FILE.exists():
+            rate = json.loads(_PROTOCOL_FILE.read_text(encoding="utf-8"))
+            val = rate.get("collab_rate", {}).get("current", 0)
+            return int(val) >= threshold
     except Exception:
-        return False
+        pass
+    try:
+        if _CFG_FILE.exists():
+            return int(json.loads(_CFG_FILE.read_text(encoding="utf-8")).get("ratio", 0)) >= threshold
+    except Exception:
+        pass
+    return False
 
 
 def _time_gate_ok() -> bool:

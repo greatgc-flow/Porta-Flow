@@ -179,13 +179,13 @@ Created on first run by `setup.py` or `start.bat`:
 | `start.bat "file.exe"` | Open with Windows default handler |
 
 ## Current State
-Last checkpoint: 2026-06-10 — install/cleanup/register/workspace-init pipeline complete.
-Core architecture: runtimes.json, peers.json, env.json all no-code config-driven.
+Last checkpoint: 2026-06-11 — Integration tests (Phase 3), Encoding fix (r-5fb7), and Node ID alignment (r-f2b2) complete.
+Core architecture: hub.py refined for robust P2P communication; Node IDs cc/gc standardized.
 → See `_sys/claude/agent/CONTEXT.md` for static topology and agent team.
 
 ## Next Steps
-- workspace-init: manage.py workspace-init tested end-to-end
-- tools.json / version upgrade flow
-- External workspace support (workspace outside BASE_DIR)
-- Per-workspace AI config isolation (manage.py workspace-init hook)
-- Update unit tests for new Python-based launcher architecture
+- Fresh PC setup validation: Verify install.bat and register.bat in Windows Sandbox (WSB).
+- Axis-A Corpus Scan: Perform full portability audit.
+- P2P Mailbox Reliability: Investigate occasional file lock timeouts.
+- Update documentation: Sync README.md with recent structural changes.
+

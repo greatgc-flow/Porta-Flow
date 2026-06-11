@@ -21,6 +21,8 @@ _state/
 _sys/env/
 # tools/apps/ is user-installed on first run — not tracked
 _sys/tools/apps/
+# tools/agy/ — native binary (150MB+), bootstrapped via setup.py
+_sys/tools/agy/
 _sys/data/temp/
 _sys/data/setup-files/
 _sys/data/logs/
@@ -76,6 +78,31 @@ _sys/claude/config/stats-cache.json
 _sys/claude/config/tasks/
 _sys/claude/config/tmp/
 
+# Antigravity (agy) runtime data — tracked: bin/agentapi.bat, health.json
+# Everything else in config/ is runtime-generated
+_sys/antigravity/config/brain/
+_sys/antigravity/config/conversations/
+_sys/antigravity/config/cache/
+_sys/antigravity/config/log/
+_sys/antigravity/config/implicit/
+_sys/antigravity/config/updater/
+_sys/antigravity/config/builtin/
+_sys/antigravity/config/knowledge/
+_sys/antigravity/config/*.log
+_sys/antigravity/config/*.jsonl
+_sys/antigravity/config/*.json
+_sys/antigravity/config/*.timestamp
+_sys/antigravity/config/installation_id
+_sys/antigravity/config/*.exe
+_sys/antigravity/config/bin/*.exe
+# Re-include tracked files
+!_sys/antigravity/config/bin/agentapi.bat
+
+# Codex runtime data in config/ (tracked: CODEX.md)
+_sys/codex/config/.codex/
+_sys/codex/config/history/
+_sys/codex/config/sessions/
+
 # Gemini auth/runtime data in config/ (tracked: GEMINI.md, CONTEXT.md, policies/)
 _sys/gemini/config/google_accounts.json
 _sys/gemini/config/history/
@@ -105,7 +132,14 @@ _sys/tests/integration/local_test_tmp/
 setup_test_env.py
 
 # =================================================================
-# 7. System, Editor, & Cache Garbage
+# 7. Root-level session/debug log dumps
+# =================================================================
+/agy_log*.txt
+/out.txt
+/err.txt
+
+# =================================================================
+# 8. System, Editor, & Cache Garbage
 # =================================================================
 .DS_Store
 Thumbs.db

@@ -28,8 +28,14 @@ def _env() -> dict:
 
 def main() -> None:
     env = _env()
-    subprocess.run([_PYTHON, str(_HUB), "init-session", "--agent", "claude"],
+    subprocess.run([_PYTHON, str(_HUB), "init-session", "--agent", "cc"],
                    capture_output=True, env=env)
+    subprocess.run([_PYTHON, str(_HUB), "health-update", "--peer", "cc",
+                    "--status", "GREEN"], capture_output=True, env=env)
+    fill = subprocess.run([_PYTHON, str(_HUB), "context-fill"],
+                          capture_output=True, text=True, env=env)
+    if fill.stdout.strip():
+        print(fill.stdout)
     subprocess.run([_PYTHON, str(_HUB), "status"], env=env)
     result = subprocess.run(
         ["cmd", "/c", str(_CLAUDE_CMD), *sys.argv[1:]],

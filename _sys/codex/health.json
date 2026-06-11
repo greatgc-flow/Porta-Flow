@@ -1,0 +1,30 @@
+{
+  "_version": "1.0",
+  "peer_id": "cx",
+  "context_health": {
+    "status": "GREEN",
+    "jsonl_mb": 0.0,
+    "checked_at": "20260611T204258",
+    "source": "self"
+  },
+  "session_health": {
+    "consecutive_failures": 0,
+    "last_failure_reason": null,
+    "last_success_at": null,
+    "session_count_today": 0,
+    "session_date": "20260611"
+  },
+  "availability": {
+    "installed": true,
+    "authenticated": false,
+    "gate_open": true,
+    "last_gate_check": null,
+    "cli_version": "codex-cli 0.139.0",
+    "entrypoint_ok": false,
+    "last_invocation_exit_code": null,
+    "last_invocation_duration_ms": null,
+    "rate_limit_state": "unknown",
+    "workspace_access": "unknown",
+    "active_pid": null
+  }
+}

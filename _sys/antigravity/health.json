@@ -1,0 +1,28 @@
+{
+  "_version": "1.0",
+  "peer_id": "ag",
+  "context_health": {
+    "status": "GREEN",
+    "jsonl_mb": 0.0,
+    "session_token_count": 0,
+    "model_latency_ms": 0,
+    "quota_limit_remaining": 100,
+    "active_background_tasks_count": 0,
+    "checked_at": null,
+    "source": "self"
+  },
+  "session_health": {
+    "consecutive_failures": 0,
+    "last_failure_reason": null,
+    "last_success_at": null,
+    "session_count_today": 0,
+    "session_date": null
+  },
+  "availability": {
+    "installed": true,
+    "authenticated": true,
+    "gate_open": true,
+    "last_gate_check": null,
+    "active_pid": null
+  }
+}

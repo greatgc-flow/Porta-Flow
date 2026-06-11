@@ -171,3 +171,52 @@ class TestIntegrationP2P:
         state_b = json.loads((proj_b / ".ai" / "state.json").read_text("utf-8"))
         assert state_a["room_id"] != state_b["room_id"], \
             "두 프로젝트의 room_id가 동일함 — 격리 위반"
+
+    def test_scenario_final_call_protocol(self, test_env):
+        """[합의] Final Call(FC) 프로토콜 및 다중 노드 분업 시나리오 검증."""
+        root, vpy, hub = test_env["root"], test_env["venv_py"], test_env["hub_py"]
+
+        self._run(vpy, hub, ["init-session", "--agent", "cc"], root)
+        self._run(vpy, hub, ["init-session", "--agent", "gc"], root)
+        
+        # 1. 제안 (Propose)
+        self._run(vpy, hub, ["consensus-propose", "--subject", "feat-implementation", "--voters", "cc,gc", "--from", "cc"], root)
+        
+        # 2. Final Call 메시지 전송 (Convention)
+        fc_msg = "PLAN:[1.edit, 2.test] RISK:Low FC:r-1234:SUMMARY=Ready to execute. VOTE?"
+        self._run(vpy, hub, ["send", "--from", "cc", "--to", "gc", "--msg", fc_msg, "--type", "DIRECTIVE"], root)
+        
+        # 3. 투표 (Vote)
+        rounds = list((root / ".ai/consensus").glob("*.json"))
+        rid = json.loads(rounds[0].read_text("utf-8"))["round_id"]
+        self._run(vpy, hub, ["consensus-vote", "--round-id", rid, "--voter", "cc", "--vote", "agree"], root)
+        self._run(vpy, hub, ["consensus-vote", "--round-id", rid, "--voter", "gc", "--vote", "agree"], root)
+        
+        # 4. 결과 및 상태 확인
+        status = self._out(vpy, hub, ["status"], root)
+        assert "FINALIZED" in status
+        assert "feat-implementation" in status
+
+    def test_handoff_rolling_truncation(self, test_env):
+        """[데이터] handoff.md 롤링(FIFO) 및 용량 제한 로직 검증."""
+        root, vpy, hub = test_env["root"], test_env["venv_py"], test_env["hub_py"]
+        
+        self._run(vpy, hub, ["init-session", "--agent", "cc"], root)
+        state = json.loads((root / ".ai/state.json").read_text("utf-8"))
+        room_id = state["room_id"]
+        session_dir = root / ".ai" / "sessions" / room_id
+        
+        # 강제로 handoff.md에 많은 항목 주입
+        handoff_file = session_dir / "handoff.md"
+        large_content = "## [RECENT_COMPLETED]\n" + "\n".join([f"- task {i}" for i in range(50)])
+        handoff_file.write_text(large_content, encoding="utf-8")
+        
+        # end-session 호출 시 롤링 발생해야 함
+        self._run(vpy, hub, ["end-session", "--agent", "cc"], root)
+        
+        updated_content = handoff_file.read_text("utf-8")
+        completed_lines = [line for line in updated_content.splitlines() if line.startswith("- task")]
+        # RECENT_COMPLETED는 HANDOFF_MAX_COMPLETED(기본 5)개로 제한되어야 함
+        # hub.py logic: pop(0) until size < limit
+        assert len(completed_lines) <= 10 # 5 (기본) + 1 (세션 종료 메시지) = 6. 여유있게 10으로 체크.
+

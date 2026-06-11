@@ -1,7 +1,29 @@
-# PROTOCOL.md — N-Tier Peer-to-Peer Collaboration & Division of Labor (v3)
+# PROTOCOL.md — Universal Multi-Peer Collaboration Protocol (v4.0 Index)
 
-> **Single Source of Truth**: Node Equality · N-Way Consensus · Division of Labor · Session Continuity · Consultation Attitude (Soft Skills)
-> Coding Convention → CONVENTION.md | System Architecture → SYSTEM_ARCHITECTURE.md | Agent Workflow → CLAUDE.md
+> **v4.0**: Composable domain files in `_sys/docs/`. Config-driven via `_sys/ai/protocol.json`. 4-peer support (cc, gc, ag, cx). Zero-token health management.
+> Coding Convention → CONVENTION.md | Architecture → SYSTEM_ARCHITECTURE.md | Agent Workflow → CLAUDE.md
+
+## Quick Reference — Composable Protocol Files
+
+| File | Domain |
+|------|--------|
+| [`_sys/docs/protocol-consensus.md`](_sys/docs/protocol-consensus.md) | Consensus voting, R=10, tiebreak, Final Call |
+| [`_sys/docs/protocol-session.md`](_sys/docs/protocol-session.md) | Session resume/fill decision tree, handoff structure |
+| [`_sys/docs/protocol-health.md`](_sys/docs/protocol-health.md) | Health schema, thresholds, zero-token monitoring |
+| [`_sys/docs/protocol-workload.md`](_sys/docs/protocol-workload.md) | Peer equality, capability registry, routing rules |
+| [`_sys/docs/protocol-antigravity.md`](_sys/docs/protocol-antigravity.md) | ag (agy) peer specifics, PTY voting policy |
+| [`_sys/docs/protocol-codex.md`](_sys/docs/protocol-codex.md) | cx (Codex) peer specifics, stdin invocation |
+| [`_sys/ai/protocol.json`](_sys/ai/protocol.json) | **Master config** — all thresholds, routing, consensus settings |
+
+## Active Constraints (Quick Check)
+
+- collab_rate: 10 (see `protocol.json["collab_rate"]["current"]`)
+- consensus required for: `_sys/` changes, `PROTOCOL.md` edits, `peers.json` edits
+- tiebreak: domain_weight → recommend to Human (Tier 0)
+
+---
+<!-- Original v3.4 content preserved below for reference -->
+
 
 ---
 
@@ -303,4 +325,5 @@ To prevent Context Decay due to context bloat, a **file-based blackboard system*
 | 2026-06-04 | **v3.1** | **Zero-Token Symmetric Memory and anchor expansion.** COLLAB_RATE 5 anchor levels. Level 10 'No Exceptions' codified. §P-11 Zero-Token Blackboard system added. |
 | 2026-06-03 | **v3.0** | **Major N-Tier Peer-to-Peer overhaul.** Abolished vertical tiers, established node equality. Expanded 1:1 pair sessions to N-Way Room sessions. Unlimited consensus rounds. Generalized `GEMINI_RATIO` to `COLLAB_RATE`. §P-10 Soft Skills and §P-4 Division of Labor codified. CC exclusive decision power abolished. |
 | 2026-06-03 | **v2.0** | §META added. §P-7 Sync/Async, §P-8 node loading files. §M-1~M-3 Mutual Non-Interference, Transparent Communication, Invariants. |
+| 2026-06-11 | **v4.0** | **Universal 4-peer renewal.** Composable `_sys/docs/protocol-*.md` split. `protocol.json` master config. Health management (health.json per peer). Session decision tree (resume/fill/cold). 4-peer support (cc,ca,gc,ag,cx). Codex entry point. agy PTY vote policy. User communication equality. Capability registry + routing rules. Designed by unanimous consensus (cc,gc,ag,cx). |
 | 2026-06-03 | **v1.0** | Initial implementation of 3TCP v1. |

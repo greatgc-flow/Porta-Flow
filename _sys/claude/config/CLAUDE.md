@@ -28,17 +28,22 @@
 - Run ctx-save at natural pause points during a session
 - Run ctx-end when done for the day
 
-## Gemini Collaboration Protocol
+## Multi-Peer Collaboration Protocol (v4.0)
+
+All peers (cc, gc, ag, cx) are **absolutely equal**. Any peer may communicate with user directly.
+Protocol config: **`P:\_sys\ai\protocol.json`** (single source of truth — collab_rate, routing, health, consensus)
+Protocol docs: `P:\_sys\docs\protocol-*.md` (composable domain files)
+
+> `_sys/ai/config.json "ratio"` is DEPRECATED → use `protocol.json["collab_rate"]["current"]`
 
 Claude's Role: **Joint Design → Joint Execution → Joint Review → Report**
-Gemini is a full partner, not just an advisor. Integration depth scales with Ratio.
 
-### GEMINI_RATIO Levels (P:\_sys\ai\config.json)
+### COLLAB_RATE Levels (`P:\_sys\ai\protocol.json` → `collab_rate.current`)
 
 Defines integration depth and intervention points.
 
-| ratio | Mode | Intervention Point | Unanimous Consent |
-|-------|------|--------------------|-------------------|
+| collab_rate | Mode | Intervention Point | Unanimous Consent |
+|------------|------|--------------------|-------------------|
 | 0 | **Inactive** | None | — |
 | 1 | **Manual** | Explicit Axis execution only | — |
 | 2 | **Architecture** | Once before Arch/Structure decisions | — |
@@ -56,40 +61,39 @@ Defines integration depth and intervention points.
 
 ### R:6~10 Trigger Rules
 
-**R:6+** — On 2nd consecutive error: No solo retry. Send logs to Gemini, discuss breakthrough.
-**R:7+** — Ambiguous options (≥2): No arbitrary choices. Request trade-off analysis from Gemini.
+**R:6+** — On 2nd consecutive error: No solo retry. Send logs to any peer, discuss breakthrough.
+**R:7+** — Ambiguous options (≥2): No arbitrary choices. Request trade-off analysis from peers.
 **R:8+** — Sub-task completion: Request intermediate check: "Review this, can I proceed?"
 **R:9+** — 5 consecutive Grep/Read: Validate context sufficiency and search direction.
 **R:10** — Final Audit: Report only after unanimous consensus. Iterate until agreed.
 
-### Call Method (2-Step, PowerShell timeout 180000)
+### Peer Call Method (2-Step, timeout 180000)
 
-Use unique filenames to prevent parallel execution collisions.
+Use unique filenames: `{peer_id}-{YYYYMMDDHHMMSS}-{RAND4}.txt` (see `protocol.json["active_constraints"]["ipc_query_file_naming"]`)
 
 > **Queries MUST be in English.** Korean costs 2-3x tokens.
-> **Query file is deleted before API call.** Always create a fresh unique file.
 
 Step 1 — Write unique query file (Write tool):
-  Path: `P:\_sys\gemini\cq-{YYYYMMDDHHMMSS}-{RAND4}.txt`
+  Path: `P:\_sys\gemini\{peer_id}-{YYYYMMDDHHMMSS}-{RAND4}.txt`
   Content: TASK/CONTEXT/QUESTION format in **English**
 
-Step 2 — Invoke Gemini (PowerShell, timeout 180000):
+Step 2 — Invoke peer (timeout 180000):
 ```
-cmd /c "P:\_sys\cli\msg.bat" ask --to gemini --query-file "P:\_sys\gemini\cq-{filename}" 2>&1
+python "P:\_sys\core\hub.py" ask --to {peer_id} --query-file "{file}" 2>&1
 ```
-(bat automatically deletes the query file after response)
+Peer IDs: `gc` (Gemini), `ag` (agy), `cx` (Codex)
 
 ### Delegation Mode (Full Content Generation)
-Ask Gemini to "Write the complete new file content".
+Ask any peer to "Write the complete new file content".
 Apply output directly using Write tool → Verify with `git diff HEAD`.
 
-### Console Output Format (Gemini Response + Claude Judgment)
+### Console Output Format (Peer Response + Claude Judgment)
 
-Mandatory format after every Gemini call:
+Mandatory format after every peer call:
 
 ```
-━━ Gemini ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[Full Gemini Response]
+━━ {Peer} ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[Full Peer Response]
 
 ━━ Claude Judgment ━━━━━━━━━━━━━━━━━━━━
 Adopt: [Agreed parts]

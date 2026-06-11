@@ -68,23 +68,23 @@ Heavy phase = task touches >5 files OR Axis-A (full corpus scan) OR >=3 agent MD
 All Claude↔Gemini IPC goes through `_sys/core/hub.py`.
 - **On Start**: `hub.py status` → pair state + unread messages + handoff summary
 - **On Phase Change**: `hub.py update-status --mission "Task X" --phase "3"`
-- **Message to Gemini**: `hub.py send --from claude --to gemini --msg "..."`
-- **Read from Gemini**: `hub.py check --target claude`
-- **End session**: `_sys/hooks/session-end.bat claude`
+- **Message to Gemini**: `hub.py send --from cc --to gc --msg "..."`
+- **Read from Gemini**: `hub.py check --target cc`
+- **End session**: `_sys/hooks/session-end.bat cc`
 
 These replace: `session-master.json`, `session-primer.md`, `collab-bridge.json`.
 
 ## Workflow Pipeline
 
-Phase 0: Context health check (Axis-H). COLLAB_RATE check (PROTOCOL.md §C-0).
-         CHECK Gemini messages: `hub.py check --target claude `
-         Treat unread messages as high-priority instructions from Gemini.
+Phase 0: Context health check (`hub.py peer-status`). collab_rate check (`_sys/ai/protocol.json["collab_rate"]["current"]`).
+         CHECK all peer messages: `hub.py check --target cc`
+         Treat unread messages as high-priority instructions from any peer.
 Phase 1: Request analysis. Init state.json (loop_count=0, caution_flag=false).
-         `hub.py init-session --agent claude ` → print handoff summary.
+         `hub.py init-session --agent cc ` → print handoff summary.
          `hub.py update-status --mission "<task>" --phase "1"`.
 Phase 1.5: Risk scan [risk-scanner / Axis-I] — if task >1 file OR _sys/ OR agents/skills:
-           HIGH: ask user | MED: caution_flag=true | LOW/UNKNOWN: proceed.
-           Skip: single file, no structural impact.
+            HIGH: ask user | MED: caution_flag=true | LOW/UNKNOWN: proceed.
+            Skip: single file, no structural impact.
 Phase 2: Team setup + TaskCreate. Axis-F if scripts. Note Axis-E if agents/*.md planned.
 Phase 3: Collaboration Loop (MAX 3)
   [Dev]     script-engineer, tool-integrator
@@ -100,7 +100,7 @@ Phase 4: Run Axis-G (_sys\cli\git-draft.bat). Run check-health.bat (MANDATORY). 
          REJECT -> feedback -> designated phase | No response -> status="waiting_approval"
 Phase 5: Update state.json system_state (last_completed, known_issues).
          `hub.py update-status --mission "<done>" --phase "5"`.
-         `_sys/hooks/session-end.bat claude` → updates handoff.md.
+         `_sys/hooks/session-end.bat cc` → updates handoff.md.
          CONTEXT.md only if architecture changed.
          ctx-save snapshot. Axis-D+ if Gemini ON (opt-in).
 
@@ -137,6 +137,23 @@ On [ESCALATE_TO_COORDINATOR: {content}] from any specialist agent:
 4. Resume interrupted agent task with resolved information
 
 Never ignore [ESCALATE_TO_COORDINATOR]. Never forward without processing.
+
+## Task Routing (Protocol v4.0)
+
+Load routing rules from `_sys/ai/protocol.json["workload"]["routing_rules"]`.
+Check peer availability before delegation: `health.json["context_health"]["status"] != "RED"` AND `availability.gate_open == true`.
+
+| Task Type | Preferred Peer | Notes |
+|-----------|---------------|-------|
+| doc | gc → cc | gc has large context advantage |
+| script / _sys | cc → ag | cc for complex, ag for quick shell ops |
+| verify | ca | sole PASS/FAIL judge |
+| code | cx → cc | cx for repo-scoped patches |
+| code-review | cx → ca | cx leads, ca cross-verifies |
+| large-corpus | gc | 1M-2M token window |
+| shell-ops | ag → cc | ag for interactive/PTY tasks |
+
+**Any peer may communicate directly with the Human.** No fixed coordinator for user comms.
 
 ## CONVENTION.md Lifecycle
 coordinator owns CONVENTION.md updates: adding new rules, deprecating obsolete ones, resolving contradictions.
