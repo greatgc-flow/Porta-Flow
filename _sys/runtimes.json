@@ -69,6 +69,14 @@
                                  "url":  "https://www.sqlite.org/2026/sqlite-tools-win-x64-3530100.zip",
                                  "type":  "zip"
                              },
+                  "agy":  {
+                                  "version":  "1.0.7",
+                                  "url":  "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.0.7-5436940900761600/windows-x64/cli_windows_x64.exe",
+                                  "type":  "exe",
+                                  "bin":  "agy.exe",
+                                  "sha512":  "6b4f91bf174e795fac0f11387a7c6d3973eb2b76a4af00f0a17740ba73a73a37b809c35af5ca8fa277e64b28183b2da147af5d9f4b2ee7ad3f230a9806211638e78",
+                                  "install_subdir":  "tools/agy"
+                              },
                   "oh-my-posh":  {
                                      "version":  "29.14.0",
                                      "url":  "https://github.com/JanDeDobbeleer/oh-my-posh/releases/download/v29.14.0/posh-windows-amd64.exe",

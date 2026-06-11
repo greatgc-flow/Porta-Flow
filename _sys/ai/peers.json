@@ -103,6 +103,40 @@
         "peer_globs": [],
         "config_paths": []
       }
+    },
+    "antigravity": {
+      "enabled": true,
+      "description": "Google Antigravity CLI (agy) — Gemini CLI successor",
+      "npm_package": null,
+      "native_binary": {
+        "bin_name": "agy",
+        "win_exe": "agy.exe",
+        "install_subdir": "tools/agy"
+      },
+      "root_dir": ".agy",
+      "sys_subdir": "antigravity",
+      "host_junction": {
+        "host_env": "LOCALAPPDATA",
+        "host_dirname": "agy",
+        "portable_subpath": "config"
+      },
+      "project_junction": {
+        "portable_subpath": "project"
+      },
+      "workspace": {
+        "shadow_subdir": ".ai/antigravity",
+        "junction_name": ".agy",
+        "glue_file": "AGY.md",
+        "glue_template": "templates/workspace.md"
+      },
+      "env_vars": {},
+      "local_settings": [],
+      "host_app": null,
+      "cleanup": {
+        "peer_paths": [],
+        "peer_globs": [],
+        "config_paths": []
+      }
     }
   }
 }

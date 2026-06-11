@@ -569,7 +569,14 @@ def action_unregister(base_dir):
     print("\n Unregistration complete.")
 
 def _is_cli_available(peer_id: str, sys_dir: Path) -> bool:
-    """Check if a peer CLI binary exists in npm-global."""
+    """Check if a peer CLI binary exists (npm-global or native_binary install_subdir)."""
+    peers = config.get_peers_config()
+    peer = peers.get(peer_id, {})
+    native = peer.get("native_binary")
+    if native:
+        install_subdir = native.get("install_subdir", f"tools/{peer_id}")
+        win_exe = native.get("win_exe", f"{peer_id}.exe")
+        return (sys_dir.parent / install_subdir / win_exe).exists()
     npm_sub = config.get_env_config().get("tool_env_vars", {}).get("NPM_CONFIG_PREFIX", {}).get("sub", "nodejs/npm-global")
     npm_global = sys_dir / "env" / npm_sub
     return (npm_global / f"{peer_id}.cmd").exists()

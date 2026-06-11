@@ -55,6 +55,10 @@ def _default_nodes() -> dict:
                    "invoke_args": ["-p", "{query}"], "timeout": 0, "memory": "short-term"},
             "gc": {"type": "peer", "invoke": "gemini",
                    "invoke_args": ["-p", "{query}", "-o", "text", "-y"], "timeout": 0, "memory": "session"},
+            "ag": {"type": "peer", "invoke": "agy",
+                   "invoke_args": ["-p", "{query}"], "timeout": 0, "memory": "session"},
+            "cx": {"type": "peer", "invoke": "codex",
+                   "invoke_args": ["-p", "{query}", "--quiet"], "timeout": 0, "memory": "session"},
         }
     }
 
