@@ -51,6 +51,17 @@
         "peer_paths": [],
         "peer_globs": [],
         "config_paths": ["daemon.log", "plugins/cache/"]
+      },
+      "relocate": {
+        "patch": [
+          "project/settings.local.json",
+          "config/daemon/roster.json",
+          "config/plugins/known_marketplaces.json"
+        ],
+        "delete": [
+          "config/daemon.lock",
+          "config/.claude.json"
+        ]
       }
     },
     "gemini": {

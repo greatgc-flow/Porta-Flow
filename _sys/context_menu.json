@@ -1,12 +1,33 @@
 {
+  "_version": "2.0",
+  "_comment": "Context menu configuration. registrar.py reads this — no registry logic is hardcoded in Python.",
+
+  "win11_classic_menu": true,
+
+  "relay": {
+    "dir": "{localappdata}",
+    "content_template": "@echo off\r\nset \"SANDBOX_ROOT={root}\"\r\nif not exist \"%SANDBOX_ROOT%\\_sys\\start.bat\" set \"SANDBOX_ROOT={phys_root}\"\r\ncall \"%SANDBOX_ROOT%\\_sys\\start.bat\" \"%~1\"\r\n"
+  },
+
+  "registry": {
+    "hive": "HKEY_CURRENT_USER",
+    "targets": {
+      "Directory/Background": { "path": "Software\\Classes\\Directory\\Background\\shell", "arg": "%V" },
+      "Directory":            { "path": "Software\\Classes\\Directory\\shell",             "arg": "%V" },
+      "Drive":                { "path": "Software\\Classes\\Drive\\shell",                 "arg": "%1" },
+      "*":                    { "path": "Software\\Classes\\*\\shell",                     "arg": "%1" },
+      "lnkfile":              { "path": "Software\\Classes\\lnkfile\\shell",               "arg": "%1" }
+    },
+    "win11_classic_menu_clsid": "{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}"
+  },
+
   "entries": [
     {
       "id": "sandbox_open",
+      "enabled": true,
       "label": "Open in Sandbox ({DRIVE}:)",
-      "icon": "_sys/env/vscode/Code.exe",
-      "command": "_sys/start.bat \"{target}\"",
-      "targets": ["Directory/Background", "Directory", "Drive", "*", "lnkfile"],
-      "enabled": true
+      "icon": "{env}/vscode/Code.exe",
+      "targets": ["Directory/Background", "Directory", "Drive", "*", "lnkfile"]
     }
   ]
 }
