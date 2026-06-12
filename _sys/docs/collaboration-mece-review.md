@@ -143,8 +143,8 @@ The skill should not be the source of truth. The JSONL backlog should be.
 | P1 | Root temp files | Workspace hygiene issue | Identify producer and add cleanup/generation fix |
 | P1 | Broader protocol-to-test map | Traceability map exists, but not every protocol paragraph maps to tests | Expand `traceability_map.json` incrementally |
 | P1 | External peer artifacts | Important reports can land outside workspace | Require workspace-local artifact refs |
-| P2 | `state_actions` partially generic | Lifecycle policy looks more declarative than it is | Implement dispatcher or mark fields as documentation-only |
-| P2 | Model-specific virtual nodes | `model_profiles` convention exists, but example nodes are not yet added | Add explicit virtual nodes when model names are stable |
+| ~~P2~~ | ~~`state_actions` partially generic~~ | ~~Lifecycle policy looks more declarative than it is~~ | **RESOLVED 2026-06-13**: `lifecycle_policy.json` v1.0 fully declarative; hub.py reads via `_load_lifecycle_policy()`. |
+| ~~P2~~ | ~~Model-specific virtual nodes~~ | ~~`model_profiles` convention exists, but example nodes are not yet added~~ | **RESOLVED 2026-06-13**: `cc-deep` and `gc-plan` virtual nodes added to `orchestration.json`. `profile_id` field links nodes to `model_profiles.json`. |
 | P3 | Taxonomy root links weak | Maturity docs are discoverable but not central | Add root doc links |
 
 ## 5. Recommended Implementation Order
