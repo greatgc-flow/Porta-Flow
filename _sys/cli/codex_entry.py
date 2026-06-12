@@ -2,10 +2,12 @@
 
 Calls hub.py init-session, health-update, context-fill, then launches codex.cmd.
 try-finally로 비정상 종료 시에도 health.json 갱신 보장.
+availability.authenticated/entrypoint_ok 은 health-update GREEN 성공 시 자동 갱신됨 (hub.py).
 """
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 _CLI_DIR = Path(__file__).parent
@@ -29,12 +31,22 @@ def _env() -> dict:
     return e
 
 
-def _health(env: dict, status: str, failures: int = 0) -> None:
-    subprocess.run(
-        [_PYTHON, str(_HUB), "health-update", "--peer", "cx",
-         "--status", status, "--failures", str(failures)],
-        capture_output=True, env=env,
-    )
+def _health(env: dict, status: str, failures: int = 0, duration_ms: int | None = None) -> None:
+    cmd = [_PYTHON, str(_HUB), "health-update", "--peer", "cx",
+           "--status", status, "--failures", str(failures)]
+    subprocess.run(cmd, capture_output=True, env=env)
+    # availability.last_invocation_duration_ms 별도 갱신 (hub.py는 availability dict 미지원)
+    if duration_ms is not None:
+        import json
+        health_path = _SYS_DIR / "codex" / "health.json"
+        if health_path.exists():
+            try:
+                data = json.loads(health_path.read_text(encoding="utf-8"))
+                data.setdefault("availability", {})["last_invocation_duration_ms"] = duration_ms
+                data["availability"]["last_invocation_exit_code"] = 0 if status == "GREEN" else 1
+                health_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            except Exception:
+                pass
 
 
 def main() -> None:
@@ -53,12 +65,14 @@ def main() -> None:
         sys.exit(1)
 
     exit_code = 1
+    t_start = time.time()
     try:
         _health(env, "GREEN")
         result = subprocess.run(["cmd", "/c", str(_CODEX_CMD), *sys.argv[1:]], env=env)
         exit_code = result.returncode
+        duration_ms = int((time.time() - t_start) * 1000)
         final_status = "GREEN" if exit_code == 0 else "RED"
-        _health(env, final_status, failures=0 if exit_code == 0 else 1)
+        _health(env, final_status, failures=0 if exit_code == 0 else 1, duration_ms=duration_ms)
     except KeyboardInterrupt:
         exit_code = 130
     except Exception as e:

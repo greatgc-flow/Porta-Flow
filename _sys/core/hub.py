@@ -1751,8 +1751,12 @@ def action_consensus_sweep(ai_root: Path, timeout_minutes: int = 30) -> None:
 # 건강 관리 액션 (Protocol v4.0)
 # ─────────────────────────────────────────────────────────────
 
-def action_health_update(peer_id: str, status: str, jsonl_mb: float = 0.0, failures: int = 0, extra: dict | None = None) -> None:
-    """피어 건강 파일 갱신 — 제로토큰, 로컬 파일만."""
+def action_health_update(peer_id: str, status: str, jsonl_mb: float = 0.0, failures: int = 0, extra: dict | None = None, availability: dict | None = None) -> None:
+    """피어 건강 파일 갱신 — 제로토큰, 로컬 파일만.
+
+    availability 딕셔너리가 전달되면 health.json["availability"] 섹션도 병합 갱신.
+    GREEN+failures=0 시 entrypoint_ok/authenticated 자동 반영 (cx 버그 픽스).
+    """
     peer_dir = _peer_sys_dir(peer_id)
     health_path = peer_dir / "health.json"
     with _get_lock(peer_dir.parent.parent / ".ai", f"health_{peer_id}"):
@@ -1787,8 +1791,21 @@ def action_health_update(peer_id: str, status: str, jsonl_mb: float = 0.0, failu
         if sh.get("session_date") != today:
             sh["session_count_today"] = 0
             sh["session_date"] = today
+        if computed_status in ("GREEN", "YELLOW") and failures == 0:
+            sh["last_success_at"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            sh["session_count_today"] = sh.get("session_count_today", 0) + 1
         if extra:
             ctx.update(extra)
+        # availability 섹션 갱신: 명시적 dict 또는 GREEN 성공 시 자동 추론
+        avail = data.setdefault("availability", {})
+        if availability:
+            avail.update(availability)
+        elif computed_status == "GREEN" and failures == 0:
+            # 성공적 실행 시 entrypoint_ok/authenticated 자동 true 설정
+            avail["entrypoint_ok"] = True
+            avail["authenticated"] = True
+        elif computed_status == "RED":
+            avail["entrypoint_ok"] = False
         health_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     _log_p2p("HEALTH", f"peer={peer_id} status={computed_status} jsonl={jsonl_mb:.2f}MB failures={failures}")
     print(f"[HUB] HEALTH-UPDATE {peer_id} | status={computed_status} jsonl={jsonl_mb:.2f}MB")
