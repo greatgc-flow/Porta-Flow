@@ -614,7 +614,7 @@
         "phase_action_matrix": {
             "default": {
                 "mutating_hub_actions": "allow",
-                "semi_governed_hub_actions": "requires_classification",
+                "semi_governed_hub_actions": "allow",
                 "read_only_hub_actions": "allow",
                 "recovery_hub_actions": "allow",
                 "unknown_actions": "requires_classification"
