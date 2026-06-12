@@ -7,6 +7,18 @@ from unittest.mock import patch, MagicMock
 import hub
 
 
+def _make_mock_proc(stdout=b"", stderr=b"", returncode=0):
+    """Create a mock subprocess.Popen object for action_ask tests."""
+    mock_proc = MagicMock()
+    mock_proc.pid = 12345
+    mock_proc.returncode = returncode
+    mock_proc.communicate.return_value = (stdout, stderr)
+    mock_proc.poll.return_value = returncode
+    mock_proc.stdout.read.return_value = stdout
+    mock_proc.stderr.read.return_value = stderr
+    return mock_proc
+
+
 # ─── routing_metrics ─────────────────────────────────────────────────────────
 
 class TestRoutingMetrics:
@@ -52,12 +64,9 @@ class TestRoutingMetrics:
         }
         (ai_dir / "nodes.json").write_text(json.dumps(nodes_cfg), encoding="utf-8")
 
-        mock_result = MagicMock()
-        mock_result.stdout = b"ok"
-        mock_result.stderr = b""
-        mock_result.returncode = 0
+        mock_proc = _make_mock_proc(stdout=b"ok")
 
-        with patch("subprocess.run", return_value=mock_result), \
+        with patch("subprocess.Popen", return_value=mock_proc), \
              patch("shutil.which", return_value="/usr/bin/echo"), \
              patch("hub._load_orchestration", return_value={"hub_nodes": []}), \
              patch("hub._load_peers", return_value={}), \
@@ -93,12 +102,9 @@ class TestRoutingMetrics:
         }
         (ai_dir / "nodes.json").write_text(json.dumps(nodes_cfg), encoding="utf-8")
 
-        mock_result = MagicMock()
-        mock_result.stdout = b""
-        mock_result.stderr = b"rate_limit exceeded"
-        mock_result.returncode = 1
+        mock_proc = _make_mock_proc(stderr=b"rate_limit exceeded", returncode=1)
 
-        with patch("subprocess.run", return_value=mock_result), \
+        with patch("subprocess.Popen", return_value=mock_proc), \
              patch("shutil.which", return_value="/usr/bin/echo"), \
              patch("hub._load_orchestration", return_value={"hub_nodes": []}), \
              patch("hub._load_peers", return_value={}), \
@@ -125,12 +131,9 @@ class TestRoutingMetrics:
             }
         }
 
-        mock_result = MagicMock()
-        mock_result.stdout = b"ok"
-        mock_result.stderr = b""
-        mock_result.returncode = 0
+        mock_proc = _make_mock_proc(stdout=b"ok")
 
-        with patch("subprocess.run", return_value=mock_result), \
+        with patch("subprocess.Popen", return_value=mock_proc), \
              patch("shutil.which", return_value="/usr/bin/echo"), \
              patch("hub._load_orchestration", return_value={"hub_nodes": []}), \
              patch("hub._default_nodes", return_value={"nodes": mock_nodes}), \
@@ -140,6 +143,67 @@ class TestRoutingMetrics:
              patch("hub._record_ask_success"), \
              patch("hub._append_ask_history"):
             hub.action_ask("mock_peer", "hello", None, 10, None, quiet=True)
+
+
+# ─── lease helpers ───────────────────────────────────────────────────────────
+
+class TestLease:
+    def test_lease_open_creates_entry(self, ai_dir):
+        hub._lease_open(ai_dir, "gc", pid=9999, lease_timeout_sec=300, ask_id="ask-test-1")
+        data = json.loads((ai_dir / "leases.json").read_text("utf-8"))
+        assert "gc" in data
+        entry = data["gc"]
+        assert entry["pid"] == 9999
+        assert entry["status"] == "open"
+        assert entry["ask_id"] == "ask-test-1"
+        assert entry["expires_at"] > entry["started_at"]
+
+    def test_lease_renew_updates_heartbeat_and_expires(self, ai_dir):
+        hub._lease_open(ai_dir, "gc", pid=9999, lease_timeout_sec=300, ask_id="ask-renew")
+        before = json.loads((ai_dir / "leases.json").read_text("utf-8"))["gc"]["expires_at"]
+        hub._lease_renew(ai_dir, "gc", lease_timeout_sec=600)
+        after = json.loads((ai_dir / "leases.json").read_text("utf-8"))["gc"]
+        assert after["heartbeat_at"] is not None
+        assert after["expires_at"] >= before
+
+    def test_lease_close_sets_status(self, ai_dir):
+        hub._lease_open(ai_dir, "gc", pid=9999, lease_timeout_sec=300)
+        hub._lease_close(ai_dir, "gc", pid=9999, status="closed")
+        data = json.loads((ai_dir / "leases.json").read_text("utf-8"))
+        assert data["gc"]["status"] == "closed"
+
+    def test_lease_sweep_closes_expired(self, ai_dir):
+        # Write an already-expired lease directly
+        import datetime
+        past = (datetime.datetime.now() - datetime.timedelta(seconds=10)).isoformat()[:19]
+        data = {
+            "gc": {
+                "ask_id": "ask-expired",
+                "peer_id": "gc",
+                "pid": 0,
+                "room_id": None,
+                "started_at": past,
+                "expires_at": past,
+                "heartbeat_at": None,
+                "status": "open",
+                "ask_query_file": None,
+            }
+        }
+        (ai_dir / "leases.json").write_text(json.dumps(data), encoding="utf-8")
+        hub._lease_sweep(ai_dir)
+        swept = json.loads((ai_dir / "leases.json").read_text("utf-8"))
+        assert swept["gc"]["status"] == "expired"
+
+    def test_action_lease_status_prints_status(self, ai_dir, capsys):
+        hub._lease_open(ai_dir, "gc", pid=9999, lease_timeout_sec=300, ask_id="ask-status-check")
+        with patch("hub.psutil") as mock_psutil:
+            mock_proc = MagicMock()
+            mock_proc.status.return_value = "running"
+            mock_psutil.Process.return_value = mock_proc
+            mock_psutil.NoSuchProcess = Exception
+            hub.action_lease_status(ai_dir)
+        out = capsys.readouterr().out
+        assert "gc" in out
 
 
 # ─── _run_status_check ───────────────────────────────────────────────────────

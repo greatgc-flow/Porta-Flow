@@ -22,6 +22,11 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+try:
+    import psutil
+except ImportError:
+    psutil = None  # type: ignore[assignment]
+
 # Windows 콘솔 UTF-8 강제
 if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -151,6 +156,8 @@ def ensure_ai_dir(ai_root: Path) -> Path:
     (ai_root / "sessions").mkdir(parents=True, exist_ok=True)
     (ai_root / "consensus").mkdir(parents=True, exist_ok=True)
     (ai_root / "mailbox").mkdir(parents=True, exist_ok=True)  # Maildir storage
+    if not _leases_path(ai_root).exists():
+        _write_json(_leases_path(ai_root), {})
     if not (ai_root / "mailbox.json").exists():
         _write_json(ai_root / "mailbox.json", {"messages": [], "unread_count": 0})
     if not (ai_root / "state.json").exists():
@@ -476,6 +483,7 @@ def _write_handoff(session_dir: Path, sections: dict) -> None:
 # ─────────────────────────────────────────────────────────────
 
 def action_init_session(ai_root: Path, agent: str, room_id: str | None = None) -> None:
+    _lease_sweep(ai_root)
     sid = _short_id(agent[:1])
     with _get_lock(ai_root, "state"):
         state = _read_json(ai_root / "state.json")
@@ -771,6 +779,7 @@ def action_register_node(
 
 
 def action_status(ai_root: Path) -> None:
+    _lease_sweep(ai_root)
     state = _read_json(ai_root / "state.json")
     mb = _read_json(ai_root / "mailbox.json")
     unread_count = mb.get("unread_count", 0)
@@ -1397,6 +1406,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         except Exception:
             timeout_sec = 300 if requires_pty else 180
 
+    _lease_sweep(ai_root)
     _ask_health_precheck(health_peer, ai_root)
     if include_context:
         query = _build_ask_query_with_context(ai_root, query)
@@ -1481,36 +1491,62 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             print(output, end="")
         return
 
-    try:
-        t0 = time.monotonic()
-        # env에 PYTHONUTF8=1 설정하여 대상 CLI가 Python인 경우 UTF-8 출력 유도
-        # bytes로 캡처하여 인코딩 중의적 처리
-        
-        result = subprocess.run(
-            cmd,
-            input=query.encode("utf-8") if use_stdin else None,
-            capture_output=True,
-            timeout=timeout_sec if timeout_sec > 0 else None,
-            env=process_env
-        )
-        
-        elapsed = int(time.monotonic() - t0)
-        output = _decode_output(result.stdout)
-        output = _strip_ansi(output)
+    heartbeat_sec, lease_timeout_sec = _lease_cfg()
+    ask_id = _short_id("ask-")
+    lease_status = "open"
+    t0 = time.monotonic()
 
-        # JSONL 응답(--json 플래그 사용 노드, 예: cx) → 텍스트만 추출 후 artifact 저장
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE if use_stdin else None,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=process_env,
+        )
+        _lease_open(ai_root, to, proc.pid, lease_timeout_sec, ask_id=ask_id, ask_query_file=saved_query_file_path)
+
+        input_bytes = query.encode("utf-8") if use_stdin else None
+        deadline = time.monotonic() + (timeout_sec if timeout_sec > 0 else float("inf"))
+        raw_out = b""
+        raw_err = b""
+
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                lease_status = "timeout"
+                _kill_process_tree(proc)
+                raise subprocess.TimeoutExpired(cmd, timeout_sec)
+            try:
+                raw_out, raw_err = proc.communicate(
+                    input=input_bytes,
+                    timeout=min(heartbeat_sec, remaining),
+                )
+                break
+            except subprocess.TimeoutExpired:
+                input_bytes = None
+                if proc.poll() is not None:
+                    raw_out = proc.stdout.read() if proc.stdout else b""
+                    raw_err = proc.stderr.read() if proc.stderr else b""
+                    break
+                _lease_renew(ai_root, to, lease_timeout_sec)
+
+        elapsed = int(time.monotonic() - t0)
+        lease_status = "closed"
+        output = _strip_ansi(_decode_output(raw_out))
+
         if node.get("invoke_args") and "--json" in node.get("invoke_args", []):
             output = _extract_jsonl_text(output, to, ai_root)
 
-        if result.returncode != 0:
-            err = _decode_output(result.stderr)
-            clean_err = _strip_ansi(err)
+        if proc.returncode != 0:
+            clean_err = _strip_ansi(_decode_output(raw_err))
             reason, extra = _classify_ask_failure(clean_err + "\n" + output)
+            lease_status = "failed"
             _record_ask_failure(health_peer, reason, clean_err or output, elapsed, ai_root, extra)
             _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, False, reason)
             if ai_root:
                 _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=elapsed, failure_reason=reason)
-            print(f"[HUB:WARN] {to} exited {result.returncode}\n{clean_err}", file=sys.stderr)
+            print(f"[HUB:WARN] {to} exited {proc.returncode}\n{clean_err}", file=sys.stderr)
         else:
             _record_ask_success(health_peer, elapsed, ai_root)
             _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, True, None)
@@ -1533,6 +1569,8 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         else:
             print(f"[HUB] REPLY {to} | chars={len(output)} | elapsed={elapsed}s\n{output.strip()}")
     except subprocess.TimeoutExpired:
+        elapsed = int(time.monotonic() - t0)
+        lease_status = "timeout"
         detail = f"ask timeout after {timeout_sec}s"
         _record_ask_failure(health_peer, "timeout", detail, timeout_sec, ai_root)
         _append_ask_history(ai_root, to, saved_query_file_path, output_file, timeout_sec, False, "timeout")
@@ -1541,6 +1579,8 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         print(f"[HUB:ERROR] {detail}", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
+        elapsed = int(time.monotonic() - t0)
+        lease_status = "failed"
         reason, extra = _classify_ask_failure(str(e))
         _record_ask_failure(health_peer, reason, str(e), None, ai_root, extra)
         _append_ask_history(ai_root, to, saved_query_file_path, output_file, None, False, reason)
@@ -1548,6 +1588,9 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=None, failure_reason=reason)
         print(f"[HUB:ERROR] ask 실패: {e}", file=sys.stderr)
         sys.exit(1)
+    finally:
+        pid = proc.pid if "proc" in dir() else -1
+        _lease_close(ai_root, to, pid, lease_status)
 
 
 def _read_query_arg(query: str, query_file: str | None) -> str:
@@ -2416,6 +2459,126 @@ def action_feedback_resolve(ai_root: Path, feedback_id: str, status: str = "done
     print(f"[HUB] FEEDBACK-RESOLVE {feedback_id} | status={status}")
 
 
+def _leases_path(ai_root: Path) -> Path:
+    return ai_root / "leases.json"
+
+
+def _lease_cfg() -> tuple[int, int]:
+    """Return (heartbeat_sec, lease_timeout_sec) from communication_policy."""
+    comm = _load_protocol_cfg().get("communication_policy", {})
+    h = max(5, int(comm.get("heartbeat_sec", 30) or 30))
+    l = max(h + 30, int(comm.get("lease_timeout_sec", 300) or 300))
+    return h, l
+
+
+def _lease_open(ai_root: Path | None, peer_id: str, pid: int, lease_timeout_sec: int, ask_id: str | None = None, ask_query_file: str | None = None) -> None:
+    if not ai_root:
+        return
+    state = _read_json(ai_root / "state.json") if (ai_root / "state.json").exists() else {}
+    room_id = state.get("room_id")
+    started = _now()
+    from datetime import timedelta
+    expires = (datetime.fromisoformat(started) + timedelta(seconds=lease_timeout_sec)).isoformat()[:19]
+    entry = {
+        "ask_id": ask_id or _short_id("ask-"),
+        "peer_id": peer_id,
+        "pid": pid,
+        "room_id": room_id,
+        "started_at": started,
+        "expires_at": expires,
+        "heartbeat_at": None,
+        "status": "open",
+        "ask_query_file": ask_query_file,
+    }
+    with _get_lock(ai_root, "leases"):
+        data = _read_json(_leases_path(ai_root)) if _leases_path(ai_root).exists() else {}
+        data[peer_id] = entry
+        _write_json(_leases_path(ai_root), data)
+
+
+def _lease_renew(ai_root: Path | None, peer_id: str, lease_timeout_sec: int) -> None:
+    if not ai_root:
+        return
+    from datetime import timedelta
+    now = _now()
+    expires = (datetime.fromisoformat(now) + timedelta(seconds=lease_timeout_sec)).isoformat()[:19]
+    with _get_lock(ai_root, "leases"):
+        data = _read_json(_leases_path(ai_root)) if _leases_path(ai_root).exists() else {}
+        if peer_id in data:
+            data[peer_id]["heartbeat_at"] = now
+            data[peer_id]["expires_at"] = expires
+            _write_json(_leases_path(ai_root), data)
+
+
+def _lease_close(ai_root: Path | None, peer_id: str, pid: int, status: str) -> None:
+    if not ai_root:
+        return
+    with _get_lock(ai_root, "leases"):
+        data = _read_json(_leases_path(ai_root)) if _leases_path(ai_root).exists() else {}
+        if peer_id in data and data[peer_id].get("pid") == pid:
+            data[peer_id]["status"] = status
+            _write_json(_leases_path(ai_root), data)
+
+
+def _kill_process_tree(proc: "subprocess.Popen") -> None:
+    """Kill process tree (children first, then parent). Windows-safe."""
+    try:
+        parent = psutil.Process(proc.pid)
+        children = parent.children(recursive=True)
+        for child in children:
+            try:
+                child.kill()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        try:
+            parent.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    except (psutil.NoSuchProcess, psutil.AccessDenied, Exception):
+        pass
+    try:
+        proc.communicate(timeout=5)
+    except Exception:
+        pass
+
+
+def _lease_sweep(ai_root: Path | None) -> None:
+    """Kill orphaned open leases whose expires_at has passed. Updates health to STALE."""
+    if not ai_root or not _leases_path(ai_root).exists():
+        return
+    now_dt = datetime.fromisoformat(_now())
+    with _get_lock(ai_root, "leases"):
+        data = _read_json(_leases_path(ai_root))
+        changed = False
+        for peer_id, entry in data.items():
+            if entry.get("status") != "open":
+                continue
+            expires_str = entry.get("expires_at", "")
+            if not expires_str:
+                continue
+            try:
+                if datetime.fromisoformat(expires_str) < now_dt:
+                    pid = entry.get("pid")
+                    if pid:
+                        try:
+                            parent = psutil.Process(pid)
+                            for child in parent.children(recursive=True):
+                                try: child.kill()
+                                except (psutil.NoSuchProcess, psutil.AccessDenied): pass
+                            try: parent.kill()
+                            except (psutil.NoSuchProcess, psutil.AccessDenied): pass
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            pass
+                    entry["status"] = "expired"
+                    changed = True
+                    _record_ask_failure(peer_id, "lease_expired", f"lease expired at {expires_str}", None, ai_root)
+                    _log_p2p("SWEEP", f"lease expired for {peer_id} pid={pid}", from_node="HUB")
+            except Exception:
+                pass
+        if changed:
+            _write_json(_leases_path(ai_root), data)
+
+
 def _maildir_path(ai_root: Path) -> Path:
     return ai_root / "mailbox"
 
@@ -2837,6 +3000,40 @@ def action_validate_profiles(node_id: str | None = None) -> None:
     print(f"[HUB] PROFILE-VALIDATE OK ({len(targets)} nodes checked)")
 
 
+def action_lease_status(ai_root: Path) -> None:
+    """Show current lease state and whether each PID is still alive."""
+    leases_path = _leases_path(ai_root)
+    if not leases_path.exists():
+        print("[HUB] No leases.json found.")
+        return
+    data = _read_json(leases_path)
+    if not data:
+        print("[HUB] No active leases.")
+        return
+    print(f"{'Peer':<8} {'Status':<10} {'PID':<8} {'Alive':<6} {'Expires':<20} {'Heartbeat':<20}")
+    print("-" * 78)
+    now_dt = datetime.fromisoformat(_now())
+    for peer_id, entry in data.items():
+        pid = entry.get("pid", 0)
+        status = entry.get("status", "?")
+        expires = entry.get("expires_at", "")[:19]
+        hb = (entry.get("heartbeat_at") or "")[:19]
+        alive = "?"
+        if pid:
+            try:
+                alive = "YES" if psutil.pid_exists(pid) else "NO"
+            except Exception:
+                alive = "ERR"
+        expired_flag = ""
+        if status == "open" and expires:
+            try:
+                if datetime.fromisoformat(expires) < now_dt:
+                    expired_flag = " !"
+            except Exception:
+                pass
+        print(f"{peer_id:<8} {status + expired_flag:<10} {pid:<8} {alive:<6} {expires:<20} {hb:<20}")
+
+
 def action_model_status() -> None:
     print("peer\tstatus\tcost\ttier\tcontext\tcapabilities")
     for node in _load_orchestration().get("hub_nodes", []):
@@ -3083,6 +3280,11 @@ def main() -> None:
         action_lock_status(ai_root)
     elif act == "profile-validate":
         action_validate_profiles(args.peer or None)
+    elif act == "lease-status":
+        action_lease_status(ai_root)
+    elif act == "lease-sweep":
+        _lease_sweep(ai_root)
+        print("[HUB] lease-sweep complete.")
     elif act == "model-status":
         action_model_status()
     elif act == "transient-scan":

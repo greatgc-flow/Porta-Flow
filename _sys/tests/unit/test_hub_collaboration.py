@@ -5,6 +5,17 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 import hub
 
+
+def _make_mock_proc(stdout=b"", stderr=b"", returncode=0):
+    mock_proc = MagicMock()
+    mock_proc.pid = 12345
+    mock_proc.returncode = returncode
+    mock_proc.communicate.return_value = (stdout, stderr)
+    mock_proc.poll.return_value = returncode
+    mock_proc.stdout.read.return_value = stdout
+    mock_proc.stderr.read.return_value = stderr
+    return mock_proc
+
 # 1. Test ask quiet mode and output file
 def test_ask_quiet_and_output_file(ai_dir, tmp_path, capsys):
     # Setup node mock configuration
@@ -20,24 +31,17 @@ def test_ask_quiet_and_output_file(ai_dir, tmp_path, capsys):
     }
     (ai_dir / "nodes.json").write_text(json.dumps(nodes_cfg), encoding="utf-8")
     
-    # Mock subprocess run to simulate successful ask
-    mock_result = MagicMock()
-    mock_result.stdout = b"mock output response"
-    mock_result.stderr = b""
-    mock_result.returncode = 0
-    
+    mock_proc = _make_mock_proc(stdout=b"mock output response")
     out_file = tmp_path / "ask_response.txt"
-    
-    with patch("subprocess.run", return_value=mock_result):
+
+    with patch("subprocess.Popen", return_value=mock_proc):
         # Test output file with quiet=True
         hub.action_ask("mock_peer", "test query", None, 10, ai_dir, quiet=True, output_file=str(out_file))
         assert out_file.exists()
         assert out_file.read_text("utf-8") == "mock output response"
-        
+
         captured = capsys.readouterr()
-        # Header/REPLY prefix should NOT be printed
         assert "[HUB] REPLY" not in captured.out
-        # Standard output should be empty because we wrote to file and quiet=True
         assert captured.out == ""
 
         # Test quiet=True without output file (should print raw output)

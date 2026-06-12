@@ -92,6 +92,8 @@ def ai_dir(tmp_path):
             }
         }), encoding="utf-8"
     )
+    (ai / "mailbox").mkdir(exist_ok=True)
+    (ai / "leases.json").write_text(json.dumps({}), encoding="utf-8")
     return ai
 
 

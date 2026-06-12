@@ -440,7 +440,7 @@
         "unbounded_semantic_discussion": true,
         "bounded_transport_required": true,
         "heartbeat_required_for_long_running": true,
-        "heartbeat_sec": 60,
+        "heartbeat_sec": 30,
         "lease_timeout_sec": 300,
         "large_content_strategy": "file_ref",
         "out_of_band_direct_writes": {

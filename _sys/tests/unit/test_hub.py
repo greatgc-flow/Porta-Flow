@@ -7,6 +7,18 @@ from unittest.mock import patch, MagicMock
 import hub
 
 
+def _make_mock_proc(stdout=b"", stderr=b"", returncode=0):
+    """Create a mock subprocess.Popen object for action_ask tests."""
+    mock_proc = MagicMock()
+    mock_proc.pid = 12345
+    mock_proc.returncode = returncode
+    mock_proc.communicate.return_value = (stdout, stderr)
+    mock_proc.poll.return_value = returncode
+    mock_proc.stdout.read.return_value = stdout
+    mock_proc.stderr.read.return_value = stderr
+    return mock_proc
+
+
 # ─── init-session ───────────────────────────────────────────
 class TestInitSession:
     def test_cc_creates_sid(self, ai_dir, capsys):
@@ -144,44 +156,41 @@ class TestEndSession:
 class TestAsk:
     # subprocess는 bytes 캡처 (capture_output=True, text 없음) → mock.stdout = bytes
     def test_ask_gc_calls_subprocess(self, tmp_path):
-        mock_result = MagicMock()
-        mock_result.stdout = b"Gemini raw response"
-        mock_result.stderr = b""
-        mock_result.returncode = 0
+        mock_proc = _make_mock_proc(stdout=b"Gemini raw response")
         with patch("shutil.which", return_value="/usr/bin/gemini"), \
-             patch("subprocess.run", return_value=mock_result) as mock_run:
+             patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
             hub.action_ask("gc", "test query", None, 120, None)
-            call_args = mock_run.call_args[0][0]
+            call_args = mock_popen.call_args[0][0]
             assert "gemini" in call_args[0]
             assert "-p" in call_args
 
     def test_ask_cc_calls_subprocess(self, tmp_path):
-        mock_result = MagicMock()
-        mock_result.stdout = b"Claude raw response"
-        mock_result.stderr = b""
-        mock_result.returncode = 0
+        mock_proc = _make_mock_proc(stdout=b"Claude raw response")
         with patch("shutil.which", return_value="/usr/bin/claude"), \
-             patch("subprocess.run", return_value=mock_result) as mock_run:
+             patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
             hub.action_ask("cc", "test query", None, 120, None)
-            call_args = mock_run.call_args[0][0]
+            call_args = mock_popen.call_args[0][0]
             assert "claude" in call_args[0]
             assert "-p" in call_args
 
     def test_ask_strips_ansi(self, capsys):
-        mock_result = MagicMock()
-        mock_result.stdout = b"\x1b[32mcolored response\x1b[0m"
-        mock_result.stderr = b""
-        mock_result.returncode = 0
+        mock_proc = _make_mock_proc(stdout=b"\x1b[32mcolored response\x1b[0m")
         with patch("shutil.which", return_value="/usr/bin/gemini"), \
-             patch("subprocess.run", return_value=mock_result):
+             patch("subprocess.Popen", return_value=mock_proc):
             hub.action_ask("gc", "test", None, 120, None)
         out = capsys.readouterr().out
         assert "\x1b" not in out
         assert "colored response" in out
 
     def test_ask_timeout_exits(self):
+        mock_proc = _make_mock_proc()
+        mock_proc.communicate.side_effect = subprocess.TimeoutExpired("gemini", 120)
+        mock_proc.poll.return_value = None
+        # time.monotonic side_effect: t0, deadline_calc, loop1_remaining, loop2_remaining, elapsed_after_except
         with patch("shutil.which", return_value="/usr/bin/gemini"), \
-             patch("subprocess.run", side_effect=subprocess.TimeoutExpired("gemini", 120)):
+             patch("subprocess.Popen", return_value=mock_proc), \
+             patch("hub.time.monotonic", side_effect=[0.0, 0.0, 0.0, 200.0, 200.0]), \
+             patch("hub._kill_process_tree"):
             with pytest.raises(SystemExit):
                 hub.action_ask("gc", "test", None, 120, None)
 
@@ -193,22 +202,16 @@ class TestAsk:
     def test_ask_query_file(self, tmp_path, capsys):
         qf = tmp_path / "query.txt"
         qf.write_text("file query content", encoding="utf-8")
-        mock_result = MagicMock()
-        mock_result.stdout = b"response"
-        mock_result.stderr = b""
-        mock_result.returncode = 0
+        mock_proc = _make_mock_proc(stdout=b"response")
         with patch("shutil.which", return_value="/usr/bin/gemini"), \
-             patch("subprocess.run", return_value=mock_result):
+             patch("subprocess.Popen", return_value=mock_proc):
             hub.action_ask("gc", "", str(qf), 120, None)
         assert not qf.exists()
 
     def test_ask_nonzero_exit_warns(self, capsys):
-        mock_result = MagicMock()
-        mock_result.stdout = b"partial response"
-        mock_result.stderr = b"some error"
-        mock_result.returncode = 1
+        mock_proc = _make_mock_proc(stdout=b"partial response", stderr=b"some error", returncode=1)
         with patch("shutil.which", return_value="/usr/bin/gemini"), \
-             patch("subprocess.run", return_value=mock_result):
+             patch("subprocess.Popen", return_value=mock_proc):
             hub.action_ask("gc", "test", None, 120, None)
         out, err = capsys.readouterr()
         assert "[HUB:WARN] gc exited 1" in err
@@ -221,15 +224,12 @@ class TestAsk:
         session_dir = ai_dir / "sessions" / "room-test"
         (session_dir / "handoff.md").write_text("## [GOAL]\n- keep context\n", encoding="utf-8")
 
-        mock_result = MagicMock()
-        mock_result.stdout = b"ok"
-        mock_result.stderr = b""
-        mock_result.returncode = 0
+        mock_proc = _make_mock_proc(stdout=b"ok")
         with patch("shutil.which", return_value="/usr/bin/gemini"), \
-             patch("subprocess.run", return_value=mock_result) as mock_run:
+             patch("subprocess.Popen", return_value=mock_proc):
             hub.action_ask("gc", "hello", None, 120, ai_dir)
 
-        sent = mock_run.call_args.kwargs["input"].decode("utf-8")
+        sent = mock_proc.communicate.call_args.kwargs["input"].decode("utf-8")
         assert "Room ID: room-test" in sent
         assert "keep context" in sent
         assert "[USER QUERY]\nhello" in sent
@@ -249,12 +249,9 @@ class TestAsk:
             "session_health": {"consecutive_failures": 3, "last_failure_reason": "timeout"},
             "availability": {"gate_open": True, "workspace_not_trusted": True},
         }), encoding="utf-8")
-        mock_result = MagicMock()
-        mock_result.stdout = b"ok"
-        mock_result.stderr = b""
-        mock_result.returncode = 0
+        mock_proc = _make_mock_proc(stdout=b"ok")
         with patch("shutil.which", return_value="/usr/bin/gemini"), \
-             patch("subprocess.run", return_value=mock_result):
+             patch("subprocess.Popen", return_value=mock_proc):
             hub.action_ask("gc", "hello", None, 120, ai_dir)
         health = json.loads((peer_dir / "health.json").read_text("utf-8"))
         assert health["context_health"]["status"] == "GREEN"
@@ -264,12 +261,9 @@ class TestAsk:
     def test_ask_eperm_marks_peer_red_and_blocks_next_call(self, ai_dir, tmp_path, monkeypatch):
         peer_dir = tmp_path / "gemini"
         monkeypatch.setattr(hub, "_peer_sys_dir", lambda peer_id: peer_dir)
-        mock_result = MagicMock()
-        mock_result.stdout = b""
-        mock_result.stderr = b"Fatal error\nError: spawn EPERM"
-        mock_result.returncode = 1
+        mock_proc = _make_mock_proc(stderr=b"Fatal error\nError: spawn EPERM", returncode=1)
         with patch("shutil.which", return_value="/usr/bin/gemini"), \
-             patch("subprocess.run", return_value=mock_result):
+             patch("subprocess.Popen", return_value=mock_proc):
             hub.action_ask("gc", "hello", None, 120, ai_dir)
 
         health = json.loads((peer_dir / "health.json").read_text("utf-8"))
@@ -279,11 +273,11 @@ class TestAsk:
         assert health["availability"]["sandbox_blocked"] is True
 
         with patch("shutil.which", return_value="/usr/bin/gemini"), \
-             patch("subprocess.run") as mock_run:
+             patch("subprocess.Popen") as mock_popen:
             with pytest.raises(SystemExit) as exc:
                 hub.action_ask("gc", "again", None, 120, ai_dir)
             assert exc.value.code == 2
-            mock_run.assert_not_called()
+            mock_popen.assert_not_called()
 
     def test_ask_supports_literal_peer_env_vars(self, ai_dir, tmp_path, monkeypatch):
         peer_dir = tmp_path / "gemini"
@@ -300,15 +294,12 @@ class TestAsk:
                 },
             }
         })
-        mock_result = MagicMock()
-        mock_result.stdout = b"ok"
-        mock_result.stderr = b""
-        mock_result.returncode = 0
+        mock_proc = _make_mock_proc(stdout=b"ok")
         with patch("shutil.which", return_value="/usr/bin/gemini"), \
-             patch("subprocess.run", return_value=mock_result) as mock_run:
+             patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
             hub.action_ask("gc", "hello", None, 120, ai_dir)
 
-        env = mock_run.call_args.kwargs["env"]
+        env = mock_popen.call_args.kwargs["env"]
         assert env["GEMINI_CLI_TRUST_WORKSPACE"] == "true"
         assert env["SOME_FALSE_FLAG"] == "false"
 
@@ -775,17 +766,16 @@ class TestOperationalGuard:
 class TestEnhancedCollaboration:
     def test_ask_quiet_output_file_writes_response(self, ai_dir, tmp_path, monkeypatch, capsys):
         monkeypatch.setattr(hub, "_runtime_cfg", lambda: {"ask_default_timeout_sec": 7})
-        mock_result = MagicMock()
-        mock_result.stdout = b"model response"
-        mock_result.stderr = b""
-        mock_result.returncode = 0
+        mock_proc = _make_mock_proc(stdout=b"model response")
         out = tmp_path / "reply.md"
         with patch("shutil.which", return_value="/usr/bin/gemini"), \
-             patch("subprocess.run", return_value=mock_result) as mock_run:
+             patch("subprocess.Popen", return_value=mock_proc):
             hub.action_ask("gc", "hello", None, 0, ai_dir, quiet=True, output_file=str(out))
         assert out.read_text("utf-8") == "model response"
         assert capsys.readouterr().out == ""
-        assert mock_run.call_args.kwargs["timeout"] == 7
+        # timeout_sec=0 resolves to 7 from _runtime_cfg; communicate gets min(heartbeat_sec, ~7)
+        communicate_timeout = mock_proc.communicate.call_args.kwargs.get("timeout", 0)
+        assert communicate_timeout <= 7
 
     def test_feedback_add_list_resolve(self, ai_dir, capsys):
         hub.action_feedback_add(ai_dir, "cx", "runtime", "high", "Need quiet mode", "details")
