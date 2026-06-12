@@ -145,6 +145,9 @@ setup_test_env.py
 /err.txt
 /integration_log.txt
 /integration_log*.txt
+# Accidental 0-byte peer temp files (e.g., /See created by cx during ask session)
+/See
+/Remains
 
 # =================================================================
 # 8. System, Editor, & Cache Garbage
