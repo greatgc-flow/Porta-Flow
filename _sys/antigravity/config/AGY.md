@@ -1,5 +1,5 @@
 # AGY.md — Antigravity (ag) Session Glue File
-> Protocol v4.0 | Node ID: `ag` | Updated: 2026-06-11
+> Protocol v4.1 | Node ID: `ag` | Updated: 2026-06-12
 
 ## Role
 agy is the Antigravity CLI peer. Capabilities: shell-scripts, quick-cli, file-ops,

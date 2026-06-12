@@ -21,8 +21,9 @@
 
 ## 3. R=10 Unanimity Rules
 
-- **Mandatory**: All active voters must `agree`. Any `disagree` → immediate human_gate.
-- **No Autonomous Decisions**: Every phase change requires consensus round before execution.
+- **Mandatory**: All registered voters must explicitly `agree`. 
+- **No Auto-Abstain Bypass**: For R=10, an offline auto-abstain does NOT satisfy unanimity. If a required voter is offline or abstains, the round must be escalated to Human (Tier 0) for override or policy downgrade.
+- **No Exceptions**: Strict prohibition of arbitrary judgment for any governed action (write/execute). Every phase change requires consensus round + Final Call before execution.
 - **PTY Peers (ag)**: Must write vote directly to `.ai/consensus/{round_id}.json` OR relay via `hub.py send --to cc` (never use `hub.py ask` for consensus — PTY deadlock risk).
 
 ## 4. Tiebreak Protocol (2v2 or N/2 split)

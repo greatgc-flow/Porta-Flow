@@ -83,3 +83,9 @@ System stability is ensured through 3 levels of testing:
 - **WSB Tests**: Validates destructive lifecycle (ZeroBase install) inside Windows Sandbox.
 
 Run: `_sys\tests\run-tests.bat --all`
+
+## System Maps and Audit References
+
+- `_sys/docs/workspace-connectivity-map.md`: root-to-runtime document/source/config connectivity map.
+- `_sys/docs/collaboration-mece-review.md`: MECE review of P2P communication, shared artifacts, and feedback loops.
+- `_sys/ai/traceability_map.json`: machine-readable mapping from protocol sections to config keys, runtime functions, and tests.

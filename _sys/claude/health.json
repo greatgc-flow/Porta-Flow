@@ -3,23 +3,29 @@
   "peer_id": "cc",
   "context_health": {
     "status": "GREEN",
-    "jsonl_mb": 0.3,
+    "jsonl_mb": 0.0,
     "context_window_usage_percent": 0.0,
-    "checked_at": "20260611T204148",
+    "checked_at": "20260612T101437",
     "source": "self"
   },
   "session_health": {
     "consecutive_failures": 0,
     "last_failure_reason": null,
-    "last_success_at": null,
-    "session_count_today": 0,
-    "session_date": "20260611"
+    "last_success_at": "2026-06-12T10:14:37",
+    "session_count_today": 22,
+    "session_date": "20260612",
+    "last_failure_detail": "You've hit your session limit · resets 1:30am (Asia/Seoul)",
+    "last_failure_at": "2026-06-12T00:27:27"
   },
   "availability": {
     "installed": true,
     "authenticated": true,
     "gate_open": true,
     "last_gate_check": null,
-    "active_pid": null
+    "active_pid": null,
+    "last_invocation_exit_code": 0,
+    "last_invocation_duration_ms": 118000,
+    "rate_limit_state": "ok",
+    "quarantined": false
   }
 }

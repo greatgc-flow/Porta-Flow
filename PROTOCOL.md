@@ -1,6 +1,6 @@
-# PROTOCOL.md — Universal Multi-Peer Collaboration Protocol (v4.0 Index)
+# PROTOCOL.md — Universal Multi-Peer Collaboration Protocol (v4.1 Index)
 
-> **v4.0**: Composable domain files in `_sys/docs/`. Config-driven via `_sys/ai/protocol.json`. 4-peer support (cc, gc, ag, cx). Zero-token health management.
+> **v4.1**: Layered policy division (General, Specific, Connectors, Ambiguity). Composable domain files in `_sys/docs/`. Config-driven via `_sys/ai/protocol.json`. 5-node voting support (cc, ca, gc, ag, cx). Zero-token health management.
 > Coding Convention → CONVENTION.md | Architecture → SYSTEM_ARCHITECTURE.md | Agent Workflow → CLAUDE.md
 
 ## Quick Reference — Composable Protocol Files
@@ -13,13 +13,17 @@
 | [`_sys/docs/protocol-workload.md`](_sys/docs/protocol-workload.md) | Peer equality, capability registry, routing rules |
 | [`_sys/docs/protocol-antigravity.md`](_sys/docs/protocol-antigravity.md) | ag (agy) peer specifics, PTY voting policy |
 | [`_sys/docs/protocol-codex.md`](_sys/docs/protocol-codex.md) | cx (Codex) peer specifics, stdin invocation |
+| [`_sys/docs/collaboration_protocol.md`](_sys/docs/collaboration_protocol.md) | **v4.1 Layered Coordination** — General/Specific split, connectors, and feedback loop |
+| [`_sys/ai/collaboration_policy.schema.json`](_sys/ai/collaboration_policy.schema.json) | Validation schema for multi-peer collaboration policies |
+| [`_sys/ai/room_policy.example.json`](_sys/ai/room_policy.example.json) | Concrete example mapping intents to commands & tracking ambiguity |
 | [`_sys/ai/protocol.json`](_sys/ai/protocol.json) | **Master config** — all thresholds, routing, consensus settings |
 
 ## Active Constraints (Quick Check)
 
 - collab_rate: 10 (see `protocol.json["collab_rate"]["current"]`)
-- consensus required for: `_sys/` changes, `PROTOCOL.md` edits, `peers.json` edits
+- consensus required for: `_sys/` changes, `PROTOCOL.md` edits, `peers.json` edits, `protocol.json` edits
 - tiebreak: domain_weight → recommend to Human (Tier 0)
+- out-of-band direct writes: documented as non-enforceable at runtime (governed by peer consensus & policy alignment)
 
 ---
 <!-- Original v3.4 content preserved below for reference -->
@@ -31,7 +35,7 @@
 
 ### Purpose
 
-This document defines an **equality-based P2P collaboration protocol** applicable between **all nodes, including Human, Claude Code (CC), Claude Agent (CA), and Gemini CLI (GC)**.
+This document defines an **equality-based P2P collaboration protocol** applicable between **all nodes, including Human, Claude Code (CC), Claude Agent (CA), Gemini CLI (GC), Antigravity (AG), and Codex (CX)**.
 It abolishes vertical tiers, synchronizes context through N-Way single shared sessions (Rooms), and completes a virtuous loop by dividing labor (Division of Labor) after unanimous consensus.
 
 ### Section Map
@@ -58,14 +62,14 @@ It abolishes vertical tiers, synchronizes context through N-Way single shared se
 **Principle**: All collaborations respect each node's technical characteristics, but **decision-making and proposal rights are completely equal**.
 Every node can initiate a `PROPOSE` (consensus proposal) at any stage.
 
-| Attribute | Human | Claude Code (CC) | Claude Agent (CA) | Gemini CLI (GC) |
-|-----------|-------|-----------------|-------------------|-----------------|
-| **Authority** | Tier 0 (Veto) | Peer (Equal) | Peer (Equal) | Peer (Equal) |
-| **Cognition Scope** | Console · UI Output | Full File · Tool · Memory | Within Work Scope | File Read-Only |
-| **Session Type** | N-Way Room Participation | N-Way Room Participation | N-Way Room Participation | N-Way Room Participation |
-| **Decision Making** | Final Approval/Refusal | 1/N Voting Right | 1/N Voting Right | 1/N Voting Right |
-| **PASS/FAIL Judgment** | Final Approval | Cross-verification | Cross-verification | Cross-verification |
-| **Context Limit** | Cognition Load Management | ~1.2 MB JSONL | ~1.2 MB JSONL | ~500k Tokens |
+| Attribute | Human | Claude Code (CC) | Claude Agent (CA) | Gemini CLI (GC) | Antigravity (AG) | Codex (CX) |
+|-----------|-------|------------------|-------------------|-----------------|------------------|------------|
+| **Authority** | Tier 0 (Veto) | Peer (Equal) | Peer (Equal) | Peer (Equal) | Peer (Equal) | Peer (Equal) |
+| **Cognition Scope** | Console · UI Output | Full File · Tool · Memory | Within Work Scope | Large-context analysis | Shell/PTY orchestration | Repo-local coding/review |
+| **Session Type** | N-Way Room Participation | N-Way Room Participation | N-Way Room Participation | N-Way Room Participation | N-Way Room Participation | N-Way Room Participation |
+| **Decision Making** | Final Approval/Refusal | 1/N Voting Right | 1/N Voting Right | 1/N Voting Right | 1/N Voting Right | 1/N Voting Right |
+| **PASS/FAIL Judgment** | Final Approval | Cross-verification | Cross-verification | Cross-verification | Cross-verification | Cross-verification |
+| **Context Limit** | Cognition Load Management | ~1.2 MB JSONL | ~1.2 MB JSONL | Large external context | PTY/session bounded | Model/context bounded |
 
 **Human Consideration Rules**:
 - Information visible to Human: Phase 4 Approval Requests + ESCALATE escalation + Error Notifications
@@ -319,6 +323,7 @@ To prevent Context Decay due to context bloat, a **file-based blackboard system*
 
 | Date | Version | Major Changes |
 |------|---------|---------------|
+| 2026-06-12 | **v4.1** | **Layered General/Specific policy model. Schema-validated connector dry declarations. R:10 clarified as unanimous consensus + Final Call for governed decisions and side-effecting actions, while zero-token local observe/validate/classify remains exempt. 5-node voting support aligned (`cc`, `ca`, `gc`, `ag`, `cx`).** |
 | 2026-06-05 | **v3.4** | **§P-3-QR Quorum & Timeout rules added. Re-orientation enforcement signal added to §P-11. R:8 Multi-script row added to §C-0 Adaptive Rate table.** |
 | 2026-06-05 | **v3.3** | **Full English translation. Adaptive Rate rules added to §C-0. Token budget updated in §P-8. handoff.md rolling rule added to §P-6.** |
 | 2026-06-05 | **v3.2** | **Added Final Call consensus closing procedure.** New §P-3-FC: After everyone agrees, proposing node performs final check → FINALIZED upon everyone responding "None". Required for CR>=8. |

@@ -137,6 +137,8 @@ setup_test_env.py
 /agy_log*.txt
 /out.txt
 /err.txt
+/integration_log.txt
+/integration_log*.txt
 
 # =================================================================
 # 8. System, Editor, & Cache Garbage

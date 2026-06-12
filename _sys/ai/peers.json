@@ -78,7 +78,9 @@
         "glue_file": "GEMINI.md",
         "glue_template": "templates/workspace.md"
       },
-      "env_vars": {},
+      "env_vars": {
+        "GEMINI_CLI_TRUST_WORKSPACE": true
+      },
       "local_settings": [],
       "host_app": null,
       "cleanup": {

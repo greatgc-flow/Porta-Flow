@@ -214,6 +214,137 @@ class TestAsk:
         assert "[HUB:WARN] gc exited 1" in err
         assert "partial response" in out
 
+    def test_ask_prepends_room_context_and_records_success(self, ai_dir, tmp_path, monkeypatch):
+        peer_dir = tmp_path / "gemini"
+        monkeypatch.setattr(hub, "_peer_sys_dir", lambda peer_id: peer_dir)
+        hub.action_init_session(ai_dir, "gc", "room-test")
+        session_dir = ai_dir / "sessions" / "room-test"
+        (session_dir / "handoff.md").write_text("## [GOAL]\n- keep context\n", encoding="utf-8")
+
+        mock_result = MagicMock()
+        mock_result.stdout = b"ok"
+        mock_result.stderr = b""
+        mock_result.returncode = 0
+        with patch("shutil.which", return_value="/usr/bin/gemini"), \
+             patch("subprocess.run", return_value=mock_result) as mock_run:
+            hub.action_ask("gc", "hello", None, 120, ai_dir)
+
+        sent = mock_run.call_args.kwargs["input"].decode("utf-8")
+        assert "Room ID: room-test" in sent
+        assert "keep context" in sent
+        assert "[USER QUERY]\nhello" in sent
+
+        health = json.loads((peer_dir / "health.json").read_text("utf-8"))
+        assert health["session_health"]["consecutive_failures"] == 0
+        assert health["availability"]["gate_open"] is True
+        assert health["availability"]["last_invocation_exit_code"] == 0
+
+    def test_ask_success_recovers_yellow_peer(self, ai_dir, tmp_path, monkeypatch):
+        peer_dir = tmp_path / "gemini"
+        peer_dir.mkdir()
+        monkeypatch.setattr(hub, "_peer_sys_dir", lambda peer_id: peer_dir)
+        (peer_dir / "health.json").write_text(json.dumps({
+            "peer_id": "gc",
+            "context_health": {"status": "YELLOW"},
+            "session_health": {"consecutive_failures": 3, "last_failure_reason": "timeout"},
+            "availability": {"gate_open": True, "workspace_not_trusted": True},
+        }), encoding="utf-8")
+        mock_result = MagicMock()
+        mock_result.stdout = b"ok"
+        mock_result.stderr = b""
+        mock_result.returncode = 0
+        with patch("shutil.which", return_value="/usr/bin/gemini"), \
+             patch("subprocess.run", return_value=mock_result):
+            hub.action_ask("gc", "hello", None, 120, ai_dir)
+        health = json.loads((peer_dir / "health.json").read_text("utf-8"))
+        assert health["context_health"]["status"] == "GREEN"
+        assert health["session_health"]["consecutive_failures"] == 0
+        assert "workspace_not_trusted" not in health["availability"]
+
+    def test_ask_eperm_marks_peer_red_and_blocks_next_call(self, ai_dir, tmp_path, monkeypatch):
+        peer_dir = tmp_path / "gemini"
+        monkeypatch.setattr(hub, "_peer_sys_dir", lambda peer_id: peer_dir)
+        mock_result = MagicMock()
+        mock_result.stdout = b""
+        mock_result.stderr = b"Fatal error\nError: spawn EPERM"
+        mock_result.returncode = 1
+        with patch("shutil.which", return_value="/usr/bin/gemini"), \
+             patch("subprocess.run", return_value=mock_result):
+            hub.action_ask("gc", "hello", None, 120, ai_dir)
+
+        health = json.loads((peer_dir / "health.json").read_text("utf-8"))
+        assert health["context_health"]["status"] == "RED"
+        assert health["session_health"]["last_failure_reason"] == "sandbox_spawn_eperm"
+        assert health["availability"]["gate_open"] is False
+        assert health["availability"]["sandbox_blocked"] is True
+
+        with patch("shutil.which", return_value="/usr/bin/gemini"), \
+             patch("subprocess.run") as mock_run:
+            with pytest.raises(SystemExit) as exc:
+                hub.action_ask("gc", "again", None, 120, ai_dir)
+            assert exc.value.code == 2
+            mock_run.assert_not_called()
+
+    def test_ask_supports_literal_peer_env_vars(self, ai_dir, tmp_path, monkeypatch):
+        peer_dir = tmp_path / "gemini"
+        monkeypatch.setattr(hub, "_peer_sys_dir", lambda peer_id: peer_dir)
+        monkeypatch.setattr(hub, "_load_lifecycle_policy", lambda: {
+            "identity": {"node_to_peer": {"gc": "gemini"}}
+        })
+        monkeypatch.setattr(hub, "_load_peers", lambda: {
+            "gemini": {
+                "sys_subdir": "gemini",
+                "env_vars": {
+                    "GEMINI_CLI_TRUST_WORKSPACE": True,
+                    "SOME_FALSE_FLAG": "false",
+                },
+            }
+        })
+        mock_result = MagicMock()
+        mock_result.stdout = b"ok"
+        mock_result.stderr = b""
+        mock_result.returncode = 0
+        with patch("shutil.which", return_value="/usr/bin/gemini"), \
+             patch("subprocess.run", return_value=mock_result) as mock_run:
+            hub.action_ask("gc", "hello", None, 120, ai_dir)
+
+        env = mock_run.call_args.kwargs["env"]
+        assert env["GEMINI_CLI_TRUST_WORKSPACE"] == "true"
+        assert env["SOME_FALSE_FLAG"] == "false"
+
+    def test_ask_failure_classification_reads_lifecycle_policy(self, monkeypatch):
+        monkeypatch.setattr(hub, "_load_lifecycle_policy", lambda: {
+            "ask_failure_classification": {
+                "default_reason": "fallback_reason",
+                "patterns": [
+                    {
+                        "reason": "custom_limit",
+                        "match_any": ["custom limit"],
+                        "availability": {"rate_limit_state": "limited"}
+                    }
+                ]
+            }
+        })
+        reason, extra = hub._classify_ask_failure("CUSTOM LIMIT reached")
+        assert reason == "custom_limit"
+        assert extra["rate_limit_state"] == "limited"
+
+    def test_send_can_be_disabled_by_lifecycle_policy(self, ai_dir, monkeypatch):
+        monkeypatch.setattr(hub, "_load_lifecycle_policy", lambda: {
+            "messaging": {"send": {"mode": "disabled"}}
+        })
+        with pytest.raises(SystemExit) as exc:
+            hub.action_send(ai_dir, "cc", "gc", "hello")
+        assert exc.value.code == 1
+
+    def test_send_rejects_disallowed_type_by_lifecycle_policy(self, ai_dir, monkeypatch):
+        monkeypatch.setattr(hub, "_load_lifecycle_policy", lambda: {
+            "messaging": {"send": {"mode": "retain_improve", "allowed_types": ["MSG"]}}
+        })
+        with pytest.raises(SystemExit) as exc:
+            hub.action_send(ai_dir, "cc", "gc", "hello", msg_type="DIRECTIVE")
+        assert exc.value.code == 1
+
 
 # ─── handoff FIFO ────────────────────────────────────────────
 class TestHandoffFIFO:
@@ -303,6 +434,87 @@ class TestMessageEnvelope:
         assert msg["cc"] == []
         assert msg["ref"] is None
         assert msg["thread_id"].startswith("t-")
+
+    def test_send_records_priority_from_policy_default(self, ai_dir):
+        hub.action_send(ai_dir, "cc", "gc", "policy priority")
+        mb = json.loads((ai_dir / "mailbox.json").read_text("utf-8"))
+        assert mb["messages"][0]["priority"] == "INFO"
+
+    def test_send_prunes_expired_messages_by_priority(self, ai_dir, monkeypatch):
+        monkeypatch.setattr(hub, "_load_lifecycle_policy", lambda: {
+            "messaging": {
+                "send": {
+                    "default_priority": "INFO",
+                    "ttl_hours_by_priority": {"INFO": 4},
+                }
+            }
+        })
+        (ai_dir / "mailbox.json").write_text(json.dumps({
+            "messages": [{
+                "id": 1,
+                "thread_id": "t-old",
+                "type": "MSG",
+                "from": "cc",
+                "to": "gc",
+                "content": "old",
+                "status": "unread",
+                "timestamp": "2000-01-01T00:00:00",
+                "priority": "INFO",
+            }],
+            "unread_count": 1,
+        }), encoding="utf-8")
+        hub.action_send(ai_dir, "cc", "gc", "fresh")
+        mb = json.loads((ai_dir / "mailbox.json").read_text("utf-8"))
+        assert [m["content"] for m in mb["messages"]] == ["fresh"]
+
+    def test_broadcast_fans_out_to_room_members_except_sender(self, ai_dir):
+        hub.action_init_session(ai_dir, "cc", "room-broadcast")
+        hub.action_init_session(ai_dir, "gc", "room-broadcast")
+        hub.action_init_session(ai_dir, "ag", "room-broadcast")
+        hub.action_broadcast(ai_dir, "cc", "notice")
+        mb = json.loads((ai_dir / "mailbox.json").read_text("utf-8"))
+        assert [m["to"] for m in mb["messages"]] == ["gc", "ag"]
+        assert len({m["thread_id"] for m in mb["messages"]}) == 1
+
+    def test_broadcast_large_payload_uses_single_shared_file(self, ai_dir, monkeypatch):
+        monkeypatch.setattr(hub, "_LARGE_PAYLOAD_THRESHOLD", 10)
+        hub.action_init_session(ai_dir, "cc", "room-broadcast")
+        hub.action_init_session(ai_dir, "gc", "room-broadcast")
+        hub.action_init_session(ai_dir, "ag", "room-broadcast")
+        hub.action_broadcast(ai_dir, "cc", "x" * 50)
+        payloads = list((ai_dir / "payloads").glob("*.json"))
+        assert len(payloads) == 1
+        mb = json.loads((ai_dir / "mailbox.json").read_text("utf-8"))
+        assert {m["content"] for m in mb["messages"]} == {f"payload://{payloads[0].stem}"}
+
+    def test_send_prunes_orphaned_payload_files(self, ai_dir, monkeypatch):
+        monkeypatch.setattr(hub, "_load_lifecycle_policy", lambda: {
+            "messaging": {
+                "send": {
+                    "default_priority": "INFO",
+                    "ttl_hours_by_priority": {"INFO": 4},
+                }
+            }
+        })
+        payload_dir = ai_dir / "payloads"
+        payload_dir.mkdir()
+        (payload_dir / "p-old.json").write_text("{}", encoding="utf-8")
+        (ai_dir / "mailbox.json").write_text(json.dumps({
+            "messages": [{
+                "id": 1,
+                "thread_id": "t-old",
+                "type": "PAYLOAD_REF",
+                "from": "cc",
+                "to": "gc",
+                "content": "payload://p-old",
+                "status": "unread",
+                "timestamp": "2000-01-01T00:00:00",
+                "priority": "INFO",
+            }],
+            "unread_count": 1,
+        }), encoding="utf-8")
+        hub.action_send(ai_dir, "cc", "gc", "fresh")
+        assert not (payload_dir / "p-old.json").exists()
 
 
 # ─── §P-3 만장일치 협의 프로토콜 ─────────────────────────────
@@ -411,3 +623,190 @@ class TestNodeManagement:
         out = capsys.readouterr().out
         assert "REGISTER" in out
         assert "n2" in out
+
+
+class TestLifecycleActions:
+    def test_peer_quarantine_and_recover_update_health_and_handoff(self, ai_dir, tmp_path, monkeypatch):
+        peer_dir = tmp_path / "gemini"
+        monkeypatch.setattr(hub, "_peer_sys_dir", lambda peer_id: peer_dir)
+        hub.action_init_session(ai_dir, "gc", "room-life")
+        hub.action_peer_quarantine(ai_dir, "gc", "quota")
+
+        health = json.loads((peer_dir / "health.json").read_text("utf-8"))
+        assert health["context_health"]["status"] == "RED"
+        assert health["availability"]["gate_open"] is False
+        assert health["availability"]["quarantined"] is True
+
+        handoff = (ai_dir / "sessions" / "room-life" / "handoff.md").read_text("utf-8")
+        assert "quarantined" in handoff
+
+        hub.action_peer_recover(ai_dir, "gc", "manual")
+        health = json.loads((peer_dir / "health.json").read_text("utf-8"))
+        assert health["context_health"]["status"] == "GREEN"
+        assert health["availability"]["gate_open"] is True
+        assert health["availability"]["quarantined"] is False
+
+    def test_new_topic_archives_and_carries_key_decisions(self, ai_dir):
+        hub.action_init_session(ai_dir, "cc", "room-old")
+        hub.action_init_session(ai_dir, "gc", "room-old")
+        old_dir = ai_dir / "sessions" / "room-old"
+        hub._write_handoff(old_dir, {
+            "GOAL": ["old goal"],
+            "RECENT_COMPLETED": ["done"],
+            "PENDING_ISSUES": ["old issue"],
+            "KEY_DECISIONS": ["keep this"],
+            "CONSENSUS_HISTORY": [],
+            "ACTIVE_THREADS": ["old active"],
+        })
+
+        hub.action_new_topic(ai_dir, "new mission")
+        state = json.loads((ai_dir / "state.json").read_text("utf-8"))
+        assert state["room_id"] != "room-old"
+        assert set(state["members"].keys()) == {"cc", "gc"}
+        assert state["mission"] == "new mission"
+
+        handoff = (ai_dir / "sessions" / state["room_id"] / "handoff.md").read_text("utf-8")
+        assert "new mission" in handoff
+        assert "keep this" in handoff
+        assert "old issue" not in handoff
+        archives = list((ai_dir.parent / "_archive" / "rooms").glob("*room-old_handoff.md"))
+        assert archives
+
+    def test_clear_room_archives_mailbox_and_resets_state(self, ai_dir):
+        hub.action_init_session(ai_dir, "cc", "room-clear")
+        hub.action_init_session(ai_dir, "ag", "room-clear")
+        hub.action_send(ai_dir, "cc", "ag", "queued")
+
+        hub.action_clear_room(ai_dir, "fresh start")
+        state = json.loads((ai_dir / "state.json").read_text("utf-8"))
+        assert state["room_id"] != "room-clear"
+        assert set(state["members"].keys()) == {"cc", "ag"}
+        assert state["phase"] == "clear-room"
+        mailbox = json.loads((ai_dir / "mailbox.json").read_text("utf-8"))
+        assert mailbox == {"messages": [], "unread_count": 0}
+        archives = list((ai_dir.parent / "_archive" / "mailbox").glob("*room-clear_mailbox.json"))
+        assert archives
+
+
+class TestOperationalGuard:
+    def test_preflight_blocks_bash_heredoc_in_powershell(self):
+        result = hub._classify_command("python <<'PY'\nprint('x')\nPY", "powershell")
+        assert result["classification"] == "blocked_shell_mismatch"
+        assert result["allowed"] is False
+        assert result["matched_rule"] == "bash_heredoc"
+
+    def test_preflight_unknown_requires_classification(self):
+        result = hub._classify_command("custom-tool --maybe-write", "powershell")
+        assert result["classification"] == "requires_classification"
+        assert result["allowed"] is False
+
+    def test_preflight_allows_read_only_rg(self):
+        result = hub._classify_command("rg -n \"pattern\" _sys", "powershell")
+        assert result["classification"] == "read_only"
+        assert result["allowed"] is True
+
+    def test_guard_blocks_mutating_action_in_no_code_phase(self, ai_dir):
+        state = json.loads((ai_dir / "state.json").read_text("utf-8"))
+        state["phase"] = "discussion_no_code"
+        (ai_dir / "state.json").write_text(json.dumps(state), encoding="utf-8")
+        with pytest.raises(SystemExit) as exc:
+            hub._guard_action(ai_dir, "send")
+        assert exc.value.code == 3
+
+    def test_guard_allows_tier0_force(self, ai_dir):
+        state = json.loads((ai_dir / "state.json").read_text("utf-8"))
+        state["phase"] = "discussion_no_code"
+        (ai_dir / "state.json").write_text(json.dumps(state), encoding="utf-8")
+        hub._guard_action(ai_dir, "send", force_tier0=True)
+
+    def test_guard_allows_recovery_action_in_no_code_phase(self, ai_dir):
+        state = json.loads((ai_dir / "state.json").read_text("utf-8"))
+        state["phase"] = "discussion_no_code"
+        (ai_dir / "state.json").write_text(json.dumps(state), encoding="utf-8")
+        hub._guard_action(ai_dir, "peer-recover")
+
+    def test_context_hash_normalizes_line_endings(self, ai_dir):
+        hub.action_init_session(ai_dir, "cc", "room-hash")
+        handoff = ai_dir / "sessions" / "room-hash" / "handoff.md"
+        handoff.write_bytes(b"A\r\nB\r\n")
+        first = hub._compute_context_hash(ai_dir)
+        handoff.write_bytes(b"A\nB\n")
+        second = hub._compute_context_hash(ai_dir)
+        assert first == second
+
+    def test_context_ack_writes_peer_hash(self, ai_dir):
+        hub.action_init_session(ai_dir, "cc", "room-ack")
+        hub.action_context_ack(ai_dir, "gc", "abc123")
+        data = json.loads((ai_dir / "context_ack.json").read_text("utf-8"))
+        assert data["gc"]["hash"] == "abc123"
+        assert data["gc"]["room_id"] == "room-ack"
+
+    def test_report_error_quarantines_after_threshold(self, ai_dir, monkeypatch):
+        quarantined = []
+        monkeypatch.setattr(hub, "_operational_guard_cfg", lambda: {
+            "error_memory": {
+                "path": "operational_errors.jsonl",
+                "quarantine_after": 2,
+                "manual_recovery_only": True,
+            }
+        })
+        monkeypatch.setattr(hub, "_read_peer_health", lambda peer: (None, {}))
+        monkeypatch.setattr(hub, "_write_peer_health", lambda peer, data, root: quarantined.append((peer, data)))
+        hub.action_report_error(ai_dir, "gc", "bash_heredoc", "bad shell")
+        hub.action_report_error(ai_dir, "gc", "bash_heredoc", "bad shell")
+        assert quarantined[-1][0] == "gc"
+        assert quarantined[-1][1]["availability"]["quarantined"] is True
+
+    def test_collab_rate_guard_blocks_mutation_without_finalized_consensus(self, ai_dir):
+        with pytest.raises(SystemExit) as exc:
+            hub._guard_action(ai_dir, "update-status")
+        assert exc.value.code == 3
+
+    def test_collab_rate_guard_allows_after_finalized_consensus(self, ai_dir):
+        (ai_dir / "consensus" / "r-ok.json").write_text(json.dumps({
+            "round_id": "r-ok",
+            "status": "finalized",
+            "subject": "approve mutation",
+        }), encoding="utf-8")
+        hub._guard_action(ai_dir, "update-status")
+
+
+class TestEnhancedCollaboration:
+    def test_ask_quiet_output_file_writes_response(self, ai_dir, tmp_path, monkeypatch, capsys):
+        monkeypatch.setattr(hub, "_runtime_cfg", lambda: {"ask_default_timeout_sec": 7})
+        mock_result = MagicMock()
+        mock_result.stdout = b"model response"
+        mock_result.stderr = b""
+        mock_result.returncode = 0
+        out = tmp_path / "reply.md"
+        with patch("shutil.which", return_value="/usr/bin/gemini"), \
+             patch("subprocess.run", return_value=mock_result) as mock_run:
+            hub.action_ask("gc", "hello", None, 0, ai_dir, quiet=True, output_file=str(out))
+        assert out.read_text("utf-8") == "model response"
+        assert capsys.readouterr().out == ""
+        assert mock_run.call_args.kwargs["timeout"] == 7
+
+    def test_feedback_add_list_resolve(self, ai_dir, capsys):
+        hub.action_feedback_add(ai_dir, "cx", "runtime", "high", "Need quiet mode", "details")
+        data = [json.loads(line) for line in (ai_dir / "feedback.jsonl").read_text("utf-8").splitlines()]
+        fid = data[0]["id"]
+        assert data[0]["status"] == "open"
+        hub.action_feedback_list(ai_dir)
+        assert "Need quiet mode" in capsys.readouterr().out
+        hub.action_feedback_resolve(ai_dir, fid, "done", "cc")
+        data = [json.loads(line) for line in (ai_dir / "feedback.jsonl").read_text("utf-8").splitlines()]
+        assert data[0]["status"] == "done"
+        assert data[0]["owner"] == "cc"
+
+    def test_artifact_claim_register_and_finalize(self, ai_dir, tmp_path, capsys):
+        result = tmp_path / "Result.md"
+        result.write_text("final", encoding="utf-8")
+        hub.action_artifact_claim(ai_dir, "Result.md", "gc")
+        hub.action_artifact_status(ai_dir, "Result.md", "cc", ".ai/artifacts/Result.cc.md")
+        hub.action_artifact_finalize(ai_dir, "Result.md", str(result))
+        data = json.loads((ai_dir / "artifacts.json").read_text("utf-8"))
+        item = data["Result.md"]
+        assert item["owner"] == "gc"
+        assert item["drafts"]["cc"] == ".ai/artifacts/Result.cc.md"
+        assert item["status"] == "finalized"
+        assert item["hash"].startswith("sha256:")

@@ -1,216 +1,647 @@
 {
-    "_version":  "1.0",
-    "_protocol_version":  "4.0",
-    "_help":  "Universal multi-peer collaboration protocol config. Single source of truth. All peers read this. No hardcoding.",
-    "_updated":  "2026-06-11",
-    "_peers_voted":  [
-                         "cc",
-                         "gc",
-                         "ag",
-                         "cx"
-                     ],
-    "collab_rate":  {
-                        "current":  10,
-                        "review_interval_min":  5,
-                        "last_review_ts":  null,
-                        "risk_table":  {
-                                           "readonly":  0,
-                                           "workspace":  3,
-                                           "sys_single":  5,
-                                           "sys_multi":  8,
-                                           "constitutional":  10
-                                       }
-                    },
-    "health":  {
-                   "thresholds":  {
-                                      "claude":  {
-                                                     "green_mb":  0.6,
-                                                     "yellow_mb":  1.2,
-                                                     "unit":  "jsonl_mb"
-                                                 },
-                                      "gemini":  {
-                                                     "green_mb":  0.6,
-                                                     "yellow_mb":  1.2,
-                                                     "unit":  "jsonl_mb"
-                                                 },
-                                      "antigravity":  {
-                                                          "green_mb":  0.6,
-                                                          "yellow_mb":  1.2,
-                                                          "unit":  "jsonl_mb"
-                                                      },
-                                      "codex":  {
-                                                    "green_mb":  0.6,
-                                                    "yellow_mb":  1.2,
-                                                    "unit":  "jsonl_mb"
-                                                }
-                                  },
-                   "failure_warn":  3,
-                   "failure_error":  5
-               },
-    "session":  {
-                    "handoff_staleness_hours":  24,
-                    "resume_window_hours":  4,
-                    "context_fill_sections":  [
-                                                  "GOAL",
-                                                  "PENDING_ISSUES",
-                                                  "KEY_DECISIONS",
-                                                  "ACTIVE_THREADS"
-                                              ],
-                    "full_sections":  [
-                                          "GOAL",
-                                          "RECENT_COMPLETED",
-                                          "PENDING_ISSUES",
-                                          "KEY_DECISIONS",
-                                          "CONSENSUS_HISTORY",
-                                          "ACTIVE_THREADS"
-                                      ]
+    "_version": "1.1",
+    "_protocol_version": "4.1",
+    "_help": "Universal multi-peer collaboration protocol config. Single source of truth. All peers read this. No hardcoding.",
+    "_updated": "2026-06-12",
+    "_peers_voted": [
+        "cc",
+        "ca",
+        "gc",
+        "ag",
+        "cx"
+    ],
+    "collab_rate": {
+        "current": 10,
+        "review_interval_min": 5,
+        "last_review_ts": null,
+        "risk_table": {
+            "readonly": 0,
+            "workspace": 3,
+            "sys_single": 5,
+            "sys_multi": 8,
+            "constitutional": 10
+        },
+        "r10_semantics": {
+            "requires_unanimous": true,
+            "requires_final_call": true,
+            "offline_abstain_policy": "fail_to_human",
+            "governed_decisions": [
+                "implementation",
+                "protocol_edits",
+                "config_edits"
+            ],
+            "unanimity_requirement": "100% of registered voters must explicitly agree",
+            "abstain_handling": "Offline auto-abstain cannot satisfy unanimity; human override/downgrade is required",
+            "final_call_check": "Mandatory Final Call with explicit ACKs required from all peers before execution",
+            "local_orientation_exemption": "COLLAB_RATE controls governed decisions and side-effecting actions; zero-token local orientation is exempt"
+        },
+        "zero_token_allowlist": [
+            "local_observe",
+            "local_read",
+            "local_validate",
+            "local_classify",
+            "dry_check"
+        ],
+        "operation_classes": {
+            "observe": "exempt",
+            "read": "exempt",
+            "validate": "exempt",
+            "classify": "exempt",
+            "ask": "pre_consensus",
+            "test": "requires_classification",
+            "write": "governed",
+            "execute": "governed"
+        },
+        "effect_classes": {
+            "read_only": {
+                "side_effects": "none",
+                "exempt_at_all_rates": true
+            },
+            "declared_dry_validate": {
+                "side_effects": "none",
+                "exempt_at_all_rates": true,
+                "requires_schema_validated_connector": true
+            },
+            "local_temp_write": {
+                "side_effects": "local_temp_only",
+                "exempt_at_all_rates": false
+            },
+            "governance_write": {
+                "side_effects": "policy_or_handoff_state",
+                "exempt_at_all_rates": false
+            },
+            "workspace_write": {
+                "side_effects": "write_or_execute",
+                "exempt_at_all_rates": false
+            },
+            "process_mutation": {
+                "side_effects": "process_or_external",
+                "exempt_at_all_rates": false
+            },
+            "external_io": {
+                "side_effects": "network_or_external_resource",
+                "exempt_at_all_rates": false
+            }
+        },
+        "connector_declaration": {
+            "dry_declaration_authority": "schema_validated_connector_metadata",
+            "runtime_assertion_rejected": true,
+            "dry_requires": {
+                "effect_class": "declared_dry_validate",
+                "also_allows_effect_class": "read_only",
+                "idempotent": true,
+                "external_io": "none_or_local_only",
+                "workspace_writes": false,
+                "path_scope_declared": true
+            },
+            "unknown_or_missing_metadata_policy": "requires_classification"
+        },
+        "action_policy": {
+            "local_observe": {
+                "description": "Read file/directory contents, inspect environment state",
+                "collab_rate_override": 0
+            },
+            "local_validate": {
+                "description": "Schema validation, declared dry checks (e.g. check-health, check-deps)",
+                "collab_rate_override": 0
+            },
+            "local_classify": {
+                "description": "Categorize risk level and route tasks without semantic action",
+                "collab_rate_override": 0
+            },
+            "peer_ask_non_binding": {
+                "description": "Pre-consensus gathering of facts, info, or objections",
+                "collab_rate_override": 0
+            },
+            "peer_ask_binding": {
+                "description": "Voting/approving or establishing binding consensus decisions",
+                "requires_consensus": true
+            },
+            "run_test_or_command": {
+                "description": "Any execution command or test suite run (defaults to governed/requires classification)",
+                "requires_classification": true
+            }
+        }
+    },
+    "health": {
+        "thresholds": {
+            "claude": {
+                "green_mb": 0.6,
+                "yellow_mb": 1.2,
+                "unit": "jsonl_mb"
+            },
+            "gemini": {
+                "green_mb": 0.6,
+                "yellow_mb": 1.2,
+                "unit": "jsonl_mb"
+            },
+            "antigravity": {
+                "green_mb": 0.6,
+                "yellow_mb": 1.2,
+                "unit": "jsonl_mb"
+            },
+            "codex": {
+                "green_mb": 0.6,
+                "yellow_mb": 1.2,
+                "unit": "jsonl_mb"
+            }
+        },
+        "failure_warn": 3,
+        "failure_error": 5
+    },
+    "session": {
+        "handoff_staleness_hours": 24,
+        "resume_window_hours": 4,
+        "context_fill_sections": [
+            "GOAL",
+            "PENDING_ISSUES",
+            "KEY_DECISIONS",
+            "ACTIVE_THREADS"
+        ],
+        "full_sections": [
+            "GOAL",
+            "RECENT_COMPLETED",
+            "PENDING_ISSUES",
+            "KEY_DECISIONS",
+            "CONSENSUS_HISTORY",
+            "ACTIVE_THREADS"
+        ]
+    },
+    "consensus": {
+        "r10_voters": [
+            "cc",
+            "ca",
+            "gc",
+            "ag",
+            "cx"
+        ],
+        "default_voters": [
+            "cc",
+            "gc"
+        ],
+        "default_proposer": "cc",
+        "timeout_minutes": 30,
+        "offline_auto_abstain_minutes": 30,
+        "tiebreak_rule": "domain_weight_recommend_to_human",
+        "r10_requires_finalized_for": [
+            "governed_decisions",
+            "side_effecting_implementation",
+            "protocol_edits",
+            "config_edits"
+        ]
+    },
+    "workload": {
+        "capability_registry": {
+            "cc": [
+                "architecture",
+                "implementation",
+                "_sys-scripts",
+                "orchestration",
+                "persistent-memory"
+            ],
+            "ca": [
+                "testing",
+                "verification",
+                "cross-check",
+                "targeted-implementation"
+            ],
+            "gc": [
+                "documentation",
+                "large-corpus-analysis",
+                "axis-d",
+                "global-dependency-mapping",
+                "zero-shot-tool-integration"
+            ],
+            "ag": [
+                "shell-scripts",
+                "quick-cli",
+                "file-ops",
+                "system-orchestration",
+                "real-time-feedback-loop",
+                "image-generation"
+            ],
+            "cx": [
+                "code-generation",
+                "refactoring",
+                "focused-implementation",
+                "code-review",
+                "bug-fixing",
+                "test-authoring",
+                "patch-planning",
+                "repo-local-reasoning",
+                "cli-tooling",
+                "developer-workflow"
+            ]
+        },
+        "fill_depth_multiplier": {
+            "gc": 3,
+            "cc": 1,
+            "ca": 1,
+            "ag": 1,
+            "cx": 1
+        },
+        "routing_rules": [
+            {
+                "task_type": "doc",
+                "preferred": [
+                    "gc",
+                    "cc"
+                ],
+                "fallback": "cc"
+            },
+            {
+                "task_type": "script",
+                "preferred": [
+                    "cc",
+                    "ag"
+                ],
+                "fallback": "cc"
+            },
+            {
+                "task_type": "verify",
+                "preferred": [
+                    "ca"
+                ],
+                "fallback": "cc"
+            },
+            {
+                "task_type": "code",
+                "preferred": [
+                    "cx",
+                    "cc"
+                ],
+                "fallback": "cc"
+            },
+            {
+                "task_type": "code-review",
+                "preferred": [
+                    "cx",
+                    "ca"
+                ],
+                "fallback": "cc"
+            },
+            {
+                "task_type": "large-corpus",
+                "preferred": [
+                    "gc"
+                ],
+                "fallback": "cc"
+            },
+            {
+                "task_type": "shell-ops",
+                "preferred": [
+                    "ag",
+                    "cc"
+                ],
+                "fallback": "cc"
+            }
+        ],
+        "user_communication": {
+            "rule": "any_peer_equal",
+            "note": "Any peer may communicate directly with the Human. No fixed coordinator. Domain expertise guides who leads.",
+            "domain_leads": {
+                "code_review_impl": "cx",
+                "large_doc_analysis": "gc",
+                "shell_interactive": "ag",
+                "architecture_session": "cc",
+                "verification": "ca"
+            }
+        }
+    },
+    "active_constraints": {
+        "forbidden_paths": [],
+        "require_consensus_for": [
+            "_sys/ changes",
+            "PROTOCOL.md edits",
+            "peers.json edits",
+            "protocol.json edits"
+        ],
+        "current_collab_rate": 10,
+        "ipc_query_file_naming": "{peer_id}-{YYYYMMDDHHMMSS}-{rand4}.txt"
+    },
+    "runtime": {
+        "ask_default_timeout_sec": 180,
+        "pty_lease_sec": 300,
+        "max_inline_response_chars": 4000,
+        "quiet_default": false,
+        "output_file_policy": {
+            "enabled": true,
+            "portable_paths_only": true,
+            "default_dir": ".ai/out"
+        }
+    },
+    "communication_policy": {
+        "unbounded_semantic_discussion": true,
+        "bounded_transport_required": true,
+        "heartbeat_required_for_long_running": true,
+        "heartbeat_sec": 60,
+        "lease_timeout_sec": 300,
+        "large_content_strategy": "file_ref",
+        "out_of_band_direct_writes": {
+            "enforceable_by_hub": false,
+            "policy": "non_compliant_for_governed_artifacts_without_artifact_workflow"
+        }
+    },
+    "feedback_loop": {
+        "enabled": true,
+        "path": "feedback.jsonl",
+        "statuses": ["open", "accepted", "in_progress", "done", "rejected"],
+        "categories": ["protocol", "runtime", "test", "doc", "hygiene", "model-routing", "artifact", "other"],
+        "schema_version": 1
+    },
+    "artifact_workflow": {
+        "enabled": true,
+        "path": "artifacts.json",
+        "default_mode": "single_owner_merge",
+        "statuses": ["claimed", "draft", "review", "finalized", "abandoned"],
+        "draft_dir": ".ai/artifacts",
+        "out_of_band_direct_writes": "not_enforceable_by_hub"
+    },
+    "model_profiles": {
+        "strategy": "virtual_nodes_preferred",
+        "dynamic_model_arg_supported": false,
+        "profile_to_node_examples": {
+            "gemini_fast": "gc-fast",
+            "gemini_deep": "gc-deep",
+            "codex_review": "cx-review"
+        },
+        "note": "Define model-specific virtual nodes in orchestration.json with explicit invoke_args. hub ask currently selects nodes, not arbitrary runtime model strings."
+    },
+    "operational_guard": {
+        "enabled": true,
+        "collab_rate_guard": {
+            "enabled": true,
+            "threshold": 10,
+            "require_finalized_consensus": true,
+            "exempt_actions": [
+                "ask",
+                "check",
+                "status",
+                "check-gate",
+                "consensus-propose",
+                "consensus-vote",
+                "consensus-check",
+                "consensus-sweep",
+                "list-nodes",
+                "health-check",
+                "peer-status",
+                "context-fill",
+                "preflight",
+                "context-hash",
+                "context-ack",
+                "peer-recover",
+                "feedback-list",
+                "artifact-status",
+                "init-session",
+                "end-session",
+                "send",
+                "broadcast",
+                "health-update",
+                "report-error"
+            ]
+        },
+        "default_shell": "powershell",
+        "no_code_phases": [
+            "discussion",
+            "discussion_no_code",
+            "design_review_no_code",
+            "review_no_code",
+            "planning_no_code"
+        ],
+        "mutating_hub_actions": [
+            "init-session",
+            "end-session",
+            "send",
+            "broadcast",
+            "append-log",
+            "archive-file",
+            "update-status",
+            "consensus-propose",
+            "consensus-vote",
+            "consensus-sweep",
+            "register-node",
+            "health-update",
+            "checkpoint",
+            "peer-quarantine",
+            "new-topic",
+            "clear-room",
+            "feedback-add",
+            "feedback-resolve",
+            "artifact-claim",
+            "artifact-finalize"
+        ],
+        "recovery_hub_actions": [
+            "peer-recover",
+            "report-error",
+            "context-ack"
+        ],
+        "read_only_hub_actions": [
+            "mark-read",
+            "check",
+            "status",
+            "check-gate",
+            "consensus-check",
+            "list-nodes",
+            "health-check",
+            "peer-status",
+            "context-fill",
+            "preflight",
+            "context-hash",
+            "context-ack",
+            "feedback-list",
+            "artifact-status"
+        ],
+        "phase_action_matrix": {
+            "default": {
+                "mutating_hub_actions": "allow",
+                "read_only_hub_actions": "allow",
+                "recovery_hub_actions": "allow",
+                "unknown_actions": "requires_classification"
+            },
+            "no_code": {
+                "mutating_hub_actions": "block",
+                "read_only_hub_actions": "allow",
+                "recovery_hub_actions": "allow",
+                "unknown_actions": "requires_classification"
+            }
+        },
+        "allow_missing_phase": true,
+        "missing_phase_policy": "allow_with_warning",
+        "force_tier0_flag": "--force-tier0",
+        "preflight": {
+            "unknown_policy": "requires_classification",
+            "shell_rules": {
+                "powershell": {
+                    "blocked_patterns": [
+                        {
+                            "id": "bash_heredoc",
+                            "pattern": "<<\\s*['\\\"]?\\w+['\\\"]?",
+                            "reason": "Bash heredoc is not valid PowerShell"
+                        },
+                        {
+                            "id": "bash_export",
+                            "pattern": "(^|\\s)export\\s+\\w+=",
+                            "reason": "Use $env:NAME='value' in PowerShell"
+                        },
+                        {
+                            "id": "dev_null",
+                            "pattern": "/dev/null",
+                            "reason": "Use $null or Out-Null in PowerShell"
+                        },
+                        {
+                            "id": "source_activate",
+                            "pattern": "(^|\\s)source\\s+\\S+/bin/activate",
+                            "reason": "Use Windows venv activation or direct python"
+                        }
+                    ]
+                }
+            },
+            "mutating_patterns": [
+                {
+                    "id": "delete_command",
+                    "pattern": "\\b(Remove-Item|rm|del)\\b",
+                    "reason": "delete command"
                 },
-    "consensus":  {
-                      "r10_voters":  [
-                                         "cc",
-                                         "ca",
-                                         "gc",
-                                         "ag",
-                                         "cx"
-                                     ],
-                      "default_voters":  [
-                                             "cc",
-                                             "gc"
-                                         ],
-                      "default_proposer":  "cc",
-                      "timeout_minutes":  30,
-                      "offline_auto_abstain_minutes":  30,
-                      "tiebreak_rule":  "domain_weight_recommend_to_human"
-                  },
-    "workload":  {
-                     "capability_registry":  {
-                                                 "cc":  [
-                                                            "architecture",
-                                                            "implementation",
-                                                            "_sys-scripts",
-                                                            "orchestration",
-                                                            "persistent-memory"
-                                                        ],
-                                                 "ca":  [
-                                                            "testing",
-                                                            "verification",
-                                                            "cross-check",
-                                                            "targeted-implementation"
-                                                        ],
-                                                 "gc":  [
-                                                            "documentation",
-                                                            "large-corpus-analysis",
-                                                            "axis-d",
-                                                            "global-dependency-mapping",
-                                                            "zero-shot-tool-integration"
-                                                        ],
-                                                 "ag":  [
-                                                            "shell-scripts",
-                                                            "quick-cli",
-                                                            "file-ops",
-                                                            "system-orchestration",
-                                                            "real-time-feedback-loop",
-                                                            "image-generation"
-                                                        ],
-                                                 "cx":  [
-                                                            "code-generation",
-                                                            "refactoring",
-                                                            "focused-implementation",
-                                                            "code-review",
-                                                            "bug-fixing",
-                                                            "test-authoring",
-                                                            "patch-planning",
-                                                            "repo-local-reasoning",
-                                                            "cli-tooling",
-                                                            "developer-workflow"
-                                                        ]
-                                             },
-                     "fill_depth_multiplier":  {
-                                                   "gc":  3,
-                                                   "cc":  1,
-                                                   "ca":  1,
-                                                   "ag":  1,
-                                                   "cx":  1
-                                               },
-                     "routing_rules":  [
-                                           {
-                                               "task_type":  "doc",
-                                               "preferred":  [
-                                                                 "gc",
-                                                                 "cc"
-                                                             ],
-                                               "fallback":  "cc"
-                                           },
-                                           {
-                                               "task_type":  "script",
-                                               "preferred":  [
-                                                                 "cc",
-                                                                 "ag"
-                                                             ],
-                                               "fallback":  "cc"
-                                           },
-                                           {
-                                               "task_type":  "verify",
-                                               "preferred":  [
-                                                                 "ca"
-                                                             ],
-                                               "fallback":  "cc"
-                                           },
-                                           {
-                                               "task_type":  "code",
-                                               "preferred":  [
-                                                                 "cx",
-                                                                 "cc"
-                                                             ],
-                                               "fallback":  "cc"
-                                           },
-                                           {
-                                               "task_type":  "code-review",
-                                               "preferred":  [
-                                                                 "cx",
-                                                                 "ca"
-                                                             ],
-                                               "fallback":  "cc"
-                                           },
-                                           {
-                                               "task_type":  "large-corpus",
-                                               "preferred":  [
-                                                                 "gc"
-                                                             ],
-                                               "fallback":  "cc"
-                                           },
-                                           {
-                                               "task_type":  "shell-ops",
-                                               "preferred":  [
-                                                                 "ag",
-                                                                 "cc"
-                                                             ],
-                                               "fallback":  "cc"
-                                           }
-                                       ],
-                     "user_communication":  {
-                                                "rule":  "any_peer_equal",
-                                                "note":  "Any peer may communicate directly with the Human. No fixed coordinator. Domain expertise guides who leads.",
-                                                "domain_leads":  {
-                                                                     "code_review_impl":  "cx",
-                                                                     "large_doc_analysis":  "gc",
-                                                                     "shell_interactive":  "ag",
-                                                                     "architecture_session":  "cc",
-                                                                     "verification":  "ca"
-                                                                 }
-                                            }
-                 },
-    "active_constraints":  {
-                               "forbidden_paths":  [
-
-                                                   ],
-                               "require_consensus_for":  [
-                                                             "_sys/ changes",
-                                                             "PROTOCOL.md edits",
-                                                             "peers.json edits",
-                                                             "protocol.json edits"
-                                                         ],
-                               "current_collab_rate":  10,
-                               "ipc_query_file_naming":  "{peer_id}-{YYYYMMDDHHMMSS}-{rand4}.txt"
-                           }
+                {
+                    "id": "move_copy_command",
+                    "pattern": "\\b(Move-Item|mv|copy|Copy-Item)\\b",
+                    "reason": "file move/copy command"
+                },
+                {
+                    "id": "dependency_install",
+                    "pattern": "\\b(npm|pip|pnpm|yarn)\\s+(install|add)\\b",
+                    "reason": "dependency install"
+                },
+                {
+                    "id": "git_mutation",
+                    "pattern": "\\bgit\\s+(commit|push|reset|checkout|clean|merge|rebase)\\b",
+                    "reason": "git mutation"
+                },
+                {
+                    "id": "redirect_write",
+                    "pattern": "(^|\\s)(>|>>)(\\s|$)",
+                    "reason": "shell redirection write"
+                }
+            ],
+            "read_only_patterns": [
+                {
+                    "id": "directory_list",
+                    "pattern": "^(Get-ChildItem|dir|ls)\\b"
+                },
+                {
+                    "id": "ripgrep",
+                    "pattern": "^rg\\b"
+                },
+                {
+                    "id": "git_read",
+                    "pattern": "^git\\s+(status|diff|show|log)\\b"
+                },
+                {
+                    "id": "pytest",
+                    "pattern": "^python\\s+-m\\s+pytest\\b"
+                }
+            ]
+        },
+        "context_ack": {
+            "enabled": true,
+            "hash_algorithm": "sha256",
+            "normalize_newlines": true,
+            "sources": [
+                "state.json",
+                "sessions/{room_id}/handoff.md",
+                "../_sys/ai/protocol.json"
+            ]
+        },
+        "error_memory": {
+            "path": "../_sys/data/operational_errors.jsonl",
+            "quarantine_after": 3,
+            "manual_recovery_only": true
+        }
+    },
+    "connector_mappings": {
+        "verify_health": {
+            "intent": "verify_health",
+            "connector": "_sys/cli/msg.bat health-check",
+            "operation_class": "validate",
+            "effect_class": "declared_dry_validate",
+            "action_policy": "exempt",
+            "idempotent": true,
+            "external_io": "none",
+            "cache_policy": "none",
+            "path_scope": "_sys health files",
+            "path_safety": {
+                "portable_only": true,
+                "allow_absolute_paths": false,
+                "allow_unc_paths": false
+            },
+            "exit_code_mapping": {
+                "0": "ok",
+                "1": "warning",
+                "2": "blocked"
+            },
+            "exempt": true
+        },
+        "check_deps": {
+            "intent": "check_deps",
+            "connector": "_sys/checks/check-deps.bat",
+            "operation_class": "validate",
+            "effect_class": "declared_dry_validate",
+            "action_policy": "exempt",
+            "idempotent": true,
+            "external_io": "none",
+            "cache_policy": "none",
+            "path_scope": "_sys dependency metadata",
+            "path_safety": {
+                "portable_only": true,
+                "allow_absolute_paths": false,
+                "allow_unc_paths": false
+            },
+            "exit_code_mapping": {
+                "0": "ok",
+                "1": "warning",
+                "2": "blocked"
+            },
+            "exempt": true
+        },
+        "record_handoff": {
+            "intent": "record_handoff",
+            "connector": "_sys/cli/msg.bat checkpoint",
+            "operation_class": "record",
+            "effect_class": "governance_write",
+            "action_policy": "requires_finalized_consensus",
+            "idempotent": true,
+            "external_io": "none",
+            "cache_policy": "writes_logs",
+            "path_safety": {
+                "portable_only": true,
+                "allow_absolute_paths": false,
+                "allow_unc_paths": false
+            },
+            "exit_code_mapping": {
+                "0": "recorded",
+                "1": "failed"
+            },
+            "note": "Part of consensus connector; governed under consensus finalize rules"
+        },
+        "consensus_finalize": {
+            "intent": "consensus_finalize",
+            "connector": "_sys/cli/msg.bat consensus-vote",
+            "operation_class": "decide",
+            "effect_class": "governance_write",
+            "action_policy": "requires_finalized_consensus",
+            "idempotent": true,
+            "external_io": "none",
+            "cache_policy": "writes_logs",
+            "path_safety": {
+                "portable_only": true,
+                "allow_absolute_paths": false,
+                "allow_unc_paths": false
+            },
+            "exit_code_mapping": {
+                "0": "recorded",
+                "1": "failed"
+            },
+            "note": "Performs transition to finalized state and commits to handoff.md"
+        }
+    }
 }

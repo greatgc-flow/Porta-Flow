@@ -1,14 +1,16 @@
 """
-hub.py — Portable Dev Environment AI 협업 허브 (P2P v3.1)
-액션: Write 7개 (filelock) + Read 2개 (Lock-Free) + ask 1개 (동기) + consensus 3개 + node 2개
+hub.py — Portable Dev Environment AI 협업 허브 (Protocol v4.1)
+5-peer: cc, ca, gc, ag, cx — config-driven via orchestration.json + lifecycle_policy.json
 
-P2P v3: N-Way Room 세션 기반 평등 권등 구조 구현.
-기존 Pair(c-g) 구조 폐기 -> room-{uuid} 및 members 리스트 기반 동적 협업.
+v4.1: Layered policy (General/Specific/Connectors/Ambiguity). lifecycle_policy.json driven.
+v4.0: N-Way Room + health-update/check/peer-status/context-fill/checkpoint actions.
 v3.1: 실시간 협업 가시성 로그 (_log_p2p) 추가.
+v3.0: N-Way Room 세션 기반 평등 권등 구조 구현.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -63,16 +65,32 @@ def _load_protocol_cfg() -> dict:
         return {}
 
 
+def _load_lifecycle_policy() -> dict:
+    """Load config-driven peer lifecycle policy."""
+    path = Path(__file__).parent.parent / "ai" / "lifecycle_policy.json"
+    try:
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    except Exception:
+        return {}
+
+
+def _node_to_peer_map() -> dict:
+    policy = _load_lifecycle_policy()
+    configured = policy.get("identity", {}).get("node_to_peer", {})
+    if configured:
+        return configured
+    return {"cc": "claude", "ca": "claude", "gc": "gemini", "ag": "antigravity", "cx": "codex"}
+
+
 def _peer_sys_dir(peer_id: str) -> Path:
     """peers.json의 sys_subdir로 _sys/{subdir}/ 해석 — 하드코딩 없음.
 
     node_id(cc, ca, gc, ag, cx) → peers.json key(claude, gemini, antigravity, codex) 매핑 포함.
     """
     # node_id → peers.json key 매핑 (orchestration.json 또는 기본값)
-    _NODE_TO_PEER: dict[str, str] = {"cc": "claude", "ca": "claude", "gc": "gemini", "ag": "antigravity", "cx": "codex"}
     peers = _load_peers()
     peer_data = peers.get("peers", peers)
-    peer_key = _NODE_TO_PEER.get(peer_id, peer_id)
+    peer_key = _node_to_peer_map().get(peer_id, peer_id)
     cfg = peer_data.get(peer_key, {})
     subdir = cfg.get("sys_subdir", peer_key)
     return Path(__file__).parent.parent / subdir
@@ -314,7 +332,9 @@ def _parse_handoff(text: str) -> dict:
                 break
         else:
             if current and stripped.startswith("- "):
-                sections[current].append(stripped[2:])
+                val = stripped[2:]
+                if val != "(없음)":
+                    sections[current].append(val)
     return sections
 
 
@@ -395,15 +415,73 @@ def action_end_session(ai_root: Path, agent: str) -> None:
     print(f"[END] {agent} 세션 종료 완료")
 
 
+def _prune_mailbox_messages(messages: list[dict], send_policy: dict | None = None) -> list[dict]:
+    send_policy = send_policy or _load_lifecycle_policy().get("messaging", {}).get("send", {})
+    ttl_by_priority = send_policy.get("ttl_hours_by_priority", {})
+    if not ttl_by_priority:
+        return messages
+    now = datetime.now()
+    kept: list[dict] = []
+    default_priority = send_policy.get("default_priority", "INFO")
+    for msg in messages:
+        priority = msg.get("priority") or msg.get("type") or default_priority
+        ttl_hours = ttl_by_priority.get(priority)
+        if ttl_hours is None:
+            kept.append(msg)
+            continue
+        try:
+            ts = datetime.fromisoformat(str(msg.get("timestamp", "")))
+        except ValueError:
+            kept.append(msg)
+            continue
+        if (now - ts).total_seconds() <= float(ttl_hours) * 3600:
+            kept.append(msg)
+    return kept
+
+
+def _payload_ids_from_messages(messages: list[dict]) -> set[str]:
+    ids: set[str] = set()
+    for msg in messages:
+        content = str(msg.get("content", ""))
+        if content.startswith("payload://"):
+            ids.add(content.replace("payload://", "", 1))
+    return ids
+
+
+def _gc_unreferenced_payloads(ai_root: Path, messages: list[dict]) -> None:
+    payload_dir = ai_root / "payloads"
+    if not payload_dir.exists():
+        return
+    referenced = _payload_ids_from_messages(messages)
+    for payload_path in payload_dir.glob("*.json"):
+        if payload_path.stem not in referenced:
+            try:
+                payload_path.unlink()
+            except OSError:
+                pass
+
+
 def action_send(
     ai_root: Path, from_: str, to: str, msg: str,
     thread_id: str | None = None,
     msg_type: str = "MSG",
     cc_list: list[str] | None = None,
     ref_id: int | None = None,
+    priority: str | None = None,
 ) -> None:
     if cc_list is None: cc_list = []
+    send_policy = _load_lifecycle_policy().get("messaging", {}).get("send", {})
+    if send_policy.get("mode") in ("disabled", "remove"):
+        print("[HUB:ERR] send is disabled by lifecycle_policy.json", file=sys.stderr)
+        sys.exit(1)
+    allowed_types = set(send_policy.get("allowed_types", []))
+    if allowed_types and msg_type not in allowed_types:
+        print(f"[HUB:ERR] send type '{msg_type}' is not allowed by lifecycle_policy.json", file=sys.stderr)
+        sys.exit(1)
     auto_thread = thread_id or _short_id("t-")
+    ttl_by_priority = send_policy.get("ttl_hours_by_priority", {})
+    priority = priority or (msg_type if msg_type in ttl_by_priority else None)
+    priority = priority or send_policy.get("default_priority", "INFO")
 
     # 대용량 페이로드 오프로드 (Threshold 초과 시)
     if len(msg) > _LARGE_PAYLOAD_THRESHOLD and msg_type == "MSG":
@@ -419,7 +497,7 @@ def action_send(
 
     with _get_lock(ai_root, "mailbox"):
         mb = _read_json(ai_root / "mailbox.json")
-        msgs = mb.get("messages", [])
+        msgs = _prune_mailbox_messages(mb.get("messages", []), send_policy)
         if len(msgs) >= _MAILBOX_MAX:
             msgs = [m for m in msgs if m.get("status") != "read"]
             if len(msgs) >= _MAILBOX_MAX:
@@ -429,14 +507,54 @@ def action_send(
             "id": new_id, "thread_id": auto_thread, "type": msg_type,
             "from": from_, "to": to, "cc": cc_list, "content": msg,
             "status": "unread", "timestamp": _now(), "ref": ref_id,
+            "priority": priority,
         })
         mb["messages"] = msgs
         mb["unread_count"] = sum(1 for m in msgs if m.get("status") == "unread")
         _write_json(ai_root / "mailbox.json", mb)
+        _gc_unreferenced_payloads(ai_root, msgs)
         _log_p2p("SEND", f"({msg_type}) {msg[:60]}...", from_node=from_, to_node=to)
     cc_str = f" cc={','.join(cc_list)}" if cc_list else ""
     ref_str = f" ref={ref_id}" if ref_id else ""
     print(f"[HUB] SENT  {from_}→{to} | thread={auto_thread} | id={new_id} type={msg_type}{cc_str}{ref_str}")
+
+
+def action_broadcast(
+    ai_root: Path,
+    from_: str,
+    msg: str,
+    targets: list[str] | None = None,
+    msg_type: str = "MSG",
+    priority: str | None = None,
+) -> None:
+    policy = _load_lifecycle_policy().get("messaging", {}).get("broadcast", {})
+    if policy.get("mode") in ("disabled", "remove"):
+        print("[HUB:ERR] broadcast is disabled by lifecycle_policy.json", file=sys.stderr)
+        sys.exit(1)
+    if targets is None:
+        state = _read_json(ai_root / "state.json")
+        targets = [node for node in state.get("members", {}).keys() if node != from_]
+    targets = [target for target in dict.fromkeys(targets) if target and target != from_]
+    if not targets:
+        print("[HUB] BROADCAST no targets")
+        return
+    thread_id = _short_id("b-")
+    if len(msg) > _LARGE_PAYLOAD_THRESHOLD and msg_type == "MSG":
+        payload_id = _short_id("p-")
+        payload_dir = ai_root / "payloads"
+        payload_dir.mkdir(parents=True, exist_ok=True)
+        _write_json(payload_dir / f"{payload_id}.json", {
+            "from": from_,
+            "to": targets,
+            "content": msg,
+            "timestamp": _now(),
+        })
+        msg = f"payload://{payload_id}"
+        msg_type = "PAYLOAD_REF"
+        _log_p2p("OFFLOAD", f"Broadcast saved to payloads/{payload_id}.json", from_node=from_)
+    for target in targets:
+        action_send(ai_root, from_, target, msg, thread_id, msg_type, [], None, priority)
+    print(f"[HUB] BROADCAST {from_} -> {','.join(targets)} | thread={thread_id}")
 
 
 def action_mark_read(ai_root: Path, target: str, all_: bool, msg_id: int | None) -> None:
@@ -630,7 +748,275 @@ def _decode_output(data: bytes) -> str:
     return data.decode("utf-8", errors="replace").replace("\r\n", "\n")
 
 
-def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: dict) -> None:
+def _classify_ask_failure(text: str) -> tuple[str, dict]:
+    lower = text.lower()
+    policy = _load_lifecycle_policy().get("ask_failure_classification", {})
+    for rule in policy.get("patterns", []):
+        needles = [str(x).lower() for x in rule.get("match_any", [])]
+        if any(needle in lower for needle in needles):
+            extra = dict(rule.get("availability", {}))
+            retry_marker = str(rule.get("capture_retry_hint_when_contains", "")).lower()
+            if retry_marker and retry_marker in lower:
+                extra["retry_hint"] = text.strip().splitlines()[0][:200]
+            return rule.get("reason", "nonzero_exit"), extra
+    return policy.get("default_reason", "nonzero_exit"), {}
+
+
+def _read_peer_health(peer_id: str) -> tuple[Path, dict]:
+    health_path = _peer_sys_dir(peer_id) / "health.json"
+    data = _read_json(health_path) if health_path.exists() else {}
+    data.setdefault("_version", "1.0")
+    data.setdefault("peer_id", peer_id)
+    data.setdefault("context_health", {})
+    data.setdefault("session_health", {})
+    data.setdefault("availability", {})
+    return health_path, data
+
+
+def _write_peer_health(peer_id: str, data: dict, ai_root: Path | None) -> None:
+    health_path = _peer_sys_dir(peer_id) / "health.json"
+    health_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_root = ai_root if ai_root else find_ai_root()
+    with _get_lock(lock_root, f"health_{peer_id}"):
+        health_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _ask_health_precheck(peer_id: str, ai_root: Path | None) -> None:
+    if ai_root is None:
+        return
+    _, data = _read_peer_health(peer_id)
+    ctx = data.get("context_health", {})
+    availability = data.get("availability", {})
+    status = ctx.get("status")
+    if status == "RED" or availability.get("gate_open") is False:
+        reason = data.get("session_health", {}).get("last_failure_reason") or "health_gate_closed"
+        print(f"[HUB:SKIP] {peer_id} health blocked | status={status} reason={reason}", file=sys.stderr)
+        sys.exit(2)
+
+
+def _record_ask_success(peer_id: str, elapsed: int, ai_root: Path | None) -> None:
+    if ai_root is None:
+        return
+    _, data = _read_peer_health(peer_id)
+    ctx = data.setdefault("context_health", {})
+    previous_reason = data.get("session_health", {}).get("last_failure_reason")
+    transient_red = set(_load_lifecycle_policy().get("health_lifecycle", {}).get(
+        "transient_red_recovery_reasons",
+        ["sandbox_spawn_eperm", "rate_or_session_limit", "cli_not_found"],
+    ))
+    if ctx.get("status") == "YELLOW" or (ctx.get("status") == "RED" and previous_reason in transient_red):
+        ctx["status"] = "GREEN"
+    ctx["checked_at"] = datetime.now().strftime("%Y%m%dT%H%M%S")
+    sh = data.setdefault("session_health", {})
+    today = datetime.now().strftime("%Y%m%d")
+    if sh.get("session_date") != today:
+        sh["session_count_today"] = 0
+        sh["session_date"] = today
+    sh["consecutive_failures"] = 0
+    sh["last_failure_reason"] = None
+    sh["last_success_at"] = _now()
+    sh["session_count_today"] = int(sh.get("session_count_today", 0)) + 1
+    availability = data.setdefault("availability", {})
+    availability["gate_open"] = True
+    availability["last_invocation_exit_code"] = 0
+    availability["last_invocation_duration_ms"] = elapsed * 1000
+    availability["rate_limit_state"] = "ok"
+    availability.pop("sandbox_blocked", None)
+    availability.pop("workspace_not_trusted", None)
+    availability.pop("retry_hint", None)
+    _write_peer_health(peer_id, data, ai_root)
+
+
+def _record_ask_failure(
+    peer_id: str,
+    reason: str,
+    detail: str,
+    elapsed: int | None,
+    ai_root: Path | None,
+    extra: dict | None = None,
+) -> None:
+    if ai_root is None:
+        return
+    _, data = _read_peer_health(peer_id)
+    sh = data.setdefault("session_health", {})
+    failures = int(sh.get("consecutive_failures", 0)) + 1
+    sh["consecutive_failures"] = failures
+    sh["last_failure_reason"] = reason
+    sh["last_failure_detail"] = detail.strip()[:500]
+    sh["last_failure_at"] = _now()
+    today = datetime.now().strftime("%Y%m%d")
+    if sh.get("session_date") != today:
+        sh["session_count_today"] = 0
+        sh["session_date"] = today
+    ctx = data.setdefault("context_health", {})
+    lifecycle = _load_lifecycle_policy().get("health_lifecycle", {})
+    critical_reasons = set(lifecycle.get("critical_reasons", ["sandbox_spawn_eperm", "rate_or_session_limit", "cli_not_found"]))
+    failure_warn = int(lifecycle.get("failure_warn", 3))
+    failure_error = int(lifecycle.get("failure_error", 5))
+    if reason in critical_reasons or failures >= failure_error:
+        ctx["status"] = "RED"
+    elif failures >= failure_warn:
+        ctx["status"] = "YELLOW"
+    ctx["checked_at"] = datetime.now().strftime("%Y%m%dT%H%M%S")
+    availability = data.setdefault("availability", {})
+    availability["last_invocation_exit_code"] = 1
+    if elapsed is not None:
+        availability["last_invocation_duration_ms"] = elapsed * 1000
+    if extra:
+        availability.update(extra)
+    if reason in critical_reasons:
+        availability["gate_open"] = False
+    _write_peer_health(peer_id, data, ai_root)
+
+
+def _build_ask_query_with_context(ai_root: Path | None, query: str) -> str:
+    if ai_root is None:
+        return query
+    state = _read_json(ai_root / "state.json")
+    room_id = state.get("room_id")
+    if not room_id:
+        return query
+    lines = [
+        "[HUB CONTEXT]",
+        f"Room ID: {room_id}",
+        f"Members: {', '.join(state.get('members', {}).keys()) or 'none'}",
+        f"Mission: {state.get('mission') or 'none'}",
+        f"Blocked: {state.get('blocked') or 'none'}",
+        f"Phase: {state.get('phase') or 'none'}",
+    ]
+    handoff_path = ai_root / "sessions" / room_id / "handoff.md"
+    if handoff_path.exists():
+        handoff = handoff_path.read_text(encoding="utf-8", errors="replace").strip()
+        if handoff:
+            lines.extend(["", "[HANDOFF]", handoff])
+    lines.extend(["", "[USER QUERY]", query])
+    return "\n".join(lines)
+
+
+def _archive_text(ai_root: Path, category: str, name: str, content: str) -> Path:
+    archive_dir = ai_root.parent / "_archive" / category
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    path = archive_dir / f"{stamp}_{name}"
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+def _append_handoff_item(ai_root: Path, section: str, item: str) -> None:
+    state = _read_json(ai_root / "state.json")
+    room_id = state.get("room_id")
+    if not room_id:
+        return
+    session_dir = ai_root / "sessions" / room_id
+    session_dir.mkdir(parents=True, exist_ok=True)
+    with _get_lock(ai_root, "handoff"):
+        handoff = _read_handoff(session_dir)
+        handoff.setdefault(section, []).append(item)
+        _write_handoff(session_dir, handoff)
+
+
+def _new_member_sids(members: dict) -> dict:
+    return {agent: _short_id(agent[:1]) for agent in members.keys()}
+
+
+def action_peer_quarantine(ai_root: Path, peer_id: str, reason: str) -> None:
+    _, data = _read_peer_health(peer_id)
+    data.setdefault("context_health", {})["status"] = "RED"
+    data["context_health"]["checked_at"] = datetime.now().strftime("%Y%m%dT%H%M%S")
+    sh = data.setdefault("session_health", {})
+    sh["last_failure_reason"] = reason or "manual_quarantine"
+    sh["last_failure_at"] = _now()
+    availability = data.setdefault("availability", {})
+    availability["gate_open"] = False
+    availability["quarantined"] = True
+    _write_peer_health(peer_id, data, ai_root)
+    _append_handoff_item(ai_root, "PENDING_ISSUES", f"{_now()} {peer_id}: quarantined ({reason or 'manual'})")
+    print(f"[HUB] PEER-QUARANTINE {peer_id} | reason={reason or 'manual'}")
+
+
+def action_peer_recover(ai_root: Path, peer_id: str, reason: str) -> None:
+    _, data = _read_peer_health(peer_id)
+    data.setdefault("context_health", {})["status"] = "GREEN"
+    data["context_health"]["checked_at"] = datetime.now().strftime("%Y%m%dT%H%M%S")
+    sh = data.setdefault("session_health", {})
+    sh["consecutive_failures"] = 0
+    sh["last_failure_reason"] = None
+    sh["last_success_at"] = _now()
+    availability = data.setdefault("availability", {})
+    availability["gate_open"] = True
+    availability["quarantined"] = False
+    availability["rate_limit_state"] = "ok"
+    availability.pop("sandbox_blocked", None)
+    availability.pop("workspace_not_trusted", None)
+    availability.pop("retry_hint", None)
+    _write_peer_health(peer_id, data, ai_root)
+    _append_handoff_item(ai_root, "RECENT_COMPLETED", f"{_now()} {peer_id}: recovered ({reason or 'manual'})")
+    print(f"[HUB] PEER-RECOVER {peer_id} | reason={reason or 'manual'}")
+
+
+def action_new_topic(ai_root: Path, subject: str) -> None:
+    policy = _load_lifecycle_policy().get("room_lifecycle", {}).get("new_topic", {})
+    state = _read_json(ai_root / "state.json")
+    old_room = state.get("room_id")
+    old_members = state.get("members", {})
+    carried = {s: [] for s in _HANDOFF_SECTIONS}
+    if old_room:
+        old_dir = ai_root / "sessions" / old_room
+        old_handoff_path = old_dir / "handoff.md"
+        if old_handoff_path.exists():
+            old_text = old_handoff_path.read_text(encoding="utf-8")
+            if policy.get("archive_current_handoff", True):
+                _archive_text(ai_root, "rooms", f"{old_room}_handoff.md", old_text)
+            old_sections = _parse_handoff(old_text)
+            for sec in policy.get("carry_sections", ["KEY_DECISIONS"]):
+                carried[sec] = old_sections.get(sec, [])
+    new_room = _short_id("room-")
+    carried["GOAL"] = [subject or "new topic"]
+    carried["ACTIVE_THREADS"] = [f"{_now()} system: new topic from {old_room or 'none'}"]
+    with _get_lock(ai_root, "state"):
+        state["room_id"] = new_room
+        state["members"] = _new_member_sids(old_members)
+        state["mission"] = subject or None
+        state["blocked"] = None
+        state["phase"] = "new-topic"
+        state["updated_at"] = _now()
+        _write_json(ai_root / "state.json", state)
+    new_dir = ai_root / "sessions" / new_room
+    new_dir.mkdir(parents=True, exist_ok=True)
+    _write_handoff(new_dir, carried)
+    print(f"[HUB] NEW-TOPIC {new_room} | from={old_room or 'none'} | subject={subject}")
+
+
+def action_clear_room(ai_root: Path, subject: str) -> None:
+    policy = _load_lifecycle_policy().get("room_lifecycle", {}).get("clear_room", {})
+    state = _read_json(ai_root / "state.json")
+    old_room = state.get("room_id")
+    old_members = state.get("members", {})
+    mailbox_path = ai_root / "mailbox.json"
+    if policy.get("archive_mailbox", True) and mailbox_path.exists():
+        _archive_text(ai_root, "mailbox", f"{old_room or 'no-room'}_mailbox.json", mailbox_path.read_text(encoding="utf-8"))
+    with _get_lock(ai_root, "mailbox"):
+        _write_json(mailbox_path, {"messages": [], "unread_count": 0})
+        _gc_unreferenced_payloads(ai_root, [])
+    new_room = _short_id("room-")
+    sections = {s: [] for s in _HANDOFF_SECTIONS}
+    sections["GOAL"] = [subject or "cleared room"]
+    sections["ACTIVE_THREADS"] = [f"{_now()} system: clear-room from {old_room or 'none'}"]
+    with _get_lock(ai_root, "state"):
+        state["room_id"] = new_room
+        state["members"] = _new_member_sids(old_members)
+        state["mission"] = subject or None
+        state["blocked"] = None
+        state["phase"] = "clear-room"
+        state["updated_at"] = _now()
+        _write_json(ai_root / "state.json", state)
+    new_dir = ai_root / "sessions" / new_room
+    new_dir.mkdir(parents=True, exist_ok=True)
+    _write_handoff(new_dir, sections)
+    print(f"[HUB] CLEAR-ROOM {new_room} | from={old_room or 'none'} | subject={subject}")
+
+
+def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: dict, quiet: bool = False) -> tuple[str, int]:
     """pywinpty로 pseudo-TTY 실행 — WriteConsole() API 우회 (agy 등 TUI CLI 전용)."""
     try:
         import winpty as _winpty
@@ -640,7 +1026,8 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
 
     p = _winpty.PtyProcess.spawn(cmd, env=process_env)
     chunks: list[str] = []
-    deadline = time.monotonic() + (timeout_sec if timeout_sec > 0 else 300)
+    lease = int(_runtime_cfg().get("pty_lease_sec", 300) or 300)
+    deadline = time.monotonic() + (timeout_sec if timeout_sec > 0 else lease)
     t0 = time.monotonic()
 
     while time.monotonic() < deadline:
@@ -658,10 +1045,12 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
 
     elapsed = int(time.monotonic() - t0)
     output = _strip_ansi("".join(chunks))
-    print(f"[HUB] REPLY {node_id} | chars={len(output)} | elapsed={elapsed}s\n{output.strip()}")
+    if not quiet:
+        print(f"[HUB] REPLY {node_id} | chars={len(output)} | elapsed={elapsed}s\n{output.strip()}")
+    return output, elapsed
 
 
-def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None) -> None:
+def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None) -> None:
     if query_file:
         qf = Path(query_file)
         if not qf.exists(): sys.exit(1)
@@ -680,9 +1069,25 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                 to = nid
                 break
     node = nodes.get(to, {})
+    if not node:
+        print(f"[ERROR] unknown ask target: {to}", file=sys.stderr)
+        sys.exit(1)
     exe_name = node.get("invoke", to)
     raw_args = node.get("invoke_args", ["-p", "{query}"])
     requires_pty = node.get("requires_pty", False)
+
+    # Load defaults from protocol.json if not specified.
+    if not timeout_sec or timeout_sec <= 0:
+        try:
+            if requires_pty:
+                timeout_sec = int(_runtime_cfg().get("pty_lease_sec", 300) or 300)
+            else:
+                timeout_sec = int(_runtime_cfg().get("ask_default_timeout_sec", 180) or 180)
+        except Exception:
+            timeout_sec = 300 if requires_pty else 180
+
+    _ask_health_precheck(to, ai_root)
+    query = _build_ask_query_with_context(ai_root, query)
 
     cmd_args = []
     use_stdin = False
@@ -701,6 +1106,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
     exe = shutil.which(exe_name)
     if not exe:
         print(f"[ERROR] {exe_name} CLI not found in PATH", file=sys.stderr)
+        _record_ask_failure(to, "cli_not_found", f"{exe_name} CLI not found in PATH", None, ai_root)
         sys.exit(1)
     
     cmd = [exe] + cmd_args
@@ -714,9 +1120,10 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
     target_peer_cfg = None
 
     # Heuristic to find the peer corresponding to the node or invoke name
-    if to in peers:
-        target_peer_id = to
-        target_peer_cfg = peers[to]
+    mapped_peer = _node_to_peer_map().get(to, to)
+    if mapped_peer in peers:
+        target_peer_id = mapped_peer
+        target_peer_cfg = peers[mapped_peer]
     else:
         for pid, pcfg in peers.items():
             native = pcfg.get("native_binary")
@@ -733,12 +1140,30 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         sys_dir = Path(__file__).parent.parent
         peer_subdir = sys_dir / target_peer_cfg.get("sys_subdir", target_peer_id)
         for k, rel in target_peer_cfg.get("env_vars", {}).items():
-            # Resolve relative path
-            process_env[k] = str((peer_subdir / rel).resolve())
+            if isinstance(rel, bool):
+                process_env[k] = "true" if rel else "false"
+            elif isinstance(rel, str) and rel.lower() in ("true", "false"):
+                process_env[k] = rel.lower()
+            else:
+                process_env[k] = str((peer_subdir / rel).resolve())
 
     # requires_pty: pywinpty로 pseudo-TTY 실행 (WriteConsole() 우회)
     if requires_pty and sys.platform == "win32":
-        _ask_with_pty(cmd, to, timeout_sec, process_env)
+        output, elapsed = _ask_with_pty(cmd, to, timeout_sec, process_env, quiet)
+        _record_ask_success(to, elapsed, ai_root)
+        if output_file:
+            try:
+                base = ai_root if ai_root else Path.cwd()
+                out_path = _portable_state_path(base, output_file)
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                out_path.write_text(output, encoding="utf-8")
+                if not quiet:
+                    print(f"[HUB] REPLY {to} | chars={len(output)} | elapsed={elapsed}s | output={out_path}")
+            except Exception as e:
+                print(f"[HUB:ERROR] failed to write output file: {e}", file=sys.stderr)
+                sys.exit(1)
+        elif quiet:
+            print(output, end="")
         return
 
     try:
@@ -764,10 +1189,36 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
 
         if result.returncode != 0:
             err = _decode_output(result.stderr)
-            print(f"[HUB:WARN] {to} exited {result.returncode}\n{_strip_ansi(err)}", file=sys.stderr)
+            clean_err = _strip_ansi(err)
+            reason, extra = _classify_ask_failure(clean_err + "\n" + output)
+            _record_ask_failure(to, reason, clean_err or output, elapsed, ai_root, extra)
+            print(f"[HUB:WARN] {to} exited {result.returncode}\n{clean_err}", file=sys.stderr)
+        else:
+            _record_ask_success(to, elapsed, ai_root)
 
-        print(f"[HUB] REPLY {to} | chars={len(output)} | elapsed={elapsed}s\n{output.strip()}")
+        if output_file:
+            try:
+                base = ai_root if ai_root else Path.cwd()
+                out_path = _portable_state_path(base, output_file)
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                out_path.write_text(output, encoding="utf-8")
+                if not quiet:
+                    print(f"[HUB] REPLY {to} | chars={len(output)} | elapsed={elapsed}s | output={out_path}")
+            except Exception as e:
+                print(f"[HUB:ERROR] failed to write output file: {e}", file=sys.stderr)
+                sys.exit(1)
+        elif quiet:
+            print(output, end="")
+        else:
+            print(f"[HUB] REPLY {to} | chars={len(output)} | elapsed={elapsed}s\n{output.strip()}")
+    except subprocess.TimeoutExpired:
+        detail = f"ask timeout after {timeout_sec}s"
+        _record_ask_failure(to, "timeout", detail, timeout_sec, ai_root)
+        print(f"[HUB:ERROR] {detail}", file=sys.stderr)
+        sys.exit(1)
     except Exception as e:
+        reason, extra = _classify_ask_failure(str(e))
+        _record_ask_failure(to, reason, str(e), None, ai_root, extra)
         print(f"[HUB:ERROR] ask 실패: {e}", file=sys.stderr)
         sys.exit(1)
 
@@ -1011,22 +1462,9 @@ def action_checkpoint(ai_root: Path, agent: str, note: str) -> None:
     if not room_id:
         print("[HUB] CHECKPOINT: no active room", file=sys.stderr)
         sys.exit(1)
-    handoff_path = ai_root / "sessions" / room_id / "handoff.md"
-    handoff_path.parent.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-    entry = f"\n- [{ts}] ({agent}) {note}"
-    with _get_lock(ai_root, "handoff"):
-        existing = handoff_path.read_text(encoding="utf-8") if handoff_path.exists() else ""
-        # ACTIVE_THREADS 섹션에 추가, 없으면 파일 끝에 추가
-        if "## ACTIVE_THREADS" in existing:
-            updated = existing.replace(
-                "## ACTIVE_THREADS",
-                f"## ACTIVE_THREADS{entry}",
-                1
-            )
-        else:
-            updated = existing + f"\n## ACTIVE_THREADS{entry}\n"
-        handoff_path.write_text(updated, encoding="utf-8")
+    entry = f"[{ts}] ({agent}) {note}"
+    _append_handoff_item(ai_root, "ACTIVE_THREADS", entry)
     _log_p2p("CHECKPOINT", f"agent={agent} room={room_id} note={note[:60]}")
     print(f"[HUB] CHECKPOINT {agent} | room={room_id} | {note[:80]}")
 
@@ -1057,9 +1495,379 @@ def action_context_fill(ai_root: Path, sections: list[str] | None = None) -> Non
 # CLI 진입점
 # ─────────────────────────────────────────────────────────────
 
+def _operational_guard_cfg() -> dict:
+    return _load_protocol_cfg().get("operational_guard", {})
+
+
+def _current_phase(ai_root: Path) -> str | None:
+    phase = _read_json(ai_root / "state.json").get("phase")
+    return str(phase).strip().lower() if phase is not None else None
+
+
+def _is_mutating_action(action: str) -> bool:
+    return action in set(_operational_guard_cfg().get("mutating_hub_actions", []))
+
+
+def _runtime_cfg() -> dict:
+    return _load_protocol_cfg().get("runtime", {})
+
+
+def _portable_state_path(ai_root: Path, rel: str) -> Path:
+    path = Path(rel)
+    if path.is_absolute():
+        return path
+    return (ai_root / path).resolve()
+
+
+def _action_group(action: str) -> str:
+    cfg = _operational_guard_cfg()
+    for group in ("read_only_hub_actions", "recovery_hub_actions", "mutating_hub_actions"):
+        if action in set(cfg.get(group, [])):
+            return group
+    return "unknown_actions"
+
+
+def _has_finalized_consensus(ai_root: Path) -> bool:
+    consensus_dir = ai_root / "consensus"
+    if not consensus_dir.exists():
+        return False
+    for f in consensus_dir.glob("*.json"):
+        try:
+            data = _read_json(f)
+            if data.get("status") == "finalized":
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def _guard_action(ai_root: Path, action: str, force_tier0: bool = False) -> None:
+    cfg = _operational_guard_cfg()
+    if not cfg.get("enabled", False) or force_tier0:
+        if force_tier0:
+            _log_p2p("WARN", f"force-tier0 bypass for action={action}", from_node="TIER0")
+        return
+    try:
+        rate_guard = cfg.get("collab_rate_guard", {})
+        current = int(_load_protocol_cfg().get("collab_rate", {}).get("current", 0) or 0)
+        threshold = int(rate_guard.get("threshold", 10) or 10)
+        exempt = set(rate_guard.get("exempt_actions", []))
+        if (
+            rate_guard.get("enabled", False)
+            and current >= threshold
+            and action not in exempt
+            and _is_mutating_action(action)
+            and rate_guard.get("require_finalized_consensus", True)
+            and not _has_finalized_consensus(ai_root)
+        ):
+            print(f"[HUB:BLOCK] action '{action}' requires finalized consensus at collab_rate {current}. Use --force-tier0 only for Tier0 recovery.", file=sys.stderr)
+            sys.exit(3)
+    except SystemExit:
+        raise
+    except Exception as e:
+        print(f"[HUB:WARN] collab_rate guard check error: {e}", file=sys.stderr)
+    group = _action_group(action)
+    phase = _current_phase(ai_root)
+    if not phase:
+        if cfg.get("missing_phase_policy") == "allow_with_warning":
+            print(f"[HUB:WARN] phase is unset; allowing action '{action}'", file=sys.stderr)
+        elif not cfg.get("allow_missing_phase", True):
+            print(f"[HUB:BLOCK] phase is unset; refusing action '{action}'", file=sys.stderr)
+            sys.exit(3)
+        return
+    matrix = cfg.get("phase_action_matrix", {})
+    matrix_key = "no_code" if phase in set(cfg.get("no_code_phases", [])) else "default"
+    decision = matrix.get(matrix_key, matrix.get("default", {})).get(group, "allow")
+    if decision == "block":
+        flag = cfg.get("force_tier0_flag", "--force-tier0")
+        print(f"[HUB:BLOCK] action '{action}' is blocked during phase '{phase}'. Use {flag} only for Tier0 recovery.", file=sys.stderr)
+        sys.exit(3)
+    if decision == "requires_classification":
+        print(f"[HUB:BLOCK] action '{action}' has no phase policy during phase '{phase}'", file=sys.stderr)
+        sys.exit(3)
+
+
+def _regex_match(pattern: str, text: str) -> bool:
+    try:
+        return re.search(pattern, text, re.IGNORECASE | re.MULTILINE) is not None
+    except re.error:
+        return False
+
+
+def _classify_command(cmd: str, shell: str | None = None) -> dict:
+    cfg = _operational_guard_cfg()
+    preflight = cfg.get("preflight", {})
+    active_shell = (shell or cfg.get("default_shell") or "powershell").lower()
+    command = (cmd or "").strip()
+    result = {
+        "command": command,
+        "shell": active_shell,
+        "classification": "requires_classification",
+        "allowed": False,
+        "matched_rule": None,
+        "reason": preflight.get("unknown_policy", "requires_classification"),
+    }
+    for rule in preflight.get("shell_rules", {}).get(active_shell, {}).get("blocked_patterns", []):
+        if _regex_match(rule.get("pattern", ""), command):
+            result.update({
+                "classification": "blocked_shell_mismatch",
+                "matched_rule": rule.get("id"),
+                "reason": rule.get("reason", "shell mismatch"),
+            })
+            return result
+    for rule in preflight.get("mutating_patterns", []):
+        if _regex_match(rule.get("pattern", ""), command):
+            result.update({
+                "classification": "mutating",
+                "matched_rule": rule.get("id"),
+                "reason": rule.get("reason", "mutating command"),
+            })
+            return result
+    for rule in preflight.get("read_only_patterns", []):
+        if _regex_match(rule.get("pattern", ""), command):
+            result.update({
+                "classification": "read_only",
+                "allowed": True,
+                "matched_rule": rule.get("id"),
+                "reason": "read-only allowlist",
+            })
+            return result
+    return result
+
+
+def _operational_error_path(ai_root: Path) -> Path:
+    rel = _operational_guard_cfg().get("error_memory", {}).get("path", "../_sys/data/operational_errors.jsonl")
+    return (ai_root / rel).resolve()
+
+
+def action_report_error(ai_root: Path, peer: str, pattern: str, detail: str = "", severity: str = "warn") -> None:
+    path = _operational_error_path(ai_root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    event = {
+        "ts": _now(),
+        "peer": peer or "unknown",
+        "pattern": pattern or "unknown",
+        "severity": severity or "warn",
+        "detail": detail or "",
+    }
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(event, ensure_ascii=False) + "\n")
+    count = 0
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            item = json.loads(line)
+            if item.get("peer") == event["peer"] and item.get("pattern") == event["pattern"]:
+                count += 1
+    except Exception:
+        count = 1
+    threshold = int(_operational_guard_cfg().get("error_memory", {}).get("quarantine_after", 3) or 3)
+    if event["peer"] != "unknown" and threshold > 0 and count >= threshold:
+        action_peer_quarantine(ai_root, event["peer"], f"operational_error:{event['pattern']}")
+    print(f"[HUB] operational-error recorded peer={event['peer']} pattern={event['pattern']} count={count}")
+
+
+def action_preflight(ai_root: Path, cmd: str, shell: str | None = None, peer: str | None = None) -> None:
+    result = _classify_command(cmd, shell)
+    if peer and not result.get("allowed"):
+        action_report_error(ai_root, peer, result.get("matched_rule") or result.get("classification"), result.get("reason", ""), "warn")
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+def _hash_read(path: Path, normalize_newlines: bool) -> bytes:
+    if not path.exists():
+        return b"<missing>"
+    text = path.read_text(encoding="utf-8", errors="replace")
+    if normalize_newlines:
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+    return text.encode("utf-8")
+
+
+def _compute_context_hash(ai_root: Path) -> str:
+    cfg = _operational_guard_cfg().get("context_ack", {})
+    algo = cfg.get("hash_algorithm", "sha256")
+    normalize = bool(cfg.get("normalize_newlines", True))
+    state = _read_json(ai_root / "state.json")
+    room_id = state.get("room_id") or ""
+    h = hashlib.new(algo)
+    for source in cfg.get("sources", ["state.json"]):
+        rel = source.replace("{room_id}", room_id)
+        path = (ai_root / rel).resolve()
+        h.update(rel.encode("utf-8"))
+        h.update(b"\0")
+        h.update(_hash_read(path, normalize))
+        h.update(b"\0")
+    return h.hexdigest()
+
+
+def action_context_hash(ai_root: Path) -> None:
+    print(_compute_context_hash(ai_root))
+
+
+def action_context_ack(ai_root: Path, peer: str, context_hash: str | None = None) -> None:
+    key = peer or "unknown"
+    path = ai_root / "context_ack.json"
+    data = _read_json(path)
+    state = _read_json(ai_root / "state.json")
+    data[key] = {
+        "hash": context_hash or _compute_context_hash(ai_root),
+        "room_id": state.get("room_id"),
+        "acked_at": _now(),
+    }
+    _write_json(path, data)
+    print(f"[HUB] context-ack peer={key} hash={data[key]['hash']}")
+
+
+def _feedback_path(ai_root: Path) -> Path:
+    cfg = _load_protocol_cfg().get("feedback_loop", {})
+    return _portable_state_path(ai_root, cfg.get("path", cfg.get("storage_path", "feedback.jsonl")))
+
+
+def action_feedback_add(ai_root: Path, source_peer: str, category: str, severity: str, title: str, detail: str) -> None:
+    fb_path = _feedback_path(ai_root)
+    fb_path.parent.mkdir(parents=True, exist_ok=True)
+    prefix = f"GAP-{datetime.now().strftime('%Y%m%d')}-"
+    seq = 1
+    if fb_path.exists():
+        for line in fb_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            item = json.loads(line)
+            fid = item.get("id", "")
+            if fid.startswith(prefix):
+                try:
+                    seq = max(seq, int(fid[len(prefix):]) + 1)
+                except ValueError:
+                    pass
+    event = {
+        "id": f"{prefix}{seq:03d}",
+        "ts": _now(),
+        "source_peer": source_peer or "unknown",
+        "category": category or "other",
+        "severity": severity or "medium",
+        "title": title or "untitled",
+        "detail": detail or "",
+        "status": "open",
+        "owner": None,
+    }
+    with _get_lock(ai_root, "feedback"):
+        with fb_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(event, ensure_ascii=False) + "\n")
+    print(f"[HUB] FEEDBACK-ADD {event['id']} | peer={event['source_peer']} | title={event['title']}")
+
+
+def action_feedback_list(ai_root: Path) -> None:
+    fb_path = _feedback_path(ai_root)
+    if not fb_path.exists():
+        print("No feedback records found.")
+        return
+    print("id\tstatus\tseverity\tcategory\ttitle")
+    for line in fb_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        item = json.loads(line)
+        print(f"{item.get('id','')}\t{item.get('status','')}\t{item.get('severity','')}\t{item.get('category','')}\t{item.get('title','')}")
+
+
+def action_feedback_resolve(ai_root: Path, feedback_id: str, status: str = "done", owner: str | None = None) -> None:
+    fb_path = _feedback_path(ai_root)
+    if not fb_path.exists():
+        print("[HUB:ERROR] feedback file not found", file=sys.stderr)
+        sys.exit(1)
+    updated = False
+    output = []
+    with _get_lock(ai_root, "feedback"):
+        for line in fb_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            item = json.loads(line)
+            if item.get("id") == feedback_id:
+                item["status"] = status or "done"
+                item["resolved_at"] = _now()
+                if owner:
+                    item["owner"] = owner
+                updated = True
+            output.append(json.dumps(item, ensure_ascii=False))
+        if not updated:
+            print(f"[HUB:ERROR] feedback ID {feedback_id} not found", file=sys.stderr)
+            sys.exit(1)
+        fb_path.write_text("\n".join(output) + "\n", encoding="utf-8")
+    print(f"[HUB] FEEDBACK-RESOLVE {feedback_id} | status={status}")
+
+
+def _artifact_path(ai_root: Path) -> Path:
+    cfg = _load_protocol_cfg().get("artifact_workflow", {})
+    return _portable_state_path(ai_root, cfg.get("path", cfg.get("storage_path", "artifacts.json")))
+
+
+def action_artifact_claim(ai_root: Path, artifact_name: str, owner: str) -> None:
+    art_path = _artifact_path(ai_root)
+    art_path.parent.mkdir(parents=True, exist_ok=True)
+    with _get_lock(ai_root, "artifact"):
+        data = _read_json(art_path) if art_path.exists() else {}
+        existing = data.get(artifact_name, {})
+        if existing.get("owner") and existing.get("owner") != owner and existing.get("status") != "finalized":
+            print(f"[HUB:ERROR] artifact {artifact_name} is already claimed by {existing.get('owner')}", file=sys.stderr)
+            sys.exit(1)
+        data[artifact_name] = {
+            "artifact": artifact_name,
+            "owner": owner or "unknown",
+            "mode": _load_protocol_cfg().get("artifact_workflow", {}).get("default_mode", "single_owner_merge"),
+            "drafts": existing.get("drafts", {}),
+            "status": "claimed",
+            "claimed_at": existing.get("claimed_at") or _now(),
+            "hash": existing.get("hash", ""),
+        }
+        _write_json(art_path, data)
+    print(f"[HUB] ARTIFACT-CLAIM {artifact_name} | owner={owner or 'unknown'}")
+
+
+def action_artifact_status(ai_root: Path, artifact_name: str | None, register_peer: str | None = None, draft_path: str | None = None) -> None:
+    art_path = _artifact_path(ai_root)
+    if not art_path.exists():
+        print("No artifact metadata records found.")
+        return
+    with _get_lock(ai_root, "artifact"):
+        data = _read_json(art_path)
+        if register_peer and draft_path and artifact_name:
+            if artifact_name not in data:
+                print(f"[HUB:ERROR] artifact {artifact_name} has not been claimed yet", file=sys.stderr)
+                sys.exit(1)
+            data[artifact_name].setdefault("drafts", {})[register_peer] = draft_path
+            data[artifact_name]["status"] = "draft"
+            _write_json(art_path, data)
+            print(f"[HUB] ARTIFACT-DRAFT {artifact_name} | peer={register_peer} | path={draft_path}")
+            return
+    if artifact_name:
+        print(json.dumps(data.get(artifact_name, {}), ensure_ascii=False, indent=2))
+        return
+    print("artifact\towner\tstatus\tclaimed_at")
+    for key, item in data.items():
+        print(f"{key}\t{item.get('owner','')}\t{item.get('status','')}\t{item.get('claimed_at','')}")
+
+
+def action_artifact_finalize(ai_root: Path, artifact_name: str, file_path: str) -> None:
+    actual_file = Path(file_path)
+    if not actual_file.exists():
+        print(f"[HUB:ERROR] file {file_path} not found for finalization", file=sys.stderr)
+        sys.exit(1)
+    sha_str = f"sha256:{hashlib.sha256(actual_file.read_bytes()).hexdigest()}"
+    art_path = _artifact_path(ai_root)
+    with _get_lock(ai_root, "artifact"):
+        data = _read_json(art_path) if art_path.exists() else {}
+        if artifact_name not in data:
+            print(f"[HUB:ERROR] artifact {artifact_name} has not been claimed yet", file=sys.stderr)
+            sys.exit(1)
+        data[artifact_name]["status"] = "finalized"
+        data[artifact_name]["hash"] = sha_str
+        data[artifact_name]["finalized_at"] = _now()
+        data[artifact_name]["actual_path"] = str(actual_file.resolve())
+        _write_json(art_path, data)
+    print(f"[HUB] ARTIFACT-FINALIZE {artifact_name} | hash={sha_str}")
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="hub", description="AI 협업 허브 — P2P v3.1")
-    parser.add_argument("action", choices=["init-session", "end-session", "send", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint"])
+    parser = argparse.ArgumentParser(prog="hub", description="AI 협업 허브 — Protocol v4.1")
+    parser.add_argument("action", choices=["init-session", "end-session", "send", "broadcast", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint", "peer-quarantine", "peer-recover", "new-topic", "clear-room", "preflight", "context-hash", "context-ack", "report-error", "feedback-add", "feedback-list", "feedback-resolve", "artifact-claim", "artifact-status", "artifact-finalize"])
     parser.add_argument("--agent")
     parser.add_argument("--room")
     parser.add_argument("--from", dest="from_")
@@ -1067,6 +1875,7 @@ def main() -> None:
     parser.add_argument("--msg")
     parser.add_argument("--thread-id")
     parser.add_argument("--type", default="MSG")
+    parser.add_argument("--priority")
     parser.add_argument("--cc")
     parser.add_argument("--ref", type=int)
     parser.add_argument("--query", default="")
@@ -1096,26 +1905,41 @@ def main() -> None:
     parser.add_argument("--invoke-args", dest="invoke_args_str", default="-p,{query}")
     parser.add_argument("--memory", default="short-term")
     parser.add_argument("--peer")
+    parser.add_argument("--cmd")
+    parser.add_argument("--shell")
+    parser.add_argument("--context-hash")
+    parser.add_argument("--pattern")
+    parser.add_argument("--severity", default="warn")
+    parser.add_argument("--force-tier0", action="store_true")
     parser.add_argument("--jsonl-mb", dest="jsonl_mb", type=float, default=0.0)
     parser.add_argument("--failures", type=int, default=0)
     parser.add_argument("--sections")
+    parser.add_argument("--quiet", action="store_true")
+    parser.add_argument("--output-file")
+    parser.add_argument("--category")
+    parser.add_argument("--draft-path")
+    parser.add_argument("--feedback-id")
 
     args = parser.parse_args()
     if args.action == "ask":
         ai_root_opt = None
         try: ai_root_opt = find_ai_root()
         except: pass
-        action_ask(args.to_, args.query, args.query_file, args.timeout, ai_root_opt)
+        action_ask(args.to_, args.query, args.query_file, args.timeout, ai_root_opt, quiet=args.quiet, output_file=args.output_file)
         return
 
     ai_root = find_ai_root()
     ensure_ai_dir(ai_root)
     act = args.action
+    _guard_action(ai_root, act, args.force_tier0)
     if act == "init-session": action_init_session(ai_root, args.agent or "cc", args.room)
     elif act == "end-session": action_end_session(ai_root, args.agent or "cc")
     elif act == "send": 
         cc_list = [x.strip() for x in args.cc.split(",") if x.strip()] if args.cc else []
-        action_send(ai_root, args.from_, args.to_, args.msg, args.thread_id, args.type, cc_list, args.ref)
+        action_send(ai_root, args.from_, args.to_, args.msg, args.thread_id, args.type, cc_list, args.ref, args.priority)
+    elif act == "broadcast":
+        targets = [x.strip() for x in args.to_.split(",") if x.strip()] if args.to_ else None
+        action_broadcast(ai_root, args.from_ or "system", args.msg or "", targets, args.type, args.priority)
     elif act == "mark-read": action_mark_read(ai_root, args.target, args.all, args.id)
     elif act == "append-log": action_append_log(ai_root, args.axis, args.script, args.status_val, args.detail)
     elif act == "archive-file": action_archive_file(ai_root, args.name, args.file_path)
@@ -1127,14 +1951,14 @@ def main() -> None:
         default_gate_agent = orch.get("check_gate", {}).get("default_agent", "gc")
         action_check_gate(ai_root, args.agent or default_gate_agent)
     elif act == "consensus-propose":
-        orch = _load_orchestration()
-        consensus_cfg = orch.get("consensus", {})
-        default_voters_list = consensus_cfg.get("default_voters", ["cc", "ca", "gc"])
+        proto_cfg = _load_protocol_cfg()
+        consensus_cfg = proto_cfg.get("consensus", {})
+        canonical_voters = consensus_cfg.get("r10_voters", ["cc", "ca", "gc", "ag", "cx"])
         default_proposer = consensus_cfg.get("default_proposer", "cc")
         if args.voters:
             voters = [v.strip() for v in args.voters.split(",") if v.strip()]
         else:
-            voters = default_voters_list
+            voters = canonical_voters
         action_consensus_propose(ai_root, args.subject, voters, args.from_ or default_proposer)
     elif act == "consensus-vote": action_consensus_vote(ai_root, args.round_id, args.voter, args.vote_val, args.reason)
     elif act == "consensus-check": action_consensus_check(ai_root, args.round_id)
@@ -1161,6 +1985,38 @@ def main() -> None:
         if not note:
             print("[HUB] checkpoint requires --msg", file=sys.stderr); sys.exit(1)
         action_checkpoint(ai_root, args.agent or "unknown", note)
+    elif act == "peer-quarantine":
+        action_peer_quarantine(ai_root, args.peer or args.target or "", args.reason or "")
+    elif act == "peer-recover":
+        action_peer_recover(ai_root, args.peer or args.target or "", args.reason or "")
+    elif act == "new-topic":
+        action_new_topic(ai_root, args.subject or args.mission or "")
+    elif act == "clear-room":
+        action_clear_room(ai_root, args.subject or args.mission or "")
+    elif act == "preflight":
+        if not args.cmd:
+            print("[HUB] preflight requires --cmd", file=sys.stderr); sys.exit(1)
+        action_preflight(ai_root, args.cmd, args.shell, args.peer or args.agent)
+    elif act == "context-hash":
+        action_context_hash(ai_root)
+    elif act == "context-ack":
+        action_context_ack(ai_root, args.peer or args.agent or "unknown", args.context_hash)
+    elif act == "report-error":
+        action_report_error(ai_root, args.peer or args.agent or "unknown", args.pattern or args.reason or "unknown", args.detail, args.severity)
+    elif act == "feedback-add":
+        peer = args.peer or args.from_ or "unknown"
+        action_feedback_add(ai_root, peer, args.category, args.severity, args.subject or args.msg or "unknown gap", args.detail)
+    elif act == "feedback-list":
+        action_feedback_list(ai_root)
+    elif act == "feedback-resolve":
+        action_feedback_resolve(ai_root, args.feedback_id or args.round_id, args.status_val or "done", args.agent or args.peer)
+    elif act == "artifact-claim":
+        action_artifact_claim(ai_root, args.name, args.peer or args.agent or "unknown")
+    elif act == "artifact-status":
+        action_artifact_status(ai_root, args.name, args.peer or args.agent, args.draft_path)
+    elif act == "artifact-finalize":
+        action_artifact_finalize(ai_root, args.name, args.file_path)
 
 if __name__ == "__main__":
     main()
+

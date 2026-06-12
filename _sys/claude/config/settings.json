@@ -28,12 +28,12 @@
       }
     }
   },
+  "effortLevel": "low",
   "theme": "auto",
   "editorMode": "normal",
   "teammateMode": "auto",
   "remoteControlAtStartup": true,
   "inputNeededNotifEnabled": true,
   "agentPushNotifEnabled": true,
-  "skipAutoPermissionPrompt": true,
-  "effortLevel": "low"
+  "skipAutoPermissionPrompt": true
 }
