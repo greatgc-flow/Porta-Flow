@@ -109,7 +109,7 @@ Full unit suite:
 python -m pytest _sys\tests\unit
 ```
 
-Recent baseline: `198 passed, 1 skipped, 2 pytest config warnings`.
+Recent baseline: `216 passed, 23 pre-existing failures (test_launcher_paths / test_path_scenarios / test_system_lifecycle — launcher refactor gap), 2 pytest config warnings`. Core hub suite: `108 passed`.
 
 ## Repository Hygiene
 

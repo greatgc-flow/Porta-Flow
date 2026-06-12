@@ -140,7 +140,7 @@ The skill should not be the source of truth. The JSONL backlog should be.
 |---|---|---|---|
 | P0 | Direct out-of-band file writes | Hub cannot fully enforce tools that bypass it | Policy-governed; use artifact workflow and future audit tooling |
 | P1 | Full heartbeat leasing | Long-running work declares heartbeat policy but lacks a complete lease sweeper | Add heartbeat renew/sweep actions if long asks become common |
-| P1 | Root temp files | Workspace hygiene issue | Identify producer and add cleanup/generation fix |
+| P1 | Root temp files | Workspace hygiene issue | Producer identified: `See` (0B) created by cx during session. Added to .gitignore. Delete with `del P:\See`. |
 | ~~P1~~ | ~~Broader protocol-to-test map~~ | ~~Traceability map exists, but not every protocol paragraph maps to tests~~ | **RESOLVED 2026-06-13**: `traceability_map.json` v1.1 — 14 entries covering all v4.1 protocol features (semi-governed, peer-status, model-profile-validation, ask-provenance, routing-metrics, virtual-nodes, lifecycle-policy). |
 | ~~P1~~ | ~~External peer artifacts~~ | ~~Important reports can land outside workspace~~ | **RESOLVED 2026-06-13**: `_is_workspace_local()` added to hub.py; `artifact-status` (draft) and `artifact-finalize` emit `[HUB:WARN]` for external paths. 8 tests in `TestArtifactWorkspaceLocal`. |
 | ~~P2~~ | ~~`state_actions` partially generic~~ | ~~Lifecycle policy looks more declarative than it is~~ | **RESOLVED 2026-06-13**: `lifecycle_policy.json` v1.0 fully declarative; hub.py reads via `_load_lifecycle_policy()`. |
@@ -167,5 +167,10 @@ The skill should not be the source of truth. The JSONL backlog should be.
 | Consensus quality | Peer disagreements surfaced real implementation gaps instead of being hidden by a single summary. |
 | Feedback durability | `feedback-*` actions preserve improvements outside transient chat. |
 | Artifact safety | `artifact-*` actions track owner, drafts, final path, and hash. |
+| Routing observability | `routing_metrics.jsonl` records every ask outcome with peer, profile, latency, and result. |
+| Artifact locality | `_is_workspace_local()` warns when draft or final artifact paths escape the workspace. |
+| Durable messaging | Maildir storage (`.ai/mailbox/msg-{uuid}.json`) — per-message durable files alongside mailbox.json summary. |
+| Test coverage | `test_hub_v41_features.py` — 35 tests for routing metrics, peer-status engine, profile validation, artifact locality, Maildir. |
+| Traceability completeness | `traceability_map.json` v1.1 — all 14 protocol features mapped to config + runtime + tests. No empty `tests:[]`. |
 
-The system is now better at detecting, discussing, recording, and routing problems. The next maturity step is broadening automated audits around direct file writes, heartbeat leases, and full protocol coverage.
+The system is now better at detecting, discussing, recording, and routing problems. Remaining open work: P0 out-of-band file audit tooling, P1 heartbeat leasing (on-demand), cleanup of `P:\See` temp file.
