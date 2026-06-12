@@ -74,6 +74,31 @@ def _load_lifecycle_policy() -> dict:
         return {}
 
 
+def _load_model_profiles() -> dict:
+    """Load _sys/ai/model_profiles.json."""
+    path = Path(__file__).parent.parent / "ai" / "model_profiles.json"
+    try:
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    except Exception:
+        return {}
+
+
+def _resolve_profile_id(node_id: str) -> str | None:
+    """Return the model_profiles.json profile_id for a given node_id, or None."""
+    profiles = _load_model_profiles().get("profiles", {})
+    nodes = _default_nodes()["nodes"]
+    node = nodes.get(node_id, {})
+    explicit = node.get("profile_id")
+    if explicit and explicit in profiles:
+        return explicit
+    peer = node.get("peer") or node_id
+    mode = node.get("profile_mode") or "default"
+    for profile_id, profile in profiles.items():
+        if profile.get("peer") == peer and profile.get("mode") == mode:
+            return profile_id
+    return None
+
+
 def _node_to_peer_map() -> dict:
     policy = _load_lifecycle_policy()
     configured = policy.get("identity", {}).get("node_to_peer", {})
@@ -1300,7 +1325,7 @@ def _append_ask_history(ai_root: Path | None, peer_id: str, query_file_path: str
         entry = {
             "ts": _now(),
             "peer_id": peer_id,
-            "profile_id": None,
+            "profile_id": _resolve_profile_id(peer_id),
             "query_file": query_file_path,
             "output_file": output_file,
             "elapsed_sec": elapsed_sec,
@@ -1349,6 +1374,8 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
     exe_name = node.get("invoke", to)
     raw_args = node.get("invoke_args", ["-p", "{query}"])
     requires_pty = node.get("requires_pty", False)
+    # Virtual nodes delegate health tracking to their base peer
+    health_peer = node.get("peer") or to
 
     # Load defaults from protocol.json if not specified.
     if not timeout_sec or timeout_sec <= 0:
@@ -1360,7 +1387,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         except Exception:
             timeout_sec = 300 if requires_pty else 180
 
-    _ask_health_precheck(to, ai_root)
+    _ask_health_precheck(health_peer, ai_root)
     if include_context:
         query = _build_ask_query_with_context(ai_root, query)
 
@@ -1381,7 +1408,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
     exe = shutil.which(exe_name)
     if not exe:
         print(f"[ERROR] {exe_name} CLI not found in PATH", file=sys.stderr)
-        _record_ask_failure(to, "cli_not_found", f"{exe_name} CLI not found in PATH", None, ai_root)
+        _record_ask_failure(health_peer, "cli_not_found", f"{exe_name} CLI not found in PATH", None, ai_root)
         sys.exit(1)
     
     cmd = [exe] + cmd_args
@@ -1425,7 +1452,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
     # requires_pty: pywinpty로 pseudo-TTY 실행 (WriteConsole() 우회)
     if requires_pty and sys.platform == "win32":
         output, elapsed = _ask_with_pty(cmd, to, timeout_sec, process_env, quiet)
-        _record_ask_success(to, elapsed, ai_root)
+        _record_ask_success(health_peer, elapsed, ai_root)
         _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, True, None)
         if output_file:
             try:
@@ -1467,11 +1494,11 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             err = _decode_output(result.stderr)
             clean_err = _strip_ansi(err)
             reason, extra = _classify_ask_failure(clean_err + "\n" + output)
-            _record_ask_failure(to, reason, clean_err or output, elapsed, ai_root, extra)
+            _record_ask_failure(health_peer, reason, clean_err or output, elapsed, ai_root, extra)
             _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, False, reason)
             print(f"[HUB:WARN] {to} exited {result.returncode}\n{clean_err}", file=sys.stderr)
         else:
-            _record_ask_success(to, elapsed, ai_root)
+            _record_ask_success(health_peer, elapsed, ai_root)
             _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, True, None)
 
         if output_file:
@@ -1491,13 +1518,13 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             print(f"[HUB] REPLY {to} | chars={len(output)} | elapsed={elapsed}s\n{output.strip()}")
     except subprocess.TimeoutExpired:
         detail = f"ask timeout after {timeout_sec}s"
-        _record_ask_failure(to, "timeout", detail, timeout_sec, ai_root)
+        _record_ask_failure(health_peer, "timeout", detail, timeout_sec, ai_root)
         _append_ask_history(ai_root, to, saved_query_file_path, output_file, timeout_sec, False, "timeout")
         print(f"[HUB:ERROR] {detail}", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
         reason, extra = _classify_ask_failure(str(e))
-        _record_ask_failure(to, reason, str(e), None, ai_root, extra)
+        _record_ask_failure(health_peer, reason, str(e), None, ai_root, extra)
         _append_ask_history(ai_root, to, saved_query_file_path, output_file, None, False, reason)
         print(f"[HUB:ERROR] ask 실패: {e}", file=sys.stderr)
         sys.exit(1)
@@ -2684,22 +2711,49 @@ def action_health_sweep(ai_root: Path) -> None:
     print(f"[HUB] HEALTH-SWEEP stale={swept}")
 
 
-def action_validate_profiles() -> None:
+def action_validate_profiles(node_id: str | None = None) -> None:
+    """Cross-check model_profiles.json against status_checks.json for each node."""
     errors = []
-    for node in _load_orchestration().get("hub_nodes", []):
-        if node.get("enabled") is False:
+    profiles = _load_model_profiles().get("profiles", {})
+    checks_path = Path(__file__).parent.parent / "ai" / "status_checks.json"
+    checks_cfg = _read_json(checks_path).get("peers", {})
+    nodes = _default_nodes()["nodes"]
+    targets = [node_id] if node_id and node_id in nodes else list(nodes.keys())
+
+    for target in targets:
+        node = nodes.get(target)
+        if not node:
+            errors.append(f"{target}: unknown node")
             continue
-        peer = node.get("node_id")
-        _, data = _read_peer_health(peer)
-        profile = data.get("profile", {})
-        for key in ("tier", "context_window", "cost_tier", "supported_tools", "capabilities"):
-            if key not in profile:
-                errors.append(f"{peer}: missing profile.{key}")
+        if not node.get("enabled", True):
+            continue
+        profile_id = _resolve_profile_id(target)
+        profile = profiles.get(profile_id or "")
+        if not profile:
+            errors.append(f"{target}: no matching model profile (resolved={profile_id})")
+            continue
+        peer = node.get("peer") or profile.get("peer") or target
+        status = checks_cfg.get(peer)
+        if not status:
+            errors.append(f"{target}: no status_checks entry for peer '{peer}'")
+            continue
+        if profile.get("peer") and profile.get("peer") != peer:
+            errors.append(f"{target}: profile.peer={profile.get('peer')} != node.peer={peer}")
+        routing_state = profile.get("routing_state")
+        declared_status = status.get("status")
+        if routing_state == "eligible" and declared_status not in ("eligible", "degraded"):
+            errors.append(f"{target}: profile routing_state=eligible but status_checks.status={declared_status}")
+        known_overrides = status.get("known_overrides", {})
+        for key in profile.get("invoke_overrides", {}):
+            expected = f"{key}_flag"
+            if expected not in known_overrides:
+                errors.append(f"{target}: invoke_override '{key}' not in status_checks known_overrides.{expected}")
+
     if errors:
         for err in errors:
             print(f"[HUB:PROFILE:ERR] {err}", file=sys.stderr)
         sys.exit(1)
-    print("[HUB] PROFILE-VALIDATE OK")
+    print(f"[HUB] PROFILE-VALIDATE OK ({len(targets)} nodes checked)")
 
 
 def action_model_status() -> None:
@@ -2947,7 +3001,7 @@ def main() -> None:
     elif act == "lock-status":
         action_lock_status(ai_root)
     elif act == "profile-validate":
-        action_validate_profiles()
+        action_validate_profiles(args.peer or None)
     elif act == "model-status":
         action_model_status()
     elif act == "transient-scan":

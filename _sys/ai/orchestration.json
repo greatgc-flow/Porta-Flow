@@ -60,6 +60,28 @@
       "invoke_args": ["exec", "{query}", "--json", "--ephemeral", "--ignore-rules"],
       "memory": "session",
       "timeout": 0
+    },
+    {
+      "node_id": "cc-deep",
+      "aliases": ["claude-deep", "cc.deep"],
+      "type": "virtual",
+      "peer": "cc",
+      "profile_id": "cc.deep",
+      "invoke": "claude",
+      "invoke_args": ["-p", "{query}", "--effort", "max"],
+      "memory": "persistent",
+      "timeout": 0
+    },
+    {
+      "node_id": "gc-plan",
+      "aliases": ["gemini-plan", "gc.plan"],
+      "type": "virtual",
+      "peer": "gc",
+      "profile_id": "gc.plan",
+      "invoke": "gemini",
+      "invoke_args": ["-p", "{query}", "-o", "text", "-y", "--approval-mode", "plan"],
+      "memory": "session",
+      "timeout": 0
     }
   ],
   "consensus": {
