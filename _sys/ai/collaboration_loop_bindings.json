@@ -173,8 +173,8 @@
     }
   ],
   "message_delivery_contract": {
-    "current_storage": ".ai/mailbox.json",
-    "target_storage": ".ai/mailbox/msg-{uuid}.json",
+    "current_storage": ".ai/mailbox/msg-{uuid}.json",
+    "legacy_summary": ".ai/mailbox.json",
     "states": ["sent", "acked", "completed", "failed"],
     "durable_write_required_for_success": true,
     "lock_timeout_policy": "failed_delivery_retryable",

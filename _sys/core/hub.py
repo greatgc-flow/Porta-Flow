@@ -150,6 +150,7 @@ def ensure_ai_dir(ai_root: Path) -> Path:
     (ai_root / ".lock").mkdir(parents=True, exist_ok=True)
     (ai_root / "sessions").mkdir(parents=True, exist_ok=True)
     (ai_root / "consensus").mkdir(parents=True, exist_ok=True)
+    (ai_root / "mailbox").mkdir(parents=True, exist_ok=True)  # Maildir storage
     if not (ai_root / "mailbox.json").exists():
         _write_json(ai_root / "mailbox.json", {"messages": [], "unread_count": 0})
     if not (ai_root / "state.json").exists():
@@ -605,15 +606,18 @@ def action_send(
             if len(msgs) >= _MAILBOX_MAX:
                 msgs = msgs[-(  _MAILBOX_MAX - 1):]
         new_id = (msgs[-1]["id"] + 1) if msgs else 1
-        msgs.append({
-            "id": new_id, "thread_id": auto_thread, "type": msg_type,
+        msg_uuid = uuid.uuid4().hex[:8]
+        new_msg = {
+            "id": new_id, "_uuid": msg_uuid, "thread_id": auto_thread, "type": msg_type,
             "from": from_, "to": to, "cc": cc_list, "content": msg,
             "status": "unread", "timestamp": _now(), "ref": ref_id,
             "priority": priority,
-        })
+        }
+        msgs.append(new_msg)
         mb["messages"] = msgs
         mb["unread_count"] = sum(1 for m in msgs if m.get("status") == "unread")
         _write_json(ai_root / "mailbox.json", mb)
+        _maildir_write(ai_root, new_msg)   # Maildir: durable per-message file
         _gc_unreferenced_payloads(ai_root, msgs)
         _log_p2p("SEND", f"({msg_type}) {msg[:60]}...", from_node=from_, to_node=to)
     cc_str = f" cc={','.join(cc_list)}" if cc_list else ""
@@ -670,6 +674,7 @@ def action_mark_read(ai_root: Path, target: str, all_: bool, msg_id: int | None)
                     m["status"] = "read"; count += 1
         mb["unread_count"] = sum(1 for m in msgs if m.get("status") == "unread")
         _write_json(ai_root / "mailbox.json", mb)
+        _maildir_mark_read(ai_root, msg_id, target, all_)   # sync maildir files
     print(f"[READ] {count}개 메시지 읽음 처리")
 
 
@@ -710,8 +715,13 @@ def action_update_status(ai_root: Path, mission: str, blocked: str | None, phase
 # ─────────────────────────────────────────────────────────────
 
 def action_check(ai_root: Path, target: str) -> None:
-    mb = _read_json(ai_root / "mailbox.json")
-    unread = [m for m in mb.get("messages", []) if (m.get("to") == target or target in m.get("cc", [])) and m.get("status") == "unread"]
+    maildir_msgs = _maildir_read_all(ai_root)
+    if maildir_msgs:
+        all_msgs = maildir_msgs
+    else:
+        mb = _read_json(ai_root / "mailbox.json")
+        all_msgs = mb.get("messages", [])
+    unread = [m for m in all_msgs if (m.get("to") == target or target in m.get("cc", [])) and m.get("status") == "unread"]
     if not unread: print(f"[HUB] READ  0 messages for {target} (inbox empty)"); return
     print(f"[HUB] READ  {len(unread)} messages for {target}\n")
     for m in unread:
@@ -2404,6 +2414,52 @@ def action_feedback_resolve(ai_root: Path, feedback_id: str, status: str = "done
             sys.exit(1)
         fb_path.write_text("\n".join(output) + "\n", encoding="utf-8")
     print(f"[HUB] FEEDBACK-RESOLVE {feedback_id} | status={status}")
+
+
+def _maildir_path(ai_root: Path) -> Path:
+    return ai_root / "mailbox"
+
+
+def _maildir_write(ai_root: Path, message: dict) -> None:
+    """Write a single message as msg-{id}-{uuid}.json in the maildir."""
+    maildir = _maildir_path(ai_root)
+    maildir.mkdir(parents=True, exist_ok=True)
+    fname = f"msg-{message['id']}-{message.get('_uuid', uuid.uuid4().hex[:8])}.json"
+    _write_json(maildir / fname, message)
+
+
+def _maildir_read_all(ai_root: Path) -> list[dict]:
+    """Read all msg-*.json files from maildir, sorted by message id."""
+    maildir = _maildir_path(ai_root)
+    if not maildir.exists():
+        return []
+    messages = []
+    for path in sorted(maildir.glob("msg-*.json")):
+        try:
+            messages.append(_read_json(path))
+        except Exception:
+            pass
+    messages.sort(key=lambda m: m.get("id", 0))
+    return messages
+
+
+def _maildir_mark_read(ai_root: Path, msg_id: int | None, target: str, all_: bool) -> int:
+    """Mark maildir message files as read. Returns count changed."""
+    maildir = _maildir_path(ai_root)
+    if not maildir.exists():
+        return 0
+    count = 0
+    for path in maildir.glob("msg-*.json"):
+        try:
+            m = _read_json(path)
+            if m.get("to") == target and m.get("status") == "unread":
+                if all_ or m.get("id") == msg_id:
+                    m["status"] = "read"
+                    _write_json(path, m)
+                    count += 1
+        except Exception:
+            pass
+    return count
 
 
 def _artifact_path(ai_root: Path) -> Path:

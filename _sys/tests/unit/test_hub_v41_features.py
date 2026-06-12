@@ -277,6 +277,72 @@ class TestPeerStatusDeclarative:
         assert state == "open"
 
 
+# ─── Maildir storage ─────────────────────────────────────────────────────────
+
+class TestMaildir:
+    def test_send_creates_maildir_file(self, ai_dir):
+        (ai_dir / "mailbox").mkdir(exist_ok=True)
+        hub.action_send(ai_dir, "cc", "gc", "hello from maildir")
+        files = list((ai_dir / "mailbox").glob("msg-*.json"))
+        assert len(files) == 1
+        msg = json.loads(files[0].read_text(encoding="utf-8"))
+        assert msg["from"] == "cc"
+        assert msg["to"] == "gc"
+        assert msg["content"] == "hello from maildir"
+        assert msg["status"] == "unread"
+        assert "_uuid" in msg
+
+    def test_send_dual_write_updates_mailbox_json(self, ai_dir):
+        (ai_dir / "mailbox").mkdir(exist_ok=True)
+        hub.action_send(ai_dir, "cc", "gc", "dual write test")
+        mb = json.loads((ai_dir / "mailbox.json").read_text(encoding="utf-8"))
+        assert len(mb["messages"]) == 1
+        assert mb["unread_count"] == 1
+
+    def test_maildir_read_all_returns_sorted_by_id(self, ai_dir):
+        (ai_dir / "mailbox").mkdir(exist_ok=True)
+        hub.action_send(ai_dir, "cc", "gc", "first")
+        hub.action_send(ai_dir, "cc", "gc", "second")
+        msgs = hub._maildir_read_all(ai_dir)
+        assert len(msgs) == 2
+        assert msgs[0]["id"] < msgs[1]["id"]
+
+    def test_check_reads_from_maildir_when_present(self, ai_dir, capsys):
+        (ai_dir / "mailbox").mkdir(exist_ok=True)
+        hub.action_send(ai_dir, "cc", "gc", "maildir check test")
+        hub.action_check(ai_dir, "gc")
+        out = capsys.readouterr().out
+        assert "1 messages for gc" in out
+
+    def test_mark_read_updates_maildir_file(self, ai_dir):
+        (ai_dir / "mailbox").mkdir(exist_ok=True)
+        hub.action_send(ai_dir, "cc", "gc", "mark me read")
+        hub.action_mark_read(ai_dir, "gc", True, None)
+        msgs = hub._maildir_read_all(ai_dir)
+        assert all(m["status"] == "read" for m in msgs if m.get("to") == "gc")
+
+    def test_maildir_empty_falls_back_to_mailbox_json(self, ai_dir, capsys):
+        # mailbox/ exists but empty — falls back to mailbox.json
+        (ai_dir / "mailbox").mkdir(exist_ok=True)
+        mb = {"messages": [{"id": 1, "from": "cc", "to": "gc", "cc": [], "content": "legacy",
+                            "status": "unread", "timestamp": "2026-06-13T00:00:00",
+                            "type": "MSG", "priority": "INFO", "ref": None}], "unread_count": 1}
+        (ai_dir / "mailbox.json").write_text(json.dumps(mb), encoding="utf-8")
+        hub.action_check(ai_dir, "gc")
+        out = capsys.readouterr().out
+        assert "1 messages for gc" in out
+
+    def test_maildir_not_exist_falls_back_to_mailbox_json(self, ai_dir, capsys):
+        # mailbox/ does not exist at all
+        mb = {"messages": [{"id": 1, "from": "cc", "to": "gc", "cc": [], "content": "fallback",
+                            "status": "unread", "timestamp": "2026-06-13T00:00:00",
+                            "type": "MSG", "priority": "INFO", "ref": None}], "unread_count": 1}
+        (ai_dir / "mailbox.json").write_text(json.dumps(mb), encoding="utf-8")
+        hub.action_check(ai_dir, "gc")
+        out = capsys.readouterr().out
+        assert "1 messages for gc" in out
+
+
 # ─── _is_workspace_local + artifact path validation ─────────────────────────
 
 class TestArtifactWorkspaceLocal:
