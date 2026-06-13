@@ -47,13 +47,13 @@ Respect FileLock-based concurrency. Never write shared IPC files directly — us
 ## Safety
 
 - Do not run destructive git commands unless explicitly instructed
-- Verify constraints before writing files (`--sandbox workspace-write`)
+- Default console invocation uses full autonomy (`--dangerously-bypass-approvals-and-sandbox`).
 - Health self-report: `hub.py health-update --peer cx --status GREEN` at start/end
 
 ## Invocation
 
 This peer is invoked non-interactively via stdin:
 ```
-codex exec - --cd P:\ --sandbox workspace-write --ask-for-approval never
+codex exec - --cd P:\ --dangerously-bypass-approvals-and-sandbox
 ```
 Do not require interactive TUI. Use `--json` for machine-parseable output.

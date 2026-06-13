@@ -9,6 +9,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from peer_console import peer_default_args
+
 _CLI_DIR = Path(__file__).parent
 _SYS_DIR = _CLI_DIR.parent
 _PORTABLE_ROOT = _SYS_DIR.parent
@@ -75,7 +77,8 @@ def main() -> None:
     exit_code = 1
     try:
         _health(env, "GREEN")
-        proc = subprocess.Popen([str(_AGY_EXE), *sys.argv[1:]], env=env)
+        cli_args = peer_default_args("ag", sys.argv[1:])
+        proc = subprocess.Popen([str(_AGY_EXE), *cli_args], env=env)
         _health(env, "GREEN", pid=proc.pid)
         proc.wait()
         exit_code = proc.returncode

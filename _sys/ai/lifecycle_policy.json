@@ -60,6 +60,30 @@
   "health_lifecycle": {
     "failure_warn": 3,
     "failure_error": 5,
+    "monitoring": {
+      "zero_token_default": true,
+      "check_at": [
+        "peer_entry_start",
+        "before_delegation",
+        "before_peer_ask",
+        "session_boundary",
+        "peer_exit"
+      ],
+      "stale_source": "leader_election.health_stale_minutes",
+      "stale_action": "mark_stale_and_append_handoff_issue",
+      "routine_commands": [
+        "health-check",
+        "peer-status",
+        "health-precheck",
+        "health-sweep"
+      ]
+    },
+    "recovery": {
+      "YELLOW": "success_resets_failures_or_failure_error_promotes_red",
+      "STALE": "avoid_assignment_then_refresh_or_failover",
+      "RED": "quarantine_repair_diagnostic_peer_recover",
+      "manual_green_update_is_not_red_recovery": true
+    },
     "critical_reasons": [
       "sandbox_spawn_eperm",
       "rate_or_session_limit",

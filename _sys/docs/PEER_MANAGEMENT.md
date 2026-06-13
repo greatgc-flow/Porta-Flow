@@ -108,8 +108,11 @@ _sys/codex/
 
 **Direct Invocation:**
 ```bat
-codex exec -C P:\ --dangerously-bypass-approvals-and-sandbox "task instruction"
+_sys\cli\codex.bat
+_sys\cli\codex.bat --no-alt-screen
 ```
+
+The wrapper appends `--dangerously-bypass-approvals-and-sandbox` unless the user provides an explicit sandbox or approval policy.
 
 ### 2-4. AG — AntiGravity (`_sys/antigravity/`)
 
@@ -253,6 +256,8 @@ Entry points for launching each peer with health+auth pre-checks:
 | `gc` | `_sys/gemini/gemini-gate.bat` | `gemini-status.bat` |
 | `cx` | `_sys/cli/codex.bat` → `codex_entry.py` | `_sys/codex/health.json` |
 | `ag` | `_sys/cli/agy.bat` → `agy_entry.py` | `_sys/antigravity/health.json` |
+
+Console autonomy defaults are documented in `_sys/docs/peer-console-defaults.md`.
 
 ---
 

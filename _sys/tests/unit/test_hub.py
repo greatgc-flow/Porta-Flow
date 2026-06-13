@@ -617,6 +617,43 @@ class TestNodeManagement:
 
 
 class TestLifecycleActions:
+    def test_health_update_closes_and_reopens_gate(self, tmp_path, monkeypatch):
+        peer_dir = tmp_path / "_sys" / "gemini"
+        peer_dir.mkdir(parents=True)
+        monkeypatch.setattr(hub, "_peer_sys_dir", lambda peer_id: peer_dir)
+
+        hub.action_health_update("gc", "RED", 0.0, 0)
+        health = json.loads((peer_dir / "health.json").read_text("utf-8"))
+        assert health["context_health"]["status"] == "RED"
+        assert health["availability"]["gate_open"] is False
+        assert health["availability"]["entrypoint_ok"] is False
+
+        hub.action_health_update("gc", "GREEN", 0.0, 0)
+        health = json.loads((peer_dir / "health.json").read_text("utf-8"))
+        assert health["context_health"]["status"] == "GREEN"
+        assert health["availability"]["gate_open"] is True
+        assert health["availability"]["entrypoint_ok"] is True
+
+    def test_health_precheck_fails_explicit_stale_peer(self, ai_dir, tmp_path, monkeypatch):
+        peer_dir = tmp_path / "_sys" / "gemini"
+        peer_dir.mkdir(parents=True)
+        (peer_dir / "health.json").write_text(json.dumps({
+            "peer_id": "gc",
+            "context_health": {"status": "GREEN", "checked_at": "20000101T000000"},
+            "availability": {"gate_open": True},
+        }), encoding="utf-8")
+        monkeypatch.setattr(hub, "_peer_sys_dir", lambda peer_id: peer_dir)
+        monkeypatch.setattr(hub, "_load_orchestration", lambda: {
+            "hub_nodes": [{"node_id": "gc"}]
+        })
+        monkeypatch.setattr(hub, "_load_protocol_cfg", lambda: {
+            "leader_election": {"health_stale_minutes": 1}
+        })
+
+        with pytest.raises(SystemExit) as exc:
+            hub.action_health_precheck(ai_dir, peers="gc")
+        assert exc.value.code == 1
+
     def test_peer_quarantine_and_recover_update_health_and_handoff(self, ai_dir, tmp_path, monkeypatch):
         peer_dir = tmp_path / "gemini"
         monkeypatch.setattr(hub, "_peer_sys_dir", lambda peer_id: peer_dir)
@@ -766,6 +803,14 @@ class TestOperationalGuard:
 class TestEnhancedCollaboration:
     def test_ask_quiet_output_file_writes_response(self, ai_dir, tmp_path, monkeypatch, capsys):
         monkeypatch.setattr(hub, "_runtime_cfg", lambda: {"ask_default_timeout_sec": 7})
+        peer_dir = tmp_path / "_sys" / "gemini"
+        peer_dir.mkdir(parents=True)
+        (peer_dir / "health.json").write_text(json.dumps({
+            "peer_id": "gc",
+            "context_health": {"status": "GREEN", "checked_at": "29990101T000000"},
+            "availability": {"gate_open": True},
+        }), encoding="utf-8")
+        monkeypatch.setattr(hub, "_peer_sys_dir", lambda peer_id: peer_dir)
         mock_proc = _make_mock_proc(stdout=b"model response")
         out = tmp_path / "reply.md"
         with patch("shutil.which", return_value="/usr/bin/gemini"), \

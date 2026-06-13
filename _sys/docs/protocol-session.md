@@ -65,6 +65,24 @@ Every peer entry point MUST:
 | Staleness threshold | 24h | `session.handoff_staleness_hours` |
 | Consensus round timeout | 30m | `consensus.timeout_minutes` |
 
+## 6. Peer CLI Session Reuse (cx / gc)
+
+`hub.py ask` reuses CLI process sessions across calls (scope_key = room_id by default).
+
+| Peer | New session | Resume session |
+|------|------------|---------------|
+| cx | `codex exec - --json --ignore-rules --dangerously-bypass-approvals-and-sandbox` | `codex exec resume <thread_id> - ...` |
+| gc | `gemini --session-id <uuid> -p - -o text --approval-mode yolo --skip-trust` | `gemini --resume <uuid> -p - -o text --approval-mode yolo --skip-trust` |
+
+State file: `_sys/{peer_subdir}/session_state.json` (gitignored)
+- `active[scope_key]` → current session entry
+- `history[]` → retired sessions (last 50)
+
+On resume failure: retire old session → retry fresh once → store new session_id.
+Topic boundary (`new-topic`, `clear-room`): all peer sessions retired.
+Policy override: `hub.py ask --session-policy fresh` for independent cross-review calls.
+
 ## §HISTORY
+- v4.2 (2026-06-13): Added §6 peer CLI session reuse (cx/gc) — session_state.json, scope_key, retry policy.
 - v4.1 (2026-06-12): Verified session state and N-Way active room resolution.
 - v4.0 (2026-06-11): Extracted from PROTOCOL.md §P-6,§P-11; added decision tree, startup contract, fill_depth_multiplier

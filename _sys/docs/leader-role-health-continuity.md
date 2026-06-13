@@ -80,6 +80,11 @@ Effective health:
 - STALE: avoid for leadership and new assignments.
 - GREEN/YELLOW: eligible, with YELLOW lower priority.
 
+Operational rule:
+- Detailed monitoring cadence, state transitions, quarantine, recovery, and failover procedures are governed by `protocol-health.md`.
+- A peer that transitions to RED must not become a coordinator again until `hub.py peer-recover` records the recovery event and `hub.py health-precheck` passes.
+- A STALE peer may be refreshed by an explicit diagnostic, but it must not receive new ownership while stale.
+
 Profile fields live in each peer health manifest:
 - tier
 - context_window

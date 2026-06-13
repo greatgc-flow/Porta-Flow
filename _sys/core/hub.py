@@ -1024,6 +1024,12 @@ def _build_ask_query_with_context(ai_root: Path | None, query: str) -> str:
         f"Blocked: {state.get('blocked') or 'none'}",
         f"Phase: {state.get('phase') or 'none'}",
     ]
+    # ── User Directives 주입 (_sys/ai/user-directives.md) ────────
+    directives_path = Path(__file__).parent.parent / "ai" / "user-directives.md"
+    if directives_path.exists():
+        directives = directives_path.read_text(encoding="utf-8", errors="replace").strip()
+        if directives:
+            lines.extend(["", "[USER DIRECTIVES]", directives])
     handoff_path = ai_root / "sessions" / room_id / "handoff.md"
     if handoff_path.exists():
         handoff = handoff_path.read_text(encoding="utf-8", errors="replace").strip()
@@ -1261,6 +1267,9 @@ def action_new_topic(ai_root: Path, subject: str) -> None:
     new_dir = ai_root / "sessions" / new_room
     new_dir.mkdir(parents=True, exist_ok=True)
     _write_handoff(new_dir, carried)
+    # Clear peer sessions on topic change (old scope_key = old room no longer valid)
+    for pid in ("cx", "gc", "cc"):
+        _clear_peer_sessions(pid, f"new-topic:{new_room}", ai_root)
     print(f"[HUB] NEW-TOPIC {new_room} | from={old_room or 'none'} | subject={subject}")
 
 
@@ -1290,6 +1299,8 @@ def action_clear_room(ai_root: Path, subject: str) -> None:
     new_dir = ai_root / "sessions" / new_room
     new_dir.mkdir(parents=True, exist_ok=True)
     _write_handoff(new_dir, sections)
+    for pid in ("cx", "gc", "cc"):
+        _clear_peer_sessions(pid, f"clear-room:{new_room}", ai_root)
     print(f"[HUB] CLEAR-ROOM {new_room} | from={old_room or 'none'} | subject={subject}")
 
 
@@ -1359,19 +1370,117 @@ def _append_ask_history(ai_root: Path | None, peer_id: str, query_file_path: str
         pass
 
 
-def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True) -> None:
-    saved_query_file_path = query_file  # 경로를 unlink 전에 저장
+# ─────────────────────────────────────────────────────────────
+# Session State Management
+# ─────────────────────────────────────────────────────────────
+
+def _session_state_path(peer_id: str) -> Path:
+    return _peer_sys_dir(peer_id) / "session_state.json"
+
+
+def _load_session_state(peer_id: str) -> dict:
+    path = _session_state_path(peer_id)
+    if path.exists():
+        return _read_json(path)
+    return {"_version": "1.0", "peer_id": peer_id, "active": {}, "history": []}
+
+
+def _save_session_state(peer_id: str, data: dict, ai_root: Path | None = None) -> None:
+    path = _session_state_path(peer_id)
+    lock_root = ai_root if ai_root else find_ai_root()
+    with _get_lock(lock_root, f"ss_{peer_id}"):
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _get_active_session(peer_id: str, scope_key: str) -> dict | None:
+    entry = _load_session_state(peer_id).get("active", {}).get(scope_key)
+    return entry if entry and entry.get("status") == "active" else None
+
+
+def _set_active_session(peer_id: str, scope_key: str, session_id: str, ask_id: str, ai_root: Path | None = None) -> None:
+    data = _load_session_state(peer_id)
+    existing = data.get("active", {}).get(scope_key, {})
+    data.setdefault("active", {})[scope_key] = {
+        "session_id": session_id,
+        "scope_key": scope_key,
+        "created_at": existing.get("created_at") or _now(),
+        "last_used_at": _now(),
+        "last_ask_id": ask_id,
+        "status": "active",
+    }
+    _save_session_state(peer_id, data, ai_root)
+
+
+def _retire_session(peer_id: str, scope_key: str, reason: str, ai_root: Path | None = None) -> None:
+    data = _load_session_state(peer_id)
+    entry = data.get("active", {}).pop(scope_key, None)
+    if entry:
+        entry["status"] = "retired"
+        entry["retired_at"] = _now()
+        entry["retire_reason"] = reason
+        hist = data.setdefault("history", [])
+        hist.append(entry)
+        data["history"] = hist[-50:]
+        _save_session_state(peer_id, data, ai_root)
+
+
+def _clear_peer_sessions(peer_id: str, reason: str, ai_root: Path | None = None) -> None:
+    data = _load_session_state(peer_id)
+    for scope_key in list(data.get("active", {}).keys()):
+        _retire_session(peer_id, scope_key, reason, ai_root)
+
+
+def _extract_jsonl_thread_id(raw: str) -> str | None:
+    """codex --json JSONL에서 thread.started 이벤트의 thread_id 추출."""
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+            if obj.get("type") == "thread.started":
+                tid = obj.get("thread_id")
+                if tid:
+                    return str(tid)
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
+def _compute_scope_key(ai_root: Path | None, explicit_scope: str | None = None) -> str:
+    """세션 스코프 키: explicit_scope > room_id > 'default'."""
+    if explicit_scope:
+        return explicit_scope
+    if ai_root:
+        room_id = _read_json(ai_root / "state.json").get("room_id")
+        if room_id:
+            return room_id
+    return "default"
+
+
+def _build_session_cmd(health_peer: str, session_id: str | None, exe: str) -> tuple[list[str], bool, str | None]:
+    """세션 재사용/신규 생성 명령 반환. (cmd_args, use_stdin, gc_new_session_id)"""
+    _CX_BASE = ["--json", "--ignore-rules", "--dangerously-bypass-approvals-and-sandbox"]
+    if health_peer == "cx":
+        if session_id:
+            return ["exec", "resume", session_id, "-"] + _CX_BASE, True, None
+        return ["exec", "-"] + _CX_BASE, True, None
+    if health_peer == "gc":
+        if session_id:
+            return ["--resume", session_id, "-p", "-", "-o", "text", "--approval-mode", "yolo", "--skip-trust"], True, None
+        new_uuid = str(uuid.uuid4())
+        return ["--session-id", new_uuid, "-p", "-", "-o", "text", "--approval-mode", "yolo", "--skip-trust"], True, new_uuid
+    return [], False, None
+
+
+def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None) -> None:
+    saved_query_file_path = query_file
     if query_file:
         qf = Path(query_file)
         if not qf.exists(): sys.exit(1)
         query = qf.read_text(encoding="utf-8")
         qf.unlink()
 
-    # 쿼리 전달 전략:
-    # {query} 치환 방식은 Windows cmd/bat 호출 시 줄바꿈(\n)에서 인자가 잘리는 치명적 결함이 있음.
-    # 따라서 일반 노드는 stdin(-p -) 방식으로 강제 전환.
-    # requires_pty 노드(agy 등)는 pywinpty 사용 + query 직접 인라인.
-    # aliases는 orchestration.json 각 노드의 "aliases" 필드에서 동적 로드
     nodes = _load_nodes(ai_root) if ai_root else _default_nodes()["nodes"]
     disabled_nodes = {
         entry.get("node_id")
@@ -1393,10 +1502,8 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
     exe_name = node.get("invoke", to)
     raw_args = node.get("invoke_args", ["-p", "{query}"])
     requires_pty = node.get("requires_pty", False)
-    # Virtual nodes delegate health tracking to their base peer
     health_peer = node.get("peer") or to
 
-    # Load defaults from protocol.json if not specified.
     if not timeout_sec or timeout_sec <= 0:
         try:
             if requires_pty:
@@ -1411,37 +1518,52 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
     if include_context:
         query = _build_ask_query_with_context(ai_root, query)
 
-    cmd_args = []
+    # ── Session reuse ──────────────────────────────────────────
+    session_mode = node.get("session_mode", "none")
+    # session_policy arg overrides node config; "auto" means use node config
+    effective_policy = session_policy if session_policy != "auto" else session_mode
+    use_session = effective_policy in ("auto", "reuse") and health_peer in ("cx", "gc") and not requires_pty
+    scope_key: str | None = None
+    existing_session: dict | None = None
+    gc_new_session_id: str | None = None
+
+    if use_session:
+        scope_key = _compute_scope_key(ai_root, explicit_scope)
+        existing_session = _get_active_session(health_peer, scope_key)
+
+    # ── Command construction ───────────────────────────────────
+    cmd_args: list[str] = []
     use_stdin = False
-    for arg in raw_args:
-        if "{query}" in arg:
-            if requires_pty:
-                # PTY 모드: query를 직접 인라인 (stdin 치환 불필요)
-                cmd_args.append(arg.replace("{query}", query))
+
+    if use_session:
+        session_id = existing_session["session_id"] if existing_session else None
+        cmd_args, use_stdin, gc_new_session_id = _build_session_cmd(health_peer, session_id, exe_name)
+        is_resume_attempt = session_id is not None
+    else:
+        is_resume_attempt = False
+        for arg in raw_args:
+            if "{query}" in arg:
+                if requires_pty:
+                    cmd_args.append(arg.replace("{query}", query))
+                else:
+                    cmd_args.append(arg.replace("{query}", "-"))
+                    use_stdin = True
             else:
-                # {query}가 포함된 인자를 - (stdin) 지시자로 치환
-                cmd_args.append(arg.replace("{query}", "-"))
-                use_stdin = True
-        else:
-            cmd_args.append(arg)
-    
+                cmd_args.append(arg)
+
     exe = shutil.which(exe_name)
     if not exe:
         print(f"[ERROR] {exe_name} CLI not found in PATH", file=sys.stderr)
         _record_ask_failure(health_peer, "cli_not_found", f"{exe_name} CLI not found in PATH", None, ai_root)
         sys.exit(1)
-    
+
     cmd = [exe] + cmd_args
-    
+
     # ── Environment Variable Injection ─────────────────────────
     process_env = {**os.environ, "PYTHONUTF8": "1"}
-    
-    # Load peers to apply peer-specific env_vars (e.g. AGY_CONFIG_HOME)
     peers = _load_peers()
     target_peer_id = None
     target_peer_cfg = None
-
-    # Heuristic to find the peer corresponding to the node or invoke name
     mapped_peer = _node_to_peer_map().get(to, to)
     if mapped_peer in peers:
         target_peer_id = mapped_peer
@@ -1457,7 +1579,6 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                 target_peer_id = pid
                 target_peer_cfg = pcfg
                 break
-
     if target_peer_cfg:
         sys_dir = Path(__file__).parent.parent
         peer_subdir = sys_dir / target_peer_cfg.get("sys_subdir", target_peer_id)
@@ -1469,7 +1590,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             else:
                 process_env[k] = str((peer_subdir / rel).resolve())
 
-    # requires_pty: pywinpty로 pseudo-TTY 실행 (WriteConsole() 우회)
+    # ── PTY path ───────────────────────────────────────────────
     if requires_pty and sys.platform == "win32":
         output, elapsed = _ask_with_pty(cmd, to, timeout_sec, process_env, quiet)
         _record_ask_success(health_peer, elapsed, ai_root)
@@ -1491,10 +1612,12 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             print(output, end="")
         return
 
+    # ── Subprocess path (with optional session-retry) ──────────
     heartbeat_sec, lease_timeout_sec = _lease_cfg()
     ask_id = _short_id("ask-")
     lease_status = "open"
     t0 = time.monotonic()
+    proc = None  # ensure defined for finally
 
     try:
         proc = subprocess.Popen(
@@ -1518,10 +1641,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                 _kill_process_tree(proc)
                 raise subprocess.TimeoutExpired(cmd, timeout_sec)
             try:
-                raw_out, raw_err = proc.communicate(
-                    input=input_bytes,
-                    timeout=min(heartbeat_sec, remaining),
-                )
+                raw_out, raw_err = proc.communicate(input=input_bytes, timeout=min(heartbeat_sec, remaining))
                 break
             except subprocess.TimeoutExpired:
                 input_bytes = None
@@ -1533,12 +1653,54 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
 
         elapsed = int(time.monotonic() - t0)
         lease_status = "closed"
-        output = _strip_ansi(_decode_output(raw_out))
+        raw_text = _strip_ansi(_decode_output(raw_out))
 
-        if node.get("invoke_args") and "--json" in node.get("invoke_args", []):
-            output = _extract_jsonl_text(output, to, ai_root)
+        # JSONL 처리: session-aware cx OR 원래 --json 노드
+        uses_json = use_session and health_peer == "cx" or (node.get("invoke_args") and "--json" in node.get("invoke_args", []))
+        output = _extract_jsonl_text(raw_text, to, ai_root) if uses_json else raw_text
 
-        if proc.returncode != 0:
+        # ── Session resume failure → fallback to fresh ─────────
+        if proc.returncode != 0 and is_resume_attempt and scope_key:
+            clean_err_r = _strip_ansi(_decode_output(raw_err))
+            print(f"[HUB:WARN] {to} session resume failed (exit={proc.returncode}), retrying fresh", file=sys.stderr)
+            _retire_session(health_peer, scope_key, "resume_failed", ai_root)
+            _lease_close(ai_root, to, proc.pid, "retry")
+
+            fresh_args, _, gc_new_session_id = _build_session_cmd(health_peer, None, exe_name)
+            fresh_cmd = [exe] + fresh_args
+            proc = subprocess.Popen(fresh_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=process_env)
+            _lease_open(ai_root, to, proc.pid, lease_timeout_sec, ask_id=ask_id + "-r")
+            t1 = time.monotonic()
+            try:
+                raw_out, raw_err = proc.communicate(input=query.encode("utf-8"), timeout=timeout_sec if timeout_sec > 0 else None)
+            except subprocess.TimeoutExpired:
+                _kill_process_tree(proc)
+                raise
+            elapsed = int(time.monotonic() - t0)
+            raw_text = _strip_ansi(_decode_output(raw_out))
+            output = _extract_jsonl_text(raw_text, to, ai_root) if health_peer == "cx" else raw_text
+            is_resume_attempt = False
+            if proc.returncode == 0:
+                _record_ask_success(health_peer, elapsed, ai_root)
+                _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, True, None)
+                _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="success", latency_sec=elapsed) if ai_root else None
+                if use_session and scope_key:
+                    if health_peer == "cx":
+                        tid = _extract_jsonl_thread_id(raw_text)
+                        if tid:
+                            _set_active_session(health_peer, scope_key, tid, ask_id + "-r", ai_root)
+                    elif health_peer == "gc" and gc_new_session_id:
+                        _set_active_session(health_peer, scope_key, gc_new_session_id, ask_id + "-r", ai_root)
+            else:
+                clean_err = _strip_ansi(_decode_output(raw_err))
+                reason, extra = _classify_ask_failure(clean_err + "\n" + output)
+                extra["session_recovered"] = False
+                lease_status = "failed"
+                _record_ask_failure(health_peer, reason, clean_err or output, elapsed, ai_root, extra)
+                _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, False, reason)
+                print(f"[HUB:WARN] {to} exited {proc.returncode}\n{clean_err}", file=sys.stderr)
+
+        elif proc.returncode != 0:
             clean_err = _strip_ansi(_decode_output(raw_err))
             reason, extra = _classify_ask_failure(clean_err + "\n" + output)
             lease_status = "failed"
@@ -1552,6 +1714,19 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, True, None)
             if ai_root:
                 _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="success", latency_sec=elapsed)
+
+            # ── Session state update on success ─────────────────
+            if use_session and scope_key and proc.returncode == 0:
+                if health_peer == "cx":
+                    thread_id = _extract_jsonl_thread_id(raw_text)
+                    if thread_id:
+                        _set_active_session(health_peer, scope_key, thread_id, ask_id, ai_root)
+                        _log_p2p("SESSION", f"cx thread stored scope={scope_key} id={thread_id[:8]}...", to_node="cx")
+                elif health_peer == "gc":
+                    sid = gc_new_session_id or (existing_session or {}).get("session_id")
+                    if sid:
+                        _set_active_session(health_peer, scope_key, sid, ask_id, ai_root)
+                        _log_p2p("SESSION", f"gc session stored scope={scope_key} id={sid[:8]}...", to_node="gc")
 
         if output_file:
             try:
@@ -1589,7 +1764,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         print(f"[HUB:ERROR] ask 실패: {e}", file=sys.stderr)
         sys.exit(1)
     finally:
-        pid = proc.pid if "proc" in dir() else -1
+        pid = proc.pid if proc is not None else -1
         _lease_close(ai_root, to, pid, lease_status)
 
 
@@ -1768,12 +1943,12 @@ def action_health_update(peer_id: str, status: str, jsonl_mb: float = 0.0, failu
                 data = {}
         cfg = _load_protocol_cfg()
         thresholds = cfg.get("health", {}).get("thresholds", {})
-        peer_name = peer_id.rstrip("ca")  # cc/ca → claude
+        peer_name = _node_to_peer_map().get(peer_id, peer_id)
         if peer_name not in thresholds:
             peer_name = peer_id
         th = thresholds.get(peer_name, {"green_mb": 0.6, "yellow_mb": 1.2})
-        computed_status = status
-        if status == "AUTO":
+        computed_status = str(status or "GREEN").upper()
+        if computed_status == "AUTO":
             if jsonl_mb >= th["yellow_mb"]:
                 computed_status = "RED"
             elif jsonl_mb >= th["green_mb"]:
@@ -1804,8 +1979,12 @@ def action_health_update(peer_id: str, status: str, jsonl_mb: float = 0.0, failu
             # 성공적 실행 시 entrypoint_ok/authenticated 자동 true 설정
             avail["entrypoint_ok"] = True
             avail["authenticated"] = True
+            avail["gate_open"] = True
         elif computed_status == "RED":
             avail["entrypoint_ok"] = False
+            avail["gate_open"] = False
+        elif computed_status == "YELLOW":
+            avail.setdefault("gate_open", True)
         health_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     _log_p2p("HEALTH", f"peer={peer_id} status={computed_status} jsonl={jsonl_mb:.2f}MB failures={failures}")
     print(f"[HUB] HEALTH-UPDATE {peer_id} | status={computed_status} jsonl={jsonl_mb:.2f}MB")
@@ -1837,11 +2016,18 @@ def action_health_check(peer_filter: str | None = None) -> None:
             ctx = h.get("context_health", {})
             st = ctx.get("status", "UNKNOWN")
             mb = ctx.get("jsonl_mb", 0.0)
+            effective_st, _ = _peer_effective_health(peer_name)
+            if effective_st == "STALE" and st != "STALE":
+                st = "STALE"
+                h.setdefault("context_health", {})["status"] = "STALE"
+                h["context_health"]["stale_marked_at"] = _now()
+                health_path.write_text(json.dumps(h, ensure_ascii=False, indent=2), encoding="utf-8")
             # lazy PID 검증: GREEN인데 active_pid가 죽어있으면 STALE로 표시 후 갱신
             active_pid = h.get("availability", {}).get("active_pid")
             if st == "GREEN" and active_pid and not _pid_alive(active_pid):
                 st = "STALE"
                 h.setdefault("context_health", {})["status"] = "STALE"
+                h["context_health"]["stale_marked_at"] = _now()
                 h.setdefault("availability", {}).pop("active_pid", None)
                 health_path.write_text(json.dumps(h, ensure_ascii=False, indent=2), encoding="utf-8")
             results.append(f"{peer_name}={st}({mb:.1f}MB)")
@@ -2767,6 +2953,7 @@ def action_role_status(ai_root: Path) -> None:
 def action_health_precheck(ai_root: Path, needs: str | None = None, peers: str | None = None) -> None:
     orch = _load_orchestration()
     selected: list[str] | None = None
+    explicit_peers = peers is not None
     if peers:
         selected = [p.strip() for p in peers.split(",") if p.strip()]
     elif needs:
@@ -2774,12 +2961,15 @@ def action_health_precheck(ai_root: Path, needs: str | None = None, peers: str |
         if not selected:
             selected = []
     critical_failed = False
+    checked = 0
+    eligible = 0
     for node in orch.get("hub_nodes", []):
         if node.get("enabled") is False and not peers:
             continue
         peer = node.get("node_id")
         if selected is not None and peer not in selected:
             continue
+        checked += 1
         sys_subdir = _peer_sys_dir(peer)
         h_file = sys_subdir / "health.json"
         if h_file.exists():
@@ -2788,9 +2978,21 @@ def action_health_precheck(ai_root: Path, needs: str | None = None, peers: str |
             gate = h_data.get("availability", {}).get("gate_open", True)
             if status == "YELLOW":
                 print(f"[HUB:WARN] Pre-check warning for {peer}: status={status}, gate_open={gate}")
+            if status == "STALE":
+                print(f"[HUB:WARN] Pre-check stale for {peer}: status={status}, gate_open={gate}")
+                if explicit_peers:
+                    critical_failed = True
             if status == "RED" or gate is False:
                 print(f"[HUB:WARN] Pre-check failed for {peer}: status={status}, gate_open={gate}")
                 critical_failed = True
+            elif status in {"GREEN", "YELLOW"}:
+                eligible += 1
+        else:
+            print(f"[HUB:WARN] Pre-check missing health file for {peer}")
+            if explicit_peers:
+                critical_failed = True
+    if selected is not None and (checked == 0 or eligible == 0):
+        critical_failed = True
     if critical_failed:
         scope = needs or peers or "all"
         print(f"[HUB:ERROR] Governance Health Pre-Check FAILED. Scope={scope}", file=sys.stderr)
@@ -2965,9 +3167,12 @@ def action_health_sweep(ai_root: Path) -> None:
         peer = node.get("node_id")
         status, data = _peer_effective_health(peer)
         if status == "STALE":
+            was_stale = data.get("context_health", {}).get("status") == "STALE"
             data.setdefault("context_health", {})["status"] = "STALE"
             data["context_health"]["stale_marked_at"] = _now()
             _write_peer_health(peer, data, ai_root)
+            if not was_stale:
+                _append_handoff_item(ai_root, "PENDING_ISSUES", f"{_now()} {peer}: health marked STALE by health-sweep")
             swept += 1
     print(f"[HUB] HEALTH-SWEEP stale={swept}")
 
@@ -3159,13 +3364,16 @@ def main() -> None:
     parser.add_argument("--auth-needed")
     parser.add_argument("--scope")
     parser.add_argument("--fallback")
+    parser.add_argument("--session-policy", dest="session_policy", default="auto",
+                        choices=["auto", "reuse", "fresh", "none"],
+                        help="Session reuse policy: auto=use node config, reuse=always reuse, fresh=always new, none=disable")
 
     args = parser.parse_args()
     if args.action == "ask":
         ai_root_opt = None
         try: ai_root_opt = find_ai_root()
         except: pass
-        action_ask(args.to_, args.query, args.query_file, args.timeout, ai_root_opt, quiet=args.quiet, output_file=args.output_file)
+        action_ask(args.to_, args.query, args.query_file, args.timeout, ai_root_opt, quiet=args.quiet, output_file=args.output_file, session_policy=args.session_policy, explicit_scope=args.scope)
         return
 
     ai_root = find_ai_root()

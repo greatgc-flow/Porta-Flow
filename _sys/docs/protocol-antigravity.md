@@ -16,6 +16,12 @@
 
 ## Invocation Modes
 
+### Interactive console
+```
+_sys\cli\agy.bat
+```
+`agy_entry.py` appends `--dangerously-skip-permissions` by default unless the user supplies `--sandbox` or the permission flag explicitly.
+
 ### Async (default — use for messaging)
 ```
 hub.py send --from ag --to cc --msg "..."
@@ -67,5 +73,6 @@ Written to `_sys/antigravity/health.json`:
 ```
 
 ## §HISTORY
+- v4.2 (2026-06-13): Direct console wrapper defaults to full autonomy, with explicit sandbox user override preserved.
 - v4.1 (2026-06-12): Verified integration of native agy.exe with N-Way Rooms.
 - v4.0 (2026-06-11): New file; PTY consensus policy, direct JSON vote, user comm scenarios

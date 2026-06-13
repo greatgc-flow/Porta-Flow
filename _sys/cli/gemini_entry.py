@@ -8,6 +8,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from peer_console import peer_default_args
+
 _CLI_DIR = Path(__file__).parent
 _SYS_DIR = _CLI_DIR.parent
 _PORTABLE_ROOT = _SYS_DIR.parent
@@ -41,8 +43,9 @@ def main() -> None:
         print(fill.stdout)
     subprocess.run([_PYTHON, str(_HUB), "status"], env=env)
 
+    cli_args = peer_default_args("gc", sys.argv[1:])
     result = subprocess.run(
-        ["cmd", "/c", str(_GEMINI_CMD), *sys.argv[1:]],
+        ["cmd", "/c", str(_GEMINI_CMD), *cli_args],
         env=env,
     )
     sys.exit(result.returncode)

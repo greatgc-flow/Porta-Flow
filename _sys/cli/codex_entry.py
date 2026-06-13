@@ -10,6 +10,8 @@ import sys
 import time
 from pathlib import Path
 
+from peer_console import peer_default_args
+
 _CLI_DIR = Path(__file__).parent
 _SYS_DIR = _CLI_DIR.parent
 _PORTABLE_ROOT = _SYS_DIR.parent
@@ -68,7 +70,8 @@ def main() -> None:
     t_start = time.time()
     try:
         _health(env, "GREEN")
-        result = subprocess.run(["cmd", "/c", str(_CODEX_CMD), *sys.argv[1:]], env=env)
+        cli_args = peer_default_args("cx", sys.argv[1:])
+        result = subprocess.run(["cmd", "/c", str(_CODEX_CMD), *cli_args], env=env)
         exit_code = result.returncode
         duration_ms = int((time.time() - t_start) * 1000)
         final_status = "GREEN" if exit_code == 0 else "RED"

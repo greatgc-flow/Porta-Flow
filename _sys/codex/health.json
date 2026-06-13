@@ -26,27 +26,27 @@
   "context_health": {
     "status": "GREEN",
     "jsonl_mb": 0.0,
-    "checked_at": "20260612T213259",
+    "checked_at": "20260614T010440",
     "source": "self"
   },
   "session_health": {
-    "consecutive_failures": 1,
-    "last_failure_reason": "timeout",
-    "last_success_at": "2026-06-12T21:04:55",
-    "session_count_today": 18,
-    "session_date": "20260612",
+    "consecutive_failures": 0,
+    "last_failure_reason": null,
+    "last_success_at": "2026-06-14T01:04:40",
+    "session_count_today": 4,
+    "session_date": "20260614",
     "last_failure_detail": "ask timeout after 180s",
-    "last_failure_at": "2026-06-12T21:32:59"
+    "last_failure_at": "2026-06-13T15:35:20"
   },
   "availability": {
     "installed": true,
-    "authenticated": false,
+    "authenticated": true,
     "gate_open": true,
     "last_gate_check": null,
     "cli_version": "codex-cli 0.139.0",
-    "entrypoint_ok": false,
-    "last_invocation_exit_code": 1,
-    "last_invocation_duration_ms": 180000,
+    "entrypoint_ok": true,
+    "last_invocation_exit_code": 0,
+    "last_invocation_duration_ms": 119000,
     "rate_limit_state": "ok",
     "workspace_access": "unknown",
     "active_pid": null

@@ -6,13 +6,33 @@
       "Write(_workspace/**)",
       "Write(_archive/**)",
       "Write(_sys/claude/agent/CONTEXT.md)",
-      "Bash(_sys/context/*.bat)"
+      "Bash(_sys/context/*.bat)",
+      "Bash(_sys/cli/*.bat)",
+      "Bash(_sys/hooks/*.bat)",
+      "Bash(_sys/scans/*.bat)",
+      "Bash(_sys/tools/*.bat)",
+      "Bash(_sys/gemini/*.bat)",
+      "Bash(_sys/tools/ripgrep/rg.exe *)",
+      "Bash(_sys/tools/fd/fd.exe *)",
+      "Bash(python _sys/core/hub.py *)",
+      "Write(.ai/**)",
+      "Bash(cmd /c \"P:\\_sys\\cli\\msg.bat\" *)",
+      "PowerShell(cmd /c \"P:\\_sys\\cli\\msg.bat\" *)",
+      "PowerShell(cmd /c \"P:\\_sys\\cli\\msg.bat\" ask *)",
+      "PowerShell(cmd /c \"P:\\_sys\\cli\\claude.bat\" *)",
+      "PowerShell(cmd /c \"P:\\_sys\\cli\\gemini.bat\" *)",
+      "PowerShell(cmd /c \"P:\\_sys\\cli\\codex.bat\" *)",
+      "PowerShell(cmd /c \"P:\\_sys\\cli\\agy.bat\" *)",
+      "PowerShell(Get-ChildItem \"P:\\_sys\\ *)",
+      "PowerShell(Get-Content \"P:\\ *)",
+      "PowerShell(cmd /c \"P:\\\\_sys\\\\gemini\\\\gemini-usage.bat\")"
     ],
-    "defaultMode": "default"
+    "defaultMode": "auto"
   },
   "worktree": {
     "baseRef": "fresh"
   },
+  "enableWorkflows": true,
   "statusLine": {
     "type": "command",
     "command": "bash ~/.claude/statusline-command.sh"
@@ -28,12 +48,14 @@
       }
     }
   },
-  "effortLevel": "medium",
+  "effortLevel": "high",
   "theme": "auto",
   "editorMode": "normal",
+  "verbose": true,
   "teammateMode": "auto",
   "remoteControlAtStartup": true,
   "inputNeededNotifEnabled": true,
   "agentPushNotifEnabled": true,
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "autoCompactThreshold": 0.7
 }

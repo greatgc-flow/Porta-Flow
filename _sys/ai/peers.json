@@ -35,6 +35,10 @@
                 "Bash(cmd /c \"{DRIVE}:\\_sys\\cli\\msg.bat\" *)",
                 "PowerShell(cmd /c \"{DRIVE}:\\_sys\\cli\\msg.bat\" *)",
                 "PowerShell(cmd /c \"{DRIVE}:\\_sys\\cli\\msg.bat\" ask *)",
+                "PowerShell(cmd /c \"{DRIVE}:\\_sys\\cli\\claude.bat\" *)",
+                "PowerShell(cmd /c \"{DRIVE}:\\_sys\\cli\\gemini.bat\" *)",
+                "PowerShell(cmd /c \"{DRIVE}:\\_sys\\cli\\codex.bat\" *)",
+                "PowerShell(cmd /c \"{DRIVE}:\\_sys\\cli\\agy.bat\" *)",
                 "PowerShell(Get-ChildItem \"{DRIVE}:\\_sys\\ *)",
                 "PowerShell(Get-Content \"{DRIVE}:\\ *)"
               ]

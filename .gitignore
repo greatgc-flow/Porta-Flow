@@ -26,6 +26,7 @@ _sys/tools/agy/
 _sys/data/temp/
 _sys/data/setup-files/
 _sys/data/logs/
+_sys/data/state/
 
 # =================================================================
 # 4. Local Configurations & Device-Specific State
@@ -53,6 +54,7 @@ _sys/*/usage.json
 _sys/*/session-id.txt
 _sys/*/session-map.json
 _sys/*/session.lock
+_sys/*/session_state.json
 _sys/*/cq-*.txt
 _sys/mock_peer/
 
@@ -69,6 +71,7 @@ _sys/claude/config/daemon/
 _sys/claude/config/file-history/
 _sys/claude/config/history.jsonl
 _sys/claude/config/jobs/
+_sys/claude/config/mcp-needs-auth-cache.json
 _sys/claude/config/paste-cache/
 _sys/claude/config/plans/
 _sys/claude/config/plugins/
@@ -79,6 +82,7 @@ _sys/claude/config/stats-cache.json
 _sys/claude/config/tasks/
 _sys/claude/config/telemetry/
 _sys/claude/config/tmp/
+_sys/claude/config/uploads/
 
 # Antigravity (agy) runtime data — tracked: bin/agentapi.bat, health.json
 # Everything else in config/ is runtime-generated
@@ -105,8 +109,13 @@ _sys/codex/config/.codex/
 _sys/codex/config/history/
 _sys/codex/config/sessions/
 _sys/codex/config/tmp/
+_sys/codex/config/*.sqlite
+_sys/codex/config/*.sqlite-*
 
 # Gemini auth/runtime data in config/ (tracked: GEMINI.md, CONTEXT.md, policies/)
+_sys/gemini/config/.gemini.host_backup/
+_sys/gemini/config/antigravity-cli/
+_sys/gemini/config/config/
 _sys/gemini/config/google_accounts.json
 _sys/gemini/config/history/
 _sys/gemini/config/installation_id
@@ -116,6 +125,7 @@ _sys/gemini/config/settings.json
 _sys/gemini/config/state.json
 _sys/gemini/config/trustedFolders.json
 _sys/gemini/config/tmp/
+_sys/gemini/config/policies/auto-saved.toml
 
 # Session plans and dynamic documentation (not tracked)
 /plans/
@@ -136,6 +146,7 @@ _sys/tests/integration/recovery_test_tmp/
 _sys/tests/integration/local_test_tmp/
 .pytest_cache/
 setup_test_env.py
+_sys/temp_manual_gen.py
 
 # =================================================================
 # 7. Root-level session/debug log dumps

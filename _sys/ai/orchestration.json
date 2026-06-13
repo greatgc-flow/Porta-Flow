@@ -16,7 +16,7 @@
       "aliases": ["claude", "anthropic"],
       "type": "peer",
       "invoke": "claude",
-      "invoke_args": ["-p", "{query}"],
+      "invoke_args": ["-p", "{query}", "--dangerously-skip-permissions"],
       "memory": "persistent",
       "timeout": 0
     },
@@ -27,7 +27,7 @@
       "aliases": ["claude-alt"],
       "type": "peer",
       "invoke": "claude",
-      "invoke_args": ["-p", "{query}"],
+      "invoke_args": ["-p", "{query}", "--dangerously-skip-permissions"],
       "memory": "short-term",
       "timeout": 0
     },
@@ -36,8 +36,9 @@
       "aliases": ["gemini", "google"],
       "type": "peer",
       "invoke": "gemini",
-      "invoke_args": ["-p", "{query}", "-o", "text", "-y"],
+      "invoke_args": ["-p", "{query}", "-o", "text", "--approval-mode", "yolo", "--skip-trust"],
       "memory": "session",
+      "session_mode": "reuse",
       "timeout": 0
     },
     {
@@ -57,8 +58,9 @@
       "aliases": ["codex"],
       "type": "peer",
       "invoke": "codex",
-      "invoke_args": ["exec", "{query}", "--json", "--ephemeral", "--ignore-rules"],
+      "invoke_args": ["exec", "{query}", "--json", "--ephemeral", "--ignore-rules", "--dangerously-bypass-approvals-and-sandbox"],
       "memory": "session",
+      "session_mode": "reuse",
       "timeout": 0
     },
     {
@@ -68,7 +70,7 @@
       "peer": "cc",
       "profile_id": "cc.deep",
       "invoke": "claude",
-      "invoke_args": ["-p", "{query}", "--effort", "max"],
+      "invoke_args": ["-p", "{query}", "--effort", "max", "--dangerously-skip-permissions"],
       "memory": "persistent",
       "timeout": 0
     },
@@ -79,7 +81,7 @@
       "peer": "gc",
       "profile_id": "gc.plan",
       "invoke": "gemini",
-      "invoke_args": ["-p", "{query}", "-o", "text", "-y", "--approval-mode", "plan"],
+      "invoke_args": ["-p", "{query}", "-o", "text", "--approval-mode", "plan", "--skip-trust"],
       "memory": "session",
       "timeout": 0
     }

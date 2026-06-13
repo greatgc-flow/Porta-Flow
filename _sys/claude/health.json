@@ -23,15 +23,15 @@
     "status": "GREEN",
     "jsonl_mb": 0.0,
     "context_window_usage_percent": 0.0,
-    "checked_at": "20260612T211057",
+    "checked_at": "20260613T032846",
     "source": "self"
   },
   "session_health": {
     "consecutive_failures": 0,
     "last_failure_reason": null,
-    "last_success_at": "2026-06-12T21:10:57",
-    "session_count_today": 57,
-    "session_date": "20260612",
+    "last_success_at": "2026-06-13T03:28:46",
+    "session_count_today": 1,
+    "session_date": "20260613",
     "last_failure_detail": "ask timeout after 180s",
     "last_failure_at": "2026-06-12T21:07:56"
   },
@@ -42,7 +42,7 @@
     "last_gate_check": null,
     "active_pid": null,
     "last_invocation_exit_code": 0,
-    "last_invocation_duration_ms": 164000,
+    "last_invocation_duration_ms": 7000,
     "rate_limit_state": "ok",
     "quarantined": false
   }
