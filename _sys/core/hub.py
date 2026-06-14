@@ -2187,9 +2187,45 @@ def _derive_gate_state(check_results: dict, gate_rule: dict) -> str:
     return "unknown"
 
 
+def _refresh_peer_health_live(peer_name: str, peer_dir: Path, invoke_cmd: str, ai_root: Path | None) -> None:
+    """Zero-token live refresh: STALE 마커 + CLI 존재 확인 → health.json 업데이트."""
+    import shutil as _shutil
+    _, data = _read_peer_health(peer_name)
+    changed = False
+
+    # 1. STALE 마커 현행화 (타임스탬프 기반)
+    stale_minutes = int(_load_protocol_cfg().get("leader_election", {}).get("health_stale_minutes", 120) or 120)
+    checked_at = data.get("context_health", {}).get("checked_at")
+    checked_dt = _parse_compact_ts(checked_at)
+    current_status = data.get("context_health", {}).get("status", "UNKNOWN")
+    if checked_dt and (datetime.now() - checked_dt).total_seconds() > stale_minutes * 60:
+        if current_status not in ("STALE", "RED"):
+            data.setdefault("context_health", {})["status"] = "STALE"
+            data["context_health"]["stale_marked_at"] = _now()
+            changed = True
+
+    # 2. CLI 바이너리 존재 확인 (zero-token)
+    cli_found = bool(_shutil.which(invoke_cmd)) if invoke_cmd else False
+    prev_entrypoint = data.get("availability", {}).get("entrypoint_ok")
+    if prev_entrypoint != cli_found:
+        data.setdefault("availability", {})["entrypoint_ok"] = cli_found
+        changed = True
+        if not cli_found:
+            # CLI 없으면 gate 닫기
+            data["availability"]["gate_open"] = False
+            data.setdefault("context_health", {})["status"] = "RED"
+            data.setdefault("session_health", {})["last_failure_reason"] = "cli_not_found"
+
+    if changed:
+        _write_peer_health(peer_name, data, ai_root)
+
+
 def action_peer_status(node_id: str | None = None) -> None:
-    """피어 상태 체크 — status_checks.json 선언적 엔진 + health.json 통합 테이블."""
+    """피어 상태 체크 — 표시 전 zero-token live refresh (STALE + CLI 확인) 후 테이블 출력."""
+    import shutil as _shutil
     sys_dir = Path(__file__).parent.parent
+    ai_root = find_ai_root()
+
     status_checks_path = sys_dir / "ai" / "status_checks.json"
     checks_cfg = {}
     if status_checks_path.exists():
@@ -2201,25 +2237,48 @@ def action_peer_status(node_id: str | None = None) -> None:
     peers_data = _load_peers()
     all_peers_cfg = peers_data.get("peers", peers_data)
 
+    # orchestration.json에서 invoke 명령 매핑 (peer_name → CLI binary)
+    orch = _load_orchestration()
+    invoke_map: dict[str, str] = {}
+    lp = _load_lifecycle_policy()
+    node_to_peer_map = lp.get("identity", {}).get("node_to_peer", {})
+    for node in orch.get("hub_nodes", []):
+        nid = node.get("node_id", "")
+        peer_key = node_to_peer_map.get(nid, nid)
+        if node.get("invoke"):
+            invoke_map[peer_key] = node["invoke"]
+
     if node_id:
-        target_peers = {k: v for k, v in all_peers_cfg.items() if k == node_id}
+        # node_id가 peers.json 키(claude/gemini/...)이거나 node_id(cc/gc/...)일 수 있음
+        peer_key = node_to_peer_map.get(node_id, node_id)
+        target_peers = {k: v for k, v in all_peers_cfg.items() if k == peer_key or k == node_id}
         if not target_peers:
             print(f"[HUB:ERROR] unknown peer: {node_id}", file=sys.stderr)
             return
     else:
         target_peers = {k: v for k, v in all_peers_cfg.items() if v.get("enabled", True)}
 
-    print("┌─────────────────────────────────────────────────────────────┐")
-    print("│  PEER STATUS (Protocol v4.1)                                │")
-    print("├──────────┬──────────┬──────────┬──────────┬─────────────────┤")
-    print("│ Peer     │ Gate     │ Health   │ Version  │ Details         │")
-    print("├──────────┼──────────┼──────────┼──────────┼─────────────────┤")
+    # ── Zero-token live refresh (표시 전 현행화) ──────────────────
+    for peer_name, pcfg in target_peers.items():
+        sys_subdir = pcfg.get("sys_subdir", peer_name)
+        peer_dir = sys_dir / sys_subdir
+        invoke_cmd = invoke_map.get(peer_name, "")
+        try:
+            _refresh_peer_health_live(peer_name, peer_dir, invoke_cmd, ai_root)
+        except Exception:
+            pass  # refresh 실패해도 표시는 계속
+
+    print("┌──────────────────────────────────────────────────────────────────────┐")
+    print("│  PEER STATUS (live-refreshed)                                        │")
+    print("├──────────┬──────────┬──────────┬──────────┬────────────────────────┤")
+    print("│ Peer     │ Gate     │ Health   │ Version  │ Details                │")
+    print("├──────────┼──────────┼──────────┼──────────┼────────────────────────┤")
 
     for peer_name, pcfg in target_peers.items():
         sys_subdir = pcfg.get("sys_subdir", peer_name)
         peer_dir = sys_dir / sys_subdir
 
-        # 기존 gate 파일 확인
+        # gate 파일 확인 (gc legacy gate)
         gate_cfg = pcfg.get("gate")
         if gate_cfg:
             gate_file = sys_dir / gate_cfg["status_file"]
@@ -2229,28 +2288,36 @@ def action_peer_status(node_id: str | None = None) -> None:
             except Exception:
                 gate = "?"
         else:
-            gate = "OPEN"
+            gate = "open"
 
-        # health.json 확인
+        # health.json 읽기 (refresh 후)
         health_path = peer_dir / "health.json"
+        health, details = "NO FILE", ""
+        failures, reason = 0, ""
         if health_path.exists():
             try:
                 h = json.loads(health_path.read_text(encoding="utf-8"))
                 ctx = h.get("context_health", {})
+                sh = h.get("session_health", {})
+                av = h.get("availability", {})
                 health = ctx.get("status", "?")
                 mb = ctx.get("jsonl_mb", 0.0)
-                details = f"{mb:.1f}MB"
+                failures = int(sh.get("consecutive_failures", 0))
+                reason = sh.get("last_failure_reason") or ""
+                # gate_open=false 이면 gate 컬럼에 반영
+                if not gate_cfg and av.get("gate_open") is False:
+                    gate = "CLOSED"
+                details_parts = [f"{mb:.1f}MB"]
+                if failures:
+                    details_parts.append(f"fail={failures}")
+                if reason:
+                    details_parts.append(reason[:12])
+                details = " ".join(details_parts)
             except Exception:
                 health, details = "ERR", ""
-        else:
-            health, details = "NO FILE", ""
 
-        # status_checks.json 선언적 체크 (version_only 클래스만)
-        # peers.json 키는 "claude"/"gemini"/etc이지만 status_checks.json 키는 "cc"/"gc"/etc
-        # lifecycle_policy.json node_to_peer 역방향 매핑으로 연결
+        # version_only 체크 (CLI 버전)
         version_str = ""
-        lp = _load_lifecycle_policy()
-        node_to_peer_map = lp.get("identity", {}).get("node_to_peer", {})
         peer_to_node = {v: k for k, v in node_to_peer_map.items() if k not in ("ca",)}
         node_id_for_peer = peer_to_node.get(peer_name, peer_name)
         peer_checks = checks_cfg.get(node_id_for_peer, {})
@@ -2263,13 +2330,13 @@ def action_peer_status(node_id: str | None = None) -> None:
                     check_results[check["id"]] = (ok, out)
                     if ok and out:
                         version_str = out.split("\n")[0][:8]
-            if check_results and not gate_cfg:
+            if check_results and not gate_cfg and gate not in ("CLOSED",):
                 derived = _derive_gate_state(check_results, gate_rule)
                 gate = derived[:8]
 
-        print(f"│ {peer_name:<8} │ {gate:<8} │ {health:<8} │ {version_str:<8} │ {details:<15} │")
+        print(f"│ {peer_name:<8} │ {gate:<8} │ {health:<8} │ {version_str:<8} │ {details:<22} │")
 
-    print("└──────────┴──────────┴──────────┴──────────┴─────────────────┘")
+    print("└──────────┴──────────┴──────────┴──────────┴────────────────────────┘")
 
 
 def _task_registry_path(ai_root: Path) -> Path:
