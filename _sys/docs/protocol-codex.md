@@ -22,7 +22,7 @@ Interactive console entry:
 _sys\cli\codex.bat
 ```
 
-`codex_entry.py` appends `--dangerously-bypass-approvals-and-sandbox` by default for console sessions, unless the user supplies an explicit sandbox or approval policy.
+`codex_entry.py` appends `-s workspace-write` by default for console sessions, unless the user supplies an explicit sandbox or approval policy.
 
 **Always use stdin, never shell-quoted args** (avoids Windows escaping bugs):
 
@@ -30,7 +30,7 @@ _sys\cli\codex.bat
 # In hub.py _build_session_cmd / action_ask
 subprocess.Popen(
     ["codex", "exec", "-", "--json", "--ignore-rules",
-     "--dangerously-bypass-approvals-and-sandbox"],
+     "-s", "workspace-write"],
     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
 )
 # Session resume: ["codex", "exec", "resume", <thread_id>, "-", ...]
@@ -41,7 +41,7 @@ Key flags:
 - `codex exec -` reads from stdin (session-aware path)
 - `--json` for JSONL output (thread.started event → thread_id extraction)
 - `--ignore-rules` skips project-level execpolicy rules
-- `--dangerously-bypass-approvals-and-sandbox` full autonomy — no approval prompts, no sandbox (human-authorized)
+- `-s workspace-write` minimum non-interactive permissions — workspace-write sandbox for repo-scoped edits
 - `--ephemeral` prevents session persistence (used only when session_policy=fresh/none)
 - Session reuse via `hub.py --session-policy reuse` (default); scope_key = room_id
 
@@ -76,7 +76,8 @@ hub.py ask --to cx --query "Echo: system ready. Reply with your node ID and vers
 Verify: response received + `health.json entrypoint_ok = true`
 
 ## §HISTORY
-- v4.3 (2026-06-13): Direct console wrapper defaults to full autonomy, with explicit sandbox/approval user overrides preserved.
-- v4.2 (2026-06-13): Added `--dangerously-bypass-approvals-and-sandbox` (human-authorized full autonomy); session reuse via hub.py session_state.json; updated invocation pattern.
+- v4.4 (2026-06-14): Corrected cx flag throughout — `--ask-for-approval` is console-only; `-s workspace-write` is the correct `codex exec` flag.
+- v4.3 (2026-06-13): Direct console wrapper defaults to minimum non-interactive permissions, with explicit sandbox/approval user overrides preserved.
+- v4.2 (2026-06-13): Added minimum non-interactive permissions flag for cx; session reuse via hub.py session_state.json; updated invocation pattern.
 - v4.1 (2026-06-12): Verified stdin interface with 5-node consensus protocol.
 - v4.0 (2026-06-11): New file; stdin invocation pattern, sandbox flags, health metrics, user comm scenarios

@@ -4,25 +4,25 @@ This note records the local CLI option audit for launching peer consoles from bo
 
 ## Default Policy
 
-Peer console wrappers default to full-autonomy execution:
+Peer console wrappers default to minimum non-interactive execution:
 
 | Peer | Wrapper | Default args appended by `_sys/cli/peer_console.py` |
 |------|---------|------------------------------------------------------|
-| cc | `_sys/cli/claude.bat` | `--dangerously-skip-permissions` |
-| gc | `_sys/cli/gemini.bat` | `--approval-mode yolo --skip-trust` |
-| cx | `_sys/cli/codex.bat` | `--dangerously-bypass-approvals-and-sandbox` |
-| ag | `_sys/cli/agy.bat` | `--dangerously-skip-permissions` |
+| cc | `_sys/cli/claude.bat` | `--allowedTools Edit Write Read Glob Grep Bash MultiEdit --permission-mode acceptEdits` |
+| gc | `_sys/cli/gemini.bat` | `--approval-mode auto_edit --skip-trust` |
+| cx | `_sys/cli/codex.bat` | `-s workspace-write` |
+| ag | `_sys/cli/agy.bat` | `--allowedTools Edit Write Read Glob Grep Bash MultiEdit --permission-mode acceptEdits` |
 
 User-supplied safety flags win. The wrapper does not override explicit permission, approval, or sandbox settings.
 
 ## Override Rules
 
-| Peer | Override flags that suppress the full-autonomy default |
+| Peer | Override flags that suppress the minimum-permission default |
 |------|--------------------------------------------------------|
-| cc | `--permission-mode`, `--safe-mode`, `--dangerously-skip-permissions`, `--allow-dangerously-skip-permissions` |
+| cc | `--permission-mode`, `--allowedTools`, `--safe-mode` |
 | gc | `--approval-mode`, `-y`, `--yolo`, `--sandbox`, `-s` |
-| cx | `--sandbox`, `-s`, `--ask-for-approval`, `-a`, `--dangerously-bypass-approvals-and-sandbox` |
-| ag | `--sandbox`, `--dangerously-skip-permissions` |
+| cx | `--sandbox`, `-s`, `--ask-for-approval`, `-a` |
+| ag | `--sandbox`, `--allowedTools` |
 
 For Gemini, `--skip-trust` is still appended when the user chooses an explicit approval mode because workspace trust is a separate prompt class.
 
@@ -32,12 +32,12 @@ For Gemini, `--skip-trust` is still appended when the user chooses an explicit a
 
 | Peer | P2P default |
 |------|-------------|
-| cc/ca | `--dangerously-skip-permissions` |
-| gc | `--approval-mode yolo --skip-trust` |
-| cx | `--dangerously-bypass-approvals-and-sandbox` |
-| ag | `--dangerously-skip-permissions` |
+| cc/ca | `--allowedTools Edit Write Read Glob Grep Bash MultiEdit --permission-mode acceptEdits` |
+| gc | `--approval-mode auto_edit --skip-trust` |
+| cx | `-s workspace-write` |
+| ag | `--allowedTools Edit Write Read Glob Grep Bash MultiEdit --permission-mode acceptEdits` |
 
-`gc-plan` is intentionally not full-autonomy; it keeps `--approval-mode plan --skip-trust` because it is a read-only planning virtual node.
+`gc-plan` intentionally keeps `--approval-mode plan --skip-trust` because it is a read-only planning virtual node.
 
 ## Convenience Options Audited
 

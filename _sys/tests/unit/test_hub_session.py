@@ -129,14 +129,14 @@ def test_compute_scope_key_no_root():
 
 def test_build_session_cmd_cx_fresh():
     args, use_stdin, gc_id = hub._build_session_cmd("cx", None, "codex")
-    assert args == ["exec", "-", "--json", "--ignore-rules", "--dangerously-bypass-approvals-and-sandbox"]
+    assert args == ["exec", "-", "-s", "workspace-write", "--json", "--ignore-rules"]
     assert use_stdin is True
     assert gc_id is None
 
 
 def test_build_session_cmd_cx_resume():
     args, use_stdin, gc_id = hub._build_session_cmd("cx", "uuid-001", "codex")
-    assert args == ["exec", "resume", "uuid-001", "-", "--json", "--ignore-rules", "--dangerously-bypass-approvals-and-sandbox"]
+    assert args == ["exec", "resume", "uuid-001", "-", "-s", "workspace-write", "--json", "--ignore-rules"]
     assert use_stdin is True
     assert gc_id is None
 

@@ -7,7 +7,9 @@ from peer_console import peer_default_args
 
 def test_claude_defaults_to_full_permissions():
     args = peer_default_args("cc", [])
-    assert "--dangerously-skip-permissions" in args
+    assert "--allowedTools" in args
+    assert "--permission-mode" in args
+    assert "acceptEdits" in args
 
 
 def test_claude_respects_explicit_permission_mode():
@@ -20,9 +22,9 @@ def test_claude_does_not_modify_management_command():
     assert args == ["doctor"]
 
 
-def test_gemini_defaults_to_yolo_and_trust():
+def test_gemini_defaults_to_auto_edit_and_trust():
     args = peer_default_args("gc", [])
-    assert args == ["--approval-mode", "yolo", "--skip-trust"]
+    assert args == ["--approval-mode", "auto_edit", "--skip-trust"]
 
 
 def test_gemini_respects_plan_override_but_keeps_trust_skip():
@@ -35,9 +37,9 @@ def test_gemini_does_not_modify_management_command():
     assert args == ["mcp"]
 
 
-def test_codex_defaults_to_bypass():
+def test_codex_defaults_to_workspace_write():
     args = peer_default_args("cx", [])
-    assert args == ["--dangerously-bypass-approvals-and-sandbox"]
+    assert args == ["-s", "workspace-write"]
 
 
 def test_codex_respects_explicit_sandbox_policy():

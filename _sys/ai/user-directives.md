@@ -20,16 +20,16 @@
   3. Remaining findings are cosmetic only.
 - Reference: `DEBATE_PROTOCOL.md` section 16-3.
 
-### DIR-002: Full Autonomous Permissions for All Peers
+### DIR-002: Minimum Non-Interactive Permissions for All Peers
 
 - Effective: 2026-06-13
 - Status: ACTIVE
-- Rule: All peers run with full autonomous permissions and must not block on interactive approval prompts during `hub.py ask` or console wrapper invocations.
+- Rule: All peers run with minimum non-interactive permissions and must not block on interactive approval prompts during `hub.py ask` or console wrapper invocations.
 - Implementation:
-  - `cc`: `--dangerously-skip-permissions`
-  - `gc`: `--approval-mode yolo --skip-trust`
-  - `cx`: `--dangerously-bypass-approvals-and-sandbox`
-  - `ag`: `--dangerously-skip-permissions`
+  - `cc`: `--allowedTools Edit Write Read Glob Grep Bash MultiEdit --permission-mode acceptEdits`
+  - `gc`: `--approval-mode auto_edit --skip-trust`
+  - `cx`: `-s workspace-write`
+  - `ag`: `--allowedTools Edit Write Read Glob Grep Bash MultiEdit --permission-mode acceptEdits`
 - References:
   - `_sys/ai/orchestration.json`
   - `_sys/cli/peer_console.py`

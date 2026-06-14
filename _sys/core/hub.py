@@ -1460,7 +1460,7 @@ def _compute_scope_key(ai_root: Path | None, explicit_scope: str | None = None) 
 
 def _build_session_cmd(health_peer: str, session_id: str | None, exe: str) -> tuple[list[str], bool, str | None]:
     """세션 재사용/신규 생성 명령 반환. (cmd_args, use_stdin, gc_new_session_id)"""
-    _CX_BASE = ["--json", "--ignore-rules", "--dangerously-bypass-approvals-and-sandbox"]
+    _CX_BASE = ["-s", "workspace-write", "--json", "--ignore-rules"]
     if health_peer == "cx":
         if session_id:
             return ["exec", "resume", session_id, "-"] + _CX_BASE, True, None
@@ -1509,9 +1509,9 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             if requires_pty:
                 timeout_sec = int(_runtime_cfg().get("pty_lease_sec", 300) or 300)
             else:
-                timeout_sec = int(_runtime_cfg().get("ask_default_timeout_sec", 180) or 180)
+                timeout_sec = 0  # unlimited; heartbeat loop monitors for dead processes
         except Exception:
-            timeout_sec = 300 if requires_pty else 180
+            timeout_sec = 0
 
     _lease_sweep(ai_root)
     _ask_health_precheck(health_peer, ai_root)

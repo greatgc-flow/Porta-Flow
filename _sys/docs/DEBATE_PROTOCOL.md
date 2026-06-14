@@ -38,7 +38,7 @@
 | # | Section | Change | Source |
 |:-:|:--------|:-------|:-------|
 | 1 | §16 | New: Exhaustive Work Session Governance (끝장 작업) — ROI-based termination, standing rule (2026-06-14) | User directive |
-| 2 | §4-2 | Peer invocation now uses full autonomous permissions (cc: `--dangerously-skip-permissions`, cx: `--dangerously-bypass-approvals-and-sandbox`, gc: `--approval-mode yolo --skip-trust`); §14 queries MUST use `--session-policy fresh` | hub-session-reuse-T2, peer-full-permissions |
+| 2 | §4-2 | Peer invocation now uses minimum non-interactive permissions (cc: `--allowedTools Edit Write Read Glob Grep Bash MultiEdit --permission-mode acceptEdits`, cx: `-s workspace-write`, gc: `--approval-mode auto_edit --skip-trust`); §14 queries MUST use `--session-policy fresh` | hub-session-reuse-T2, peer-minimum-permissions |
 | 3 | §1 | Added Debate Tier (FULL/ABBREVIATED) for low-stakes T-5 debates | Exhaustive review |
 | 4 | §3 | Added expertise routing guidance; 2-5/6 scope boundary clarification | MECE review |
 | 5 | §15 | Marked resolved deferred items | Status update |
@@ -271,10 +271,10 @@ Coordinator writes ALL query files before invoking any peer.
 Queries use `[INPUT_FILE: path]` format; files go to: `P:\_sys\gemini\{peer_id}-{YYYYMMDDHHMMSS}-{RAND4}.txt`
 Invocation (standard rounds): `python "P:\_sys\core\hub.py" ask --to {peer_id} --query-file "{file}" 2>&1`
 
-**Peer Permissions:** All peers run with full autonomous permissions (no interactive approval prompts):
-- cc: `--dangerously-skip-permissions`
-- cx: `--dangerously-bypass-approvals-and-sandbox`
-- gc: `--approval-mode yolo --skip-trust` (YOLO mode in default invoke_args)
+**Peer Permissions:** All peers run with minimum non-interactive permissions (no interactive approval prompts):
+- cc: `--allowedTools Edit Write Read Glob Grep Bash MultiEdit --permission-mode acceptEdits`
+- cx: `-s workspace-write`
+- gc: `--approval-mode auto_edit --skip-trust` (auto-edit mode in default invoke_args)
 These are set in `_sys/ai/orchestration.json`; no manual flag needed in hub.py calls.
 
 **Session Policy:**

@@ -66,16 +66,21 @@ def peer_default_args(peer_id: str, args: list[str]) -> list[str]:
             "--allow-dangerously-skip-permissions",
             "--permission-mode",
             "--safe-mode",
+            "--allowedTools",
+            "--allowed-tools",
         }):
             return current
-        return _append_missing(current, ["--dangerously-skip-permissions"])
+        return _append_missing(current, [
+            "--allowedTools", "Edit Write Read Glob Grep Bash MultiEdit",
+            "--permission-mode", "acceptEdits",
+        ])
 
     if peer_id == "gc":
         if _starts_with_command(current, _GEMINI_COMMANDS):
             return current
         if _has_flag(current, {"--approval-mode", "-y", "--yolo", "--sandbox", "-s"}):
             return current if "--skip-trust" in current else current + ["--skip-trust"]
-        return _append_missing(current, ["--approval-mode", "yolo", "--skip-trust"])
+        return _append_missing(current, ["--approval-mode", "auto_edit", "--skip-trust"])
 
     if peer_id == "cx":
         if _starts_with_command(current, _CODEX_COMMANDS):
@@ -88,7 +93,7 @@ def peer_default_args(peer_id: str, args: list[str]) -> list[str]:
             "-a",
         }):
             return current
-        return _append_missing(current, ["--dangerously-bypass-approvals-and-sandbox"])
+        return _append_missing(current, ["-s", "workspace-write"])
 
     if peer_id == "ag":
         if _starts_with_command(current, _AGY_COMMANDS):

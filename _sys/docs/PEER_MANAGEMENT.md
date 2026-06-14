@@ -112,7 +112,7 @@ _sys\cli\codex.bat
 _sys\cli\codex.bat --no-alt-screen
 ```
 
-The wrapper appends `--dangerously-bypass-approvals-and-sandbox` unless the user provides an explicit sandbox or approval policy.
+The wrapper appends `-s workspace-write` unless the user provides an explicit sandbox or approval policy.
 
 ### 2-4. AG — AntiGravity (`_sys/antigravity/`)
 

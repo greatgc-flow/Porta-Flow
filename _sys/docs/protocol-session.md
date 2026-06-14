@@ -71,8 +71,8 @@ Every peer entry point MUST:
 
 | Peer | New session | Resume session |
 |------|------------|---------------|
-| cx | `codex exec - --json --ignore-rules --dangerously-bypass-approvals-and-sandbox` | `codex exec resume <thread_id> - ...` |
-| gc | `gemini --session-id <uuid> -p - -o text --approval-mode yolo --skip-trust` | `gemini --resume <uuid> -p - -o text --approval-mode yolo --skip-trust` |
+| cx | `codex exec - -s workspace-write --json --ignore-rules` | `codex exec resume <thread_id> - -s workspace-write --json --ignore-rules` |
+| gc | `gemini --session-id <uuid> -p - -o text --approval-mode auto_edit --skip-trust` | `gemini --resume <uuid> -p - -o text --approval-mode auto_edit --skip-trust` |
 
 State file: `_sys/{peer_subdir}/session_state.json` (gitignored)
 - `active[scope_key]` → current session entry
