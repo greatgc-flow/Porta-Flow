@@ -1,0 +1,1 @@
+{"id": "RD-20260614-001", "rule": "Test rule: never do X", "source_peer": "cc", "trigger_reason": "manual", "trigger_detail": "", "effective": "20260614T125053", "expires": "20260614T145053", "ttl_hours": 2, "trigger_count": 1, "clear_condition": "manual", "status": "resolved", "resolved_at": "2026-06-14T12:50:53"}

@@ -851,6 +851,41 @@ class TestEnhancedCollaboration:
         assert data[0]["status"] == "done"
         assert data[0]["owner"] == "cc"
 
+    def test_directive_add_list_clear(self, ai_dir, capsys, tmp_path):
+        """directive-add, directive-list, directive-clear 사이클 검증."""
+        rd_path = tmp_path / "runtime-directives.jsonl"
+        with patch.object(hub, "_runtime_directives_path", return_value=rd_path):
+            hub.action_directive_add(ai_dir, "Never do X", "cc", ttl_hours=6, clear_condition="manual")
+            active = hub._get_active_runtime_directives(rd_path)
+            assert len(active) == 1
+            assert active[0]["rule"] == "Never do X"
+            assert active[0]["status"] == "active"
+            hub.action_directive_list(ai_dir)
+            assert "Never do X" in capsys.readouterr().out
+            hub.action_directive_clear(ai_dir, active[0]["id"])
+            assert hub._get_active_runtime_directives(rd_path) == []
+
+    def test_auto_promote_runtime_directive_on_repeated_failure(self, ai_dir, tmp_path):
+        """동일 이유 실패 2회 연속 시 runtime directive 자동 생성."""
+        rd_path = tmp_path / "runtime-directives.jsonl"
+        with patch.object(hub, "_runtime_directives_path", return_value=rd_path):
+            hub._record_ask_failure("gc", "rate_limit", "quota exceeded", 5, ai_dir)
+            assert hub._get_active_runtime_directives(rd_path) == []
+            hub._record_ask_failure("gc", "rate_limit", "quota exceeded", 5, ai_dir)
+            active = hub._get_active_runtime_directives(rd_path)
+            assert len(active) == 1
+            assert "gc" in active[0]["rule"]
+            assert active[0]["trigger_reason"] == "rate_limit"
+
+    def test_first_success_clears_runtime_directive(self, ai_dir, tmp_path):
+        """성공 시 first_success 조건 directive 자동 클리어."""
+        rd_path = tmp_path / "runtime-directives.jsonl"
+        with patch.object(hub, "_runtime_directives_path", return_value=rd_path):
+            hub._save_runtime_directive(rd_path, "caution gc", "gc", "timeout", "", 6, "first_success")
+            assert len(hub._get_active_runtime_directives(rd_path)) == 1
+            hub._record_ask_success("gc", 10, ai_dir)
+            assert hub._get_active_runtime_directives(rd_path) == []
+
     def test_artifact_claim_register_and_finalize(self, ai_dir, tmp_path, capsys):
         result = tmp_path / "Result.md"
         result.write_text("final", encoding="utf-8")

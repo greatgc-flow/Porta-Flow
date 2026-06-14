@@ -195,8 +195,75 @@ hub.py peer-recover --peer gc --reason quota_reset
 - Do not let a stale coordinator keep ownership without a checkpoint.
 - Do not route around a failing peer silently; record quarantine, failover, or recovery in handoff.
 
+## 10. Heartbeat / Lease Mechanism
+
+### 10.1 — Purpose
+
+The lease mechanism provides orphan-process cleanup when the hub process itself dies mid-ask (e.g., crash, kill). It is **bookkeeping**, not a liveness detector.
+
+### 10.2 — Exact Logic
+
+Config from `protocol.json ["communication_policy"]`:
+- `heartbeat_sec` = 30 (poll interval for process-death detection)
+- `lease_timeout_sec` = 1800 (initial lease duration; renewed every heartbeat)
+
+During an active ask (`action_ask()` subprocess path):
+1. `_lease_open()` records `{peer, pid, expires_at = now + 1800s}` in `leases.json`
+2. Every 30s `proc.communicate(timeout=30)` times out → `_lease_renew()` sets `expires_at = now + 1800s`
+3. The lease never naturally expires while the hub is alive and renewing
+
+If the **hub process stops** (crash/kill), a later `_lease_sweep()` finds the open lease with a past `expires_at`, kills the recorded PID tree, marks the lease as `expired`, and records a health failure.
+
+### 10.3 — Zombie-Process Guard
+
+Problem: If the subprocess hangs (alive but producing no output), `_lease_renew()` fires every 30s indefinitely.
+
+Solution (implemented in `hub.py`):
+```python
+_MAX_SILENT_HEARTBEATS = lease_timeout_sec // heartbeat_sec  # = 60 beats = 30 min
+_silent_beats = 0
+
+while True:
+    try:
+        raw_out, raw_err = proc.communicate(input=..., timeout=heartbeat_sec)
+        break
+    except subprocess.TimeoutExpired:
+        _silent_beats += 1
+        _lease_renew(...)
+        if _silent_beats >= _MAX_SILENT_HEARTBEATS:
+            _kill_process_tree(proc)
+            raise subprocess.TimeoutExpired(...)
+```
+
+After 60 consecutive silent heartbeats (30 min total), the process is force-killed.
+
+### 10.4 — What the Lease Does NOT Do
+
+- Does NOT detect a still-alive zombie (use the zombie guard instead)
+- Does NOT auto-replay/retry/reassign tasks after lease expiry (manual failover required)
+- Does NOT trigger runtime directives (failure recording does that)
+
+### 10.5 — Recommended Thresholds
+
+| Scenario | Action |
+|----------|--------|
+| Hub alive, process alive, producing output | Normal heartbeat renewal |
+| Hub alive, process alive, NO output for 30 min | Zombie guard kills process |
+| Hub crashed/killed, lease expired | `lease-sweep` kills orphan on next invocation |
+| Process died normally | `proc.poll() is not None` → loop breaks normally |
+
+### 10.6 — CLI Commands
+
+```bash
+python _sys/core/hub.py lease-status   # show open leases
+python _sys/core/hub.py lease-sweep    # manually run orphan cleanup
+```
+
+---
+
 ## HISTORY
 
+- v4.3 (2026-06-14): Added §10 Heartbeat/Lease mechanism; zombie-guard logic; cc+cx T2 debate findings.
 - v4.2 (2026-06-13): Expanded monitoring cadence, state machine, routing gate, and recovery runbooks; aligned with `health-precheck`, `health-sweep`, `peer-quarantine`, `peer-recover`, and task failover behavior.
 - v4.1 (2026-06-12): Standardized zero-token health check thresholds.
 - v4.0 (2026-06-11): New file; health management system designed with all peers (cc,gc,ag,cx).

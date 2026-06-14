@@ -13,6 +13,8 @@
 | [`_sys/docs/protocol-workload.md`](_sys/docs/protocol-workload.md) | Peer equality, capability registry, routing rules |
 | [`_sys/docs/protocol-antigravity.md`](_sys/docs/protocol-antigravity.md) | ag (agy) peer specifics, PTY voting policy |
 | [`_sys/docs/protocol-codex.md`](_sys/docs/protocol-codex.md) | cx (Codex) peer specifics, stdin invocation |
+| [`_sys/docs/protocol-permissions.md`](_sys/docs/protocol-permissions.md) | Minimum-permission model, per-peer profiles, MUST-NEVER list |
+| [`_sys/docs/protocol-directives.md`](_sys/docs/protocol-directives.md) | Directive management, auto-propagation, TTL, runtime-directives.jsonl |
 | [`_sys/docs/collaboration_protocol.md`](_sys/docs/collaboration_protocol.md) | **v4.1 Layered Coordination** — General/Specific split, connectors, and feedback loop |
 | [`_sys/ai/collaboration_policy.schema.json`](_sys/ai/collaboration_policy.schema.json) | Validation schema for multi-peer collaboration policies |
 | [`_sys/ai/room_policy.example.json`](_sys/ai/room_policy.example.json) | Concrete example mapping intents to commands & tracking ambiguity |

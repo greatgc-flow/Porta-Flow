@@ -19,7 +19,7 @@ import subprocess
 import sys
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 try:
@@ -965,6 +965,8 @@ def _record_ask_success(peer_id: str, elapsed: int, ai_root: Path | None) -> Non
     availability.pop("workspace_not_trusted", None)
     availability.pop("retry_hint", None)
     _write_peer_health(peer_id, data, ai_root)
+    # Clear first_success runtime directives for this peer
+    _clear_peer_runtime_directives(peer_id, ai_root)
 
 
 def _record_ask_failure(
@@ -979,6 +981,7 @@ def _record_ask_failure(
         return
     _, data = _read_peer_health(peer_id)
     sh = data.setdefault("session_health", {})
+    prev_failure_reason = sh.get("last_failure_reason")  # capture before overwrite for auto-promote check
     failures = int(sh.get("consecutive_failures", 0)) + 1
     sh["consecutive_failures"] = failures
     sh["last_failure_reason"] = reason
@@ -1007,6 +1010,9 @@ def _record_ask_failure(
     if reason in critical_reasons:
         availability["gate_open"] = False
     _write_peer_health(peer_id, data, ai_root)
+    # Auto-promote runtime directive after 2+ consecutive same-reason failures
+    if failures >= 2 and prev_failure_reason == reason and ai_root:
+        _auto_promote_runtime_directive(peer_id, reason, detail, ai_root)
 
 
 def _build_ask_query_with_context(ai_root: Path | None, query: str) -> str:
@@ -1030,6 +1036,12 @@ def _build_ask_query_with_context(ai_root: Path | None, query: str) -> str:
         directives = directives_path.read_text(encoding="utf-8", errors="replace").strip()
         if directives:
             lines.extend(["", "[USER DIRECTIVES]", directives])
+    # ── Runtime Directives 주입 (_sys/ai/runtime-directives.jsonl) ──
+    runtime_dir_path = Path(__file__).parent.parent / "ai" / "runtime-directives.jsonl"
+    active_runtime = _get_active_runtime_directives(runtime_dir_path)
+    if active_runtime:
+        rules_text = "\n".join(f"- [{r['id']}] {r['rule']}" for r in active_runtime)
+        lines.extend(["", "[RUNTIME DIRECTIVES]", rules_text])
     handoff_path = ai_root / "sessions" / room_id / "handoff.md"
     if handoff_path.exists():
         handoff = handoff_path.read_text(encoding="utf-8", errors="replace").strip()
@@ -1397,7 +1409,7 @@ def _get_active_session(peer_id: str, scope_key: str) -> dict | None:
     return entry if entry and entry.get("status") == "active" else None
 
 
-def _set_active_session(peer_id: str, scope_key: str, session_id: str, ask_id: str, ai_root: Path | None = None) -> None:
+def _set_active_session(peer_id: str, scope_key: str, session_id: str, ask_id: str, ai_root: Path | None = None, fingerprint: str | None = None) -> None:
     data = _load_session_state(peer_id)
     existing = data.get("active", {}).get(scope_key, {})
     data.setdefault("active", {})[scope_key] = {
@@ -1407,6 +1419,7 @@ def _set_active_session(peer_id: str, scope_key: str, session_id: str, ask_id: s
         "last_used_at": _now(),
         "last_ask_id": ask_id,
         "status": "active",
+        "fingerprint": fingerprint or existing.get("fingerprint"),
     }
     _save_session_state(peer_id, data, ai_root)
 
@@ -1456,6 +1469,14 @@ def _compute_scope_key(ai_root: Path | None, explicit_scope: str | None = None) 
         if room_id:
             return room_id
     return "default"
+
+
+def _session_fingerprint(health_peer: str, exe_name: str) -> str:
+    """Compute a short fingerprint of the peer session invocation profile.
+    Used to detect flag drift that would break session resume compatibility."""
+    probe_args, _, _ = _build_session_cmd(health_peer, None, exe_name)
+    raw = exe_name + "|" + ",".join(probe_args)
+    return hashlib.sha1(raw.encode()).hexdigest()[:8]
 
 
 def _build_session_cmd(health_peer: str, session_id: str | None, exe: str) -> tuple[list[str], bool, str | None]:
@@ -1529,7 +1550,15 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
 
     if use_session:
         scope_key = _compute_scope_key(ai_root, explicit_scope)
+        current_fp = _session_fingerprint(health_peer, exe_name)
         existing_session = _get_active_session(health_peer, scope_key)
+        # Retire session if invocation flags drifted since session was created
+        if existing_session:
+            stored_fp = existing_session.get("fingerprint")
+            if stored_fp and stored_fp != current_fp:
+                print(f"[HUB:WARN] {health_peer} session fingerprint drift ({stored_fp} → {current_fp}), retiring for fresh start", file=sys.stderr)
+                _retire_session(health_peer, scope_key, "fingerprint_drift", ai_root)
+                existing_session = None
 
     # ── Command construction ───────────────────────────────────
     cmd_args: list[str] = []
@@ -1619,6 +1648,10 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
     t0 = time.monotonic()
     proc = None  # ensure defined for finally
 
+    # Use git root as cwd so peer subprocesses don't scatter temp files in the caller's cwd.
+    # ai_root is typically .ai/ inside the project root; go one level up.
+    proc_cwd = str(ai_root.parent) if ai_root else None
+
     try:
         proc = subprocess.Popen(
             cmd,
@@ -1626,6 +1659,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=process_env,
+            cwd=proc_cwd,
         )
         _lease_open(ai_root, to, proc.pid, lease_timeout_sec, ask_id=ask_id, ask_query_file=saved_query_file_path)
 
@@ -1633,6 +1667,10 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         deadline = time.monotonic() + (timeout_sec if timeout_sec > 0 else float("inf"))
         raw_out = b""
         raw_err = b""
+        # Zombie-process guard: kill after this many consecutive silent heartbeats (no output, alive).
+        # Each heartbeat is heartbeat_sec seconds; max_silent_heartbeats * heartbeat_sec = max wait.
+        _MAX_SILENT_HEARTBEATS = max(1, int(_lease_cfg()[1] // _lease_cfg()[0]))  # lease_timeout_sec / heartbeat_sec
+        _silent_beats = 0
 
         while True:
             remaining = deadline - time.monotonic()
@@ -1649,7 +1687,13 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                     raw_out = proc.stdout.read() if proc.stdout else b""
                     raw_err = proc.stderr.read() if proc.stderr else b""
                     break
+                _silent_beats += 1
                 _lease_renew(ai_root, to, lease_timeout_sec)
+                if _silent_beats >= _MAX_SILENT_HEARTBEATS:
+                    # Process alive but producing no output for lease_timeout_sec total — treat as zombie.
+                    lease_status = "timeout"
+                    _kill_process_tree(proc)
+                    raise subprocess.TimeoutExpired(cmd, lease_timeout_sec)
 
         elapsed = int(time.monotonic() - t0)
         lease_status = "closed"
@@ -1688,9 +1732,9 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                     if health_peer == "cx":
                         tid = _extract_jsonl_thread_id(raw_text)
                         if tid:
-                            _set_active_session(health_peer, scope_key, tid, ask_id + "-r", ai_root)
+                            _set_active_session(health_peer, scope_key, tid, ask_id + "-r", ai_root, fingerprint=current_fp)
                     elif health_peer == "gc" and gc_new_session_id:
-                        _set_active_session(health_peer, scope_key, gc_new_session_id, ask_id + "-r", ai_root)
+                        _set_active_session(health_peer, scope_key, gc_new_session_id, ask_id + "-r", ai_root, fingerprint=current_fp)
             else:
                 clean_err = _strip_ansi(_decode_output(raw_err))
                 reason, extra = _classify_ask_failure(clean_err + "\n" + output)
@@ -1722,12 +1766,12 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                 if health_peer == "cx":
                     thread_id = _extract_jsonl_thread_id(raw_text)
                     if thread_id:
-                        _set_active_session(health_peer, scope_key, thread_id, ask_id, ai_root)
+                        _set_active_session(health_peer, scope_key, thread_id, ask_id, ai_root, fingerprint=current_fp)
                         _log_p2p("SESSION", f"cx thread stored scope={scope_key} id={thread_id[:8]}...", to_node="cx")
                 elif health_peer == "gc":
                     sid = gc_new_session_id or (existing_session or {}).get("session_id")
                     if sid:
-                        _set_active_session(health_peer, scope_key, sid, ask_id, ai_root)
+                        _set_active_session(health_peer, scope_key, sid, ask_id, ai_root, fingerprint=current_fp)
                         _log_p2p("SESSION", f"gc session stored scope={scope_key} id={sid[:8]}...", to_node="gc")
 
         if output_file:
@@ -2668,6 +2712,192 @@ def action_feedback_resolve(ai_root: Path, feedback_id: str, status: str = "done
     print(f"[HUB] FEEDBACK-RESOLVE {feedback_id} | status={status}")
 
 
+# ── Runtime Directives ─────────────────────────────────────────────────────────
+def _runtime_directives_path(ai_root: Path | None = None) -> Path:
+    return Path(__file__).parent.parent / "ai" / "runtime-directives.jsonl"
+
+
+def _get_active_runtime_directives(path: Path) -> list[dict]:
+    """Load active (non-expired, non-resolved) runtime directives."""
+    if not path.exists():
+        return []
+    now = datetime.now()
+    active = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if item.get("status") != "active":
+            continue
+        expires_str = item.get("expires")
+        if expires_str:
+            try:
+                expires_dt = datetime.strptime(expires_str, "%Y%m%dT%H%M%S")
+                if expires_dt < now:
+                    continue
+            except ValueError:
+                pass
+        active.append(item)
+    return active
+
+
+def _save_runtime_directive(path: Path, rule: str, source_peer: str, trigger_reason: str, detail: str, ttl_hours: int = 6, clear_condition: str = "first_success") -> dict:
+    """Append a new active runtime directive and return the entry."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    now_dt = datetime.now()
+    expires_dt = now_dt + timedelta(hours=ttl_hours)
+    prefix = f"RD-{now_dt.strftime('%Y%m%d')}-"
+    seq = 1
+    if path.exists():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                item = json.loads(line)
+                did = item.get("id", "")
+                if did.startswith(prefix):
+                    seq = max(seq, int(did[len(prefix):]) + 1)
+            except (json.JSONDecodeError, ValueError):
+                pass
+    entry: dict = {
+        "id": f"{prefix}{seq:03d}",
+        "rule": rule,
+        "source_peer": source_peer or "system",
+        "trigger_reason": trigger_reason or "",
+        "trigger_detail": (detail or "")[:200],
+        "effective": now_dt.strftime("%Y%m%dT%H%M%S"),
+        "expires": expires_dt.strftime("%Y%m%dT%H%M%S"),
+        "ttl_hours": ttl_hours,
+        "trigger_count": 1,
+        "clear_condition": clear_condition,
+        "status": "active",
+    }
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    return entry
+
+
+def _bump_directive_trigger(path: Path, directive_id: str) -> None:
+    """Increment trigger_count on an existing active directive."""
+    if not path.exists():
+        return
+    output = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            item = json.loads(line)
+            if item.get("id") == directive_id:
+                item["trigger_count"] = int(item.get("trigger_count", 1)) + 1
+        except json.JSONDecodeError:
+            item = {}
+        if item:
+            output.append(json.dumps(item, ensure_ascii=False))
+    path.write_text("\n".join(output) + "\n", encoding="utf-8")
+
+
+def _auto_promote_runtime_directive(peer_id: str, reason: str, detail: str, ai_root: Path) -> None:
+    """Auto-create a runtime directive after 2+ consecutive same-reason failures from the same peer."""
+    path = _runtime_directives_path(ai_root)
+    for item in _get_active_runtime_directives(path):
+        if item.get("source_peer") == peer_id and item.get("trigger_reason") == reason:
+            _bump_directive_trigger(path, item["id"])
+            return
+    rule = (
+        f"CAUTION: {peer_id} has repeatedly failed with reason={reason}. "
+        f"Verify peer health before routing asks to {peer_id}. "
+        f"Auto-clears on first successful ask."
+    )
+    entry = _save_runtime_directive(path, rule, peer_id, reason, detail, ttl_hours=6, clear_condition="first_success")
+    print(f"[HUB] AUTO-DIRECTIVE {entry['id']} created for {peer_id} reason={reason}", file=sys.stderr)
+
+
+def _clear_peer_runtime_directives(peer_id: str, ai_root: Path | None) -> None:
+    """Clear active runtime directives for a peer on successful ask (first_success condition)."""
+    if ai_root is None:
+        return
+    path = _runtime_directives_path(ai_root)
+    if not path.exists():
+        return
+    output = []
+    cleared = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            item = json.loads(line)
+            if (item.get("source_peer") == peer_id
+                    and item.get("status") == "active"
+                    and item.get("clear_condition") == "first_success"):
+                item["status"] = "resolved"
+                item["resolved_at"] = _now()
+                cleared.append(item["id"])
+        except json.JSONDecodeError:
+            item = {}
+        if item:
+            output.append(json.dumps(item, ensure_ascii=False))
+    if cleared:
+        path.write_text("\n".join(output) + "\n", encoding="utf-8")
+        print(f"[HUB] AUTO-DIRECTIVE cleared {cleared} (first_success for {peer_id})", file=sys.stderr)
+
+
+def action_directive_add(ai_root: Path, rule: str, source_peer: str, ttl_hours: int = 6, clear_condition: str = "manual") -> None:
+    """Manually add a runtime directive (human-confirmed standing rule)."""
+    if not rule:
+        print("[HUB:ERROR] directive-add requires --rule", file=sys.stderr)
+        sys.exit(1)
+    path = _runtime_directives_path(ai_root)
+    entry = _save_runtime_directive(path, rule, source_peer or "system", "manual", "", ttl_hours, clear_condition)
+    print(f"[HUB] DIRECTIVE-ADD {entry['id']} | source={source_peer} | expires_in={ttl_hours}h | rule={rule[:80]}")
+
+
+def action_directive_list(ai_root: Path) -> None:
+    """List active runtime directives."""
+    path = _runtime_directives_path(ai_root)
+    active = _get_active_runtime_directives(path)
+    if not active:
+        print("No active runtime directives.")
+        return
+    print("id\tstatus\tsource_peer\texpires\tclear_condition\trule")
+    for item in active:
+        print(f"{item.get('id','')}\t{item.get('status','')}\t{item.get('source_peer','')}\t{item.get('expires','')}\t{item.get('clear_condition','')}\t{item.get('rule','')[:60]}")
+
+
+def action_directive_clear(ai_root: Path, directive_id: str) -> None:
+    """Manually resolve a runtime directive by ID."""
+    if not directive_id:
+        print("[HUB:ERROR] directive-clear requires --directive-id", file=sys.stderr)
+        sys.exit(1)
+    path = _runtime_directives_path(ai_root)
+    if not path.exists():
+        print("[HUB:ERROR] no runtime directives file found", file=sys.stderr)
+        sys.exit(1)
+    updated = False
+    output = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            item = json.loads(line)
+            if item.get("id") == directive_id:
+                item["status"] = "resolved"
+                item["resolved_at"] = _now()
+                updated = True
+        except json.JSONDecodeError:
+            item = {}
+        if item:
+            output.append(json.dumps(item, ensure_ascii=False))
+    if not updated:
+        print(f"[HUB:ERROR] directive ID {directive_id} not found", file=sys.stderr)
+        sys.exit(1)
+    path.write_text("\n".join(output) + "\n", encoding="utf-8")
+    print(f"[HUB] DIRECTIVE-CLEAR {directive_id} | status=resolved")
+
+
 def _leases_path(ai_root: Path) -> Path:
     return ai_root / "leases.json"
 
@@ -3309,7 +3539,7 @@ def action_approval_request(ai_root: Path, from_peer: str, action: str, auth_nee
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="hub", description="AI 협업 허브 — Protocol v4.1")
-    parser.add_argument("action", choices=["init-session", "end-session", "send", "broadcast", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "ask-coordinator", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint", "peer-quarantine", "peer-recover", "new-topic", "clear-room", "preflight", "context-hash", "context-ack", "report-error", "feedback-add", "feedback-list", "feedback-resolve", "artifact-claim", "artifact-status", "artifact-finalize", "leader-yield", "leader-claim", "elect-leader", "discover", "assign-role", "release-role", "role-status", "health-precheck", "health-sweep", "append-handoff", "task-checkpoint", "task-status", "task-failover", "approval-request", "file-lock", "file-unlock", "lock-status", "profile-validate", "lease-status", "lease-sweep", "model-status", "transient-scan"])
+    parser.add_argument("action", choices=["init-session", "end-session", "send", "broadcast", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "ask-coordinator", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint", "peer-quarantine", "peer-recover", "new-topic", "clear-room", "preflight", "context-hash", "context-ack", "report-error", "feedback-add", "feedback-list", "feedback-resolve", "artifact-claim", "artifact-status", "artifact-finalize", "leader-yield", "leader-claim", "elect-leader", "discover", "assign-role", "release-role", "role-status", "health-precheck", "health-sweep", "append-handoff", "task-checkpoint", "task-status", "task-failover", "approval-request", "file-lock", "file-unlock", "lock-status", "profile-validate", "lease-status", "lease-sweep", "model-status", "transient-scan", "directive-add", "directive-list", "directive-clear"])
     parser.add_argument("--needs")
     parser.add_argument("--effort", default="mid")
     parser.add_argument("--agent")
@@ -3373,6 +3603,10 @@ def main() -> None:
     parser.add_argument("--session-policy", dest="session_policy", default="auto",
                         choices=["auto", "reuse", "fresh", "none"],
                         help="Session reuse policy: auto=use node config, reuse=always reuse, fresh=always new, none=disable")
+    parser.add_argument("--rule")
+    parser.add_argument("--ttl-hours", dest="ttl_hours", type=int, default=6)
+    parser.add_argument("--clear-condition", dest="clear_condition", default="manual")
+    parser.add_argument("--directive-id", dest="directive_id")
 
     args = parser.parse_args()
     if args.action == "ask":
@@ -3520,6 +3754,12 @@ def main() -> None:
         action_model_status()
     elif act == "transient-scan":
         action_transient_scan(ai_root)
+    elif act == "directive-add":
+        action_directive_add(ai_root, args.rule or args.text or "", args.peer or args.from_ or "system", args.ttl_hours, args.clear_condition)
+    elif act == "directive-list":
+        action_directive_list(ai_root)
+    elif act == "directive-clear":
+        action_directive_clear(ai_root, args.directive_id or args.round_id or "")
 
 if __name__ == "__main__":
     main()
