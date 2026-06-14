@@ -904,8 +904,8 @@ def _classify_ask_failure(text: str) -> tuple[str, dict]:
     return policy.get("default_reason", "nonzero_exit"), {}
 
 
-def _read_peer_health(peer_id: str) -> tuple[Path, dict]:
-    health_path = _peer_sys_dir(peer_id) / "health.json"
+def _read_peer_health(peer_id: str, health_dir: Path | None = None) -> tuple[Path, dict]:
+    health_path = (health_dir if health_dir is not None else _peer_sys_dir(peer_id)) / "health.json"
     data = _read_json(health_path) if health_path.exists() else {}
     data.setdefault("_version", "1.0")
     data.setdefault("peer_id", peer_id)
@@ -915,8 +915,8 @@ def _read_peer_health(peer_id: str) -> tuple[Path, dict]:
     return health_path, data
 
 
-def _write_peer_health(peer_id: str, data: dict, ai_root: Path | None) -> None:
-    health_path = _peer_sys_dir(peer_id) / "health.json"
+def _write_peer_health(peer_id: str, data: dict, ai_root: Path | None, health_dir: Path | None = None) -> None:
+    health_path = (health_dir if health_dir is not None else _peer_sys_dir(peer_id)) / "health.json"
     health_path.parent.mkdir(parents=True, exist_ok=True)
     lock_root = ai_root if ai_root else find_ai_root()
     with _get_lock(lock_root, f"health_{peer_id}"):
@@ -934,10 +934,10 @@ def _ask_health_precheck(peer_id: str, ai_root: Path | None) -> None:
         sys.exit(2)
 
 
-def _record_ask_success(peer_id: str, elapsed: int, ai_root: Path | None) -> None:
+def _record_ask_success(peer_id: str, elapsed: int, ai_root: Path | None, health_dir: Path | None = None) -> None:
     if ai_root is None:
         return
-    _, data = _read_peer_health(peer_id)
+    _, data = _read_peer_health(peer_id, health_dir)
     ctx = data.setdefault("context_health", {})
     previous_reason = data.get("session_health", {}).get("last_failure_reason")
     transient_red = set(_load_lifecycle_policy().get("health_lifecycle", {}).get(
@@ -964,7 +964,7 @@ def _record_ask_success(peer_id: str, elapsed: int, ai_root: Path | None) -> Non
     availability.pop("sandbox_blocked", None)
     availability.pop("workspace_not_trusted", None)
     availability.pop("retry_hint", None)
-    _write_peer_health(peer_id, data, ai_root)
+    _write_peer_health(peer_id, data, ai_root, health_dir)
     # Clear first_success runtime directives; pass previous_reason to narrow scope
     _clear_peer_runtime_directives(peer_id, ai_root, trigger_reason=previous_reason)
 
@@ -976,10 +976,11 @@ def _record_ask_failure(
     elapsed: int | None,
     ai_root: Path | None,
     extra: dict | None = None,
+    health_dir: Path | None = None,
 ) -> None:
     if ai_root is None:
         return
-    _, data = _read_peer_health(peer_id)
+    _, data = _read_peer_health(peer_id, health_dir)
     sh = data.setdefault("session_health", {})
     prev_failure_reason = sh.get("last_failure_reason")  # capture before overwrite for auto-promote check
     failures = int(sh.get("consecutive_failures", 0)) + 1
@@ -1009,13 +1010,13 @@ def _record_ask_failure(
         availability.update(extra)
     if reason in critical_reasons:
         availability["gate_open"] = False
-    _write_peer_health(peer_id, data, ai_root)
+    _write_peer_health(peer_id, data, ai_root, health_dir)
     # Auto-promote runtime directive after 2+ consecutive same-reason failures
     if failures >= 2 and prev_failure_reason == reason and ai_root:
         _auto_promote_runtime_directive(peer_id, reason, detail, ai_root)
 
 
-def _build_ask_query_with_context(ai_root: Path | None, query: str) -> str:
+def _build_ask_query_with_context(ai_root: Path | None, query: str, to_peer: str | None = None) -> str:
     if ai_root is None:
         return query
     state = _read_json(ai_root / "state.json")
@@ -1039,9 +1040,12 @@ def _build_ask_query_with_context(ai_root: Path | None, query: str) -> str:
     # ── Runtime Directives 주입 (_sys/ai/runtime-directives.jsonl) ──
     _RD_MAX_COUNT = 10
     _RD_MAX_CHARS = 2000
-    runtime_dir_path = Path(__file__).parent.parent / "ai" / "runtime-directives.jsonl"
+    runtime_dir_path = _runtime_directives_path(ai_root)
     active_runtime = _get_active_runtime_directives(runtime_dir_path)
     if active_runtime:
+        # Filter by target_peers if set (None/empty = broadcast to all)
+        if to_peer:
+            active_runtime = [r for r in active_runtime if not r.get("target_peers") or to_peer in r["target_peers"]]
         # Sort newest-first; cap count and total chars to prevent prompt bloat
         active_runtime = sorted(active_runtime, key=lambda r: r.get("effective", ""), reverse=True)[:_RD_MAX_COUNT]
         rd_lines = []
@@ -1054,6 +1058,13 @@ def _build_ask_query_with_context(ai_root: Path | None, query: str) -> str:
             rd_lines.append(entry)
             rd_chars += len(entry)
         lines.extend(["", "[RUNTIME DIRECTIVES]", "\n".join(rd_lines)])
+    # ── Peer Lessons 주입 (_sys/ai/knowledge/) ──────────────────
+    if to_peer:
+        all_lessons = _load_active_lessons(workspace_ai_root=ai_root)
+        peer_lessons = _filter_lessons_for_peer(all_lessons, to_peer, workspace_ai_root=ai_root)
+        lessons_block = _compile_lessons_block(peer_lessons, workspace_ai_root=ai_root)
+        if lessons_block:
+            lines.extend(["", lessons_block])
     handoff_path = ai_root / "sessions" / room_id / "handoff.md"
     if handoff_path.exists():
         handoff = handoff_path.read_text(encoding="utf-8", errors="replace").strip()
@@ -1581,7 +1592,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
     _lease_sweep(ai_root)
     _ask_health_precheck(health_peer, ai_root)
     if include_context:
-        query = _build_ask_query_with_context(ai_root, query)
+        query = _build_ask_query_with_context(ai_root, query, to_peer=to)
 
     # ── Session reuse ──────────────────────────────────────────
     session_mode = node.get("session_mode", "none")
@@ -2757,6 +2768,175 @@ def action_feedback_resolve(ai_root: Path, feedback_id: str, status: str = "done
 
 
 # ── Runtime Directives ─────────────────────────────────────────────────────────
+def _knowledge_root() -> Path:
+    return Path(__file__).parent.parent / "ai" / "knowledge"
+
+
+def _knowledge_config() -> dict:
+    cfg_path = _knowledge_root() / "knowledge.config.json"
+    return _read_json(cfg_path) if cfg_path.exists() else {}
+
+
+def _load_active_lessons(workspace_ai_root: Path | None = None) -> list[dict]:
+    """Load all active lessons: global first, then workspace-local (workspace overrides/additions)."""
+    now_str = datetime.now().strftime("%Y%m%d")
+    cfg = _knowledge_config()
+    recency_days = int(cfg.get("filters", {}).get("recency_days_default", 90))
+
+    def _is_active(lesson: dict) -> bool:
+        if lesson.get("status") != "active":
+            return False
+        expires = lesson.get("retirement", {}).get("expires_at")
+        if expires:
+            try:
+                exp_dt = datetime.strptime(expires, "%Y%m%dT%H%M%S")
+                if exp_dt < datetime.now():
+                    return False
+            except ValueError:
+                pass
+        src_refs = lesson.get("source_refs", [])
+        if src_refs and recency_days > 0:
+            latest_ts = max((r.get("ts", "") for r in src_refs), default="")
+            if latest_ts:
+                try:
+                    lesson_date = latest_ts[:8]
+                    from datetime import timedelta
+                    cutoff = (datetime.now() - timedelta(days=recency_days)).strftime("%Y%m%d")
+                    if lesson_date < cutoff:
+                        return False
+                except Exception:
+                    pass
+        return True
+
+    lessons = []
+    seen_ids: set[str] = set()
+
+    # Global lessons
+    global_path = _knowledge_root() / "general" / "active-lessons.jsonl"
+    if global_path.exists():
+        for line in global_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                item = json.loads(line)
+                if _is_active(item) and item.get("id") not in seen_ids:
+                    lessons.append(item)
+                    seen_ids.add(item["id"])
+            except json.JSONDecodeError:
+                pass
+
+    # Workspace-local lessons
+    if workspace_ai_root:
+        ws_path = workspace_ai_root / "knowledge" / "active-lessons.jsonl"
+        if ws_path.exists():
+            for line in ws_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    item = json.loads(line)
+                    if _is_active(item) and item.get("id") not in seen_ids:
+                        lessons.append(item)
+                        seen_ids.add(item["id"])
+                except json.JSONDecodeError:
+                    pass
+    return lessons
+
+
+def _filter_lessons_for_peer(lessons: list[dict], peer_id: str, workspace_ai_root: Path | None = None) -> list[dict]:
+    """Filter active lessons for a specific peer using workspace-profile and bindings."""
+    os_filter: str | None = None
+    shell_filter: str | None = None
+    task_types: list[str] = []
+
+    if workspace_ai_root:
+        profile_path = workspace_ai_root / "knowledge" / "workspace-profile.json"
+        if profile_path.exists():
+            try:
+                profile = json.loads(profile_path.read_text(encoding="utf-8"))
+                os_filter = profile.get("os")
+                shell_filter = profile.get("shell")
+                task_types = profile.get("task_types", [])
+            except Exception:
+                pass
+
+    cfg = _knowledge_config()
+    min_severity = cfg.get("filters", {}).get("min_severity_default", "medium")
+    severity_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+    min_rank = severity_rank.get(min_severity, 2)
+
+    result = []
+    for lesson in lessons:
+        applies = lesson.get("applies_to", {})
+
+        # Peer filter
+        peer_ids = applies.get("peer_ids")
+        if peer_ids and peer_id not in peer_ids:
+            continue
+
+        # Severity filter
+        sev = lesson.get("severity", "medium")
+        if severity_rank.get(sev, 2) > min_rank:
+            continue
+
+        # OS/shell filter (match if lesson has no constraint OR constraint matches)
+        lesson_os = applies.get("os")
+        if lesson_os and os_filter and os_filter not in lesson_os:
+            continue
+        lesson_shell = applies.get("shell")
+        if lesson_shell and shell_filter and shell_filter not in lesson_shell:
+            continue
+
+        # Task type filter (match if lesson has no constraint OR any intersection)
+        lesson_tasks = applies.get("task_types")
+        if lesson_tasks and task_types and not set(lesson_tasks) & set(task_types):
+            continue
+
+        result.append(lesson)
+    return result
+
+
+def _compile_lessons_block(lessons: list[dict], workspace_ai_root: Path | None = None) -> str | None:
+    """Render the [PEER LESSONS] injection block. Returns None if no lessons."""
+    cfg = _knowledge_config()
+    delivery = cfg.get("delivery", {})
+    if not delivery.get("enabled", True):
+        return None
+    max_chars = int(delivery.get("max_chars", 1200))
+    max_items = int(delivery.get("max_items", 8))
+
+    # Critical lessons always first, then by severity rank
+    severity_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+    sorted_lessons = sorted(lessons, key=lambda x: severity_rank.get(x.get("severity", "medium"), 2))
+
+    lines = []
+    chars = 0
+    omitted = 0
+    critical_always = delivery.get("critical_always_include", True)
+
+    for i, lesson in enumerate(sorted_lessons):
+        if i >= max_items and not (critical_always and lesson.get("severity") == "critical"):
+            omitted += 1
+            continue
+        entry = f"- {lesson['severity'].upper()} {lesson['id']}: {lesson['compact_rule']}"
+        if chars + len(entry) > max_chars and not (critical_always and lesson.get("severity") == "critical"):
+            omitted += 1
+            continue
+        lines.append(entry)
+        chars += len(entry)
+
+    if not lines:
+        return None
+
+    block_lines = ["[PEER LESSONS]"]
+    block_lines.extend(lines)
+    if omitted > 0:
+        pack_path = "_sys/ai/knowledge/general/active-lessons.jsonl"
+        block_lines.append(f"Omitted: {omitted} lower-priority matches. Full pack: {pack_path}")
+    return "\n".join(block_lines)
+
+
 def _runtime_directives_path(ai_root: Path | None = None) -> Path:
     return Path(__file__).parent.parent / "ai" / "runtime-directives.jsonl"
 
@@ -2789,8 +2969,12 @@ def _get_active_runtime_directives(path: Path) -> list[dict]:
     return active
 
 
-def _save_runtime_directive(path: Path, rule: str, source_peer: str, trigger_reason: str, detail: str, ttl_hours: int = 6, clear_condition: str = "first_success") -> dict:
-    """Append a new active runtime directive and return the entry."""
+def _save_runtime_directive(path: Path, rule: str, source_peer: str, trigger_reason: str, detail: str, ttl_hours: int = 6, clear_condition: str = "first_success", target_peers: list | None = None) -> dict:
+    """Append a new active runtime directive and return the entry.
+
+    target_peers: if set, only inject this directive into asks to the listed peers.
+    If None or empty, inject into all peer asks (broadcast).
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     now_dt = datetime.now()
     expires_dt = now_dt + timedelta(hours=ttl_hours)
@@ -2820,6 +3004,8 @@ def _save_runtime_directive(path: Path, rule: str, source_peer: str, trigger_rea
         "clear_condition": clear_condition,
         "status": "active",
     }
+    if target_peers:
+        entry["target_peers"] = list(target_peers)
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     return entry
@@ -2863,7 +3049,8 @@ def _auto_promote_runtime_directive(peer_id: str, reason: str, detail: str, ai_r
         f"Verify peer health before routing asks to {peer_id}. "
         f"Auto-clears on first successful ask."
     )
-    entry = _save_runtime_directive(path, rule, peer_id, reason, detail, ttl_hours=6, clear_condition="first_success")
+    # Auto-promoted directives target the coordinator (cc) only — the peer that manages routing
+    entry = _save_runtime_directive(path, rule, peer_id, reason, detail, ttl_hours=6, clear_condition="first_success", target_peers=["cc"])
     print(f"[HUB] AUTO-DIRECTIVE {entry['id']} created for {peer_id} reason={reason}", file=sys.stderr)
 
 
@@ -2953,6 +3140,171 @@ def action_directive_clear(ai_root: Path, directive_id: str) -> None:
         sys.exit(1)
     path.write_text("\n".join(output) + "\n", encoding="utf-8")
     print(f"[HUB] DIRECTIVE-CLEAR {directive_id} | status=resolved")
+
+
+def action_lessons_list(ai_root: Path, peer_id: str | None = None) -> None:
+    """List active lessons, optionally filtered for a specific peer."""
+    all_lessons = _load_active_lessons(workspace_ai_root=ai_root)
+    if peer_id:
+        lessons = _filter_lessons_for_peer(all_lessons, peer_id, workspace_ai_root=ai_root)
+        print(f"Active lessons for {peer_id} ({len(lessons)} of {len(all_lessons)} total):")
+    else:
+        lessons = all_lessons
+        print(f"Active lessons ({len(lessons)} total):")
+    if not lessons:
+        print("  (none)")
+        return
+    severity_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+    for lesson in sorted(lessons, key=lambda x: severity_rank.get(x.get("severity", "medium"), 2)):
+        scope = lesson.get("scope", "global")
+        sev = lesson.get("severity", "?").upper()
+        lid = lesson.get("id", "?")
+        title = lesson.get("title", "?")
+        peers = ",".join(lesson.get("applies_to", {}).get("peer_ids") or ["all"])
+        print(f"  [{sev}] {lid} ({scope}, peers={peers}): {title}")
+
+
+def action_lessons_propose(
+    ai_root: Path,
+    title: str,
+    rule: str,
+    category: str,
+    severity: str = "medium",
+    scope: str = "workspace",
+    peer_ids: list | None = None,
+) -> None:
+    """Propose a new candidate lesson (pending approval)."""
+    if not title or not rule or not category:
+        print("[HUB:ERROR] lessons-propose requires --title --rule --category", file=sys.stderr)
+        sys.exit(1)
+    now_str = datetime.now().strftime("%Y%m%dT%H%M%S")
+    date_str = datetime.now().strftime("%Y%m%d")
+    lesson_path = _knowledge_root() / "general" / "active-lessons.jsonl"
+    ws_path = ai_root / "knowledge" / "active-lessons.jsonl" if scope == "workspace" else None
+
+    # Generate ID
+    prefix = f"LL-{date_str}-"
+    seq = 1
+    check_path = ws_path if (scope == "workspace" and ws_path) else lesson_path
+    if check_path and check_path.exists():
+        for line in check_path.read_text(encoding="utf-8").splitlines():
+            try:
+                item = json.loads(line)
+                lid = item.get("id", "")
+                if lid.startswith(prefix):
+                    seq = max(seq, int(lid[len(prefix):]) + 1)
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+    entry = {
+        "id": f"{prefix}{seq:03d}",
+        "schema_version": 1,
+        "status": "candidate",
+        "severity": severity,
+        "title": title,
+        "compact_rule": rule,
+        "category": category,
+        "scope": scope,
+        "applies_to": {
+            "peer_ids": peer_ids or None,
+            "os": None, "shell": None, "task_types": None,
+        },
+        "source_refs": [{"type": "user", "id": "manual", "peer": "cc", "ts": now_str}],
+        "approval": {"approved_by": None, "approved_at": None, "record_ref": None},
+        "retirement": {"expires_at": None, "superseded_by": None, "review_after": None},
+    }
+
+    target = ws_path if (scope == "workspace" and ws_path) else lesson_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    print(f"[HUB] LESSON-PROPOSE {entry['id']} | scope={scope} | status=candidate | title={title[:60]}")
+    print(f"      Activate with: hub.py lessons-activate --lesson-id {entry['id']}")
+
+
+def action_lessons_activate(ai_root: Path, lesson_id: str) -> None:
+    """Activate a candidate lesson (coordinator auto-approval)."""
+    if not lesson_id:
+        print("[HUB:ERROR] lessons-activate requires --lesson-id", file=sys.stderr)
+        sys.exit(1)
+    now_str = datetime.now().strftime("%Y%m%dT%H%M%S")
+    # Search both global and workspace paths
+    paths_to_check = [
+        _knowledge_root() / "general" / "active-lessons.jsonl",
+        ai_root / "knowledge" / "active-lessons.jsonl",
+    ]
+    updated = False
+    for lesson_path in paths_to_check:
+        if not lesson_path.exists():
+            continue
+        output = []
+        for line in lesson_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                item = json.loads(line)
+                if item.get("id") == lesson_id and item.get("status") == "candidate":
+                    item["status"] = "active"
+                    item["approval"]["approved_by"] = "coordinator"
+                    item["approval"]["approved_at"] = now_str
+                    item["approval"]["record_ref"] = "approval-log.jsonl"
+                    # Append to approval log
+                    log_path = _knowledge_root() / "logs" / "approval-log.jsonl"
+                    log_path.parent.mkdir(parents=True, exist_ok=True)
+                    log_entry = {"id": f"APPROVAL-{now_str}", "lesson_ids": [lesson_id],
+                                 "approved_by": "coordinator", "approved_at": now_str,
+                                 "method": "coordinator_auto_with_audit", "note": ""}
+                    with log_path.open("a", encoding="utf-8") as lf:
+                        lf.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+                    updated = True
+            except json.JSONDecodeError:
+                item = {}
+            if item:
+                output.append(json.dumps(item, ensure_ascii=False))
+        if updated:
+            lesson_path.write_text("\n".join(output) + "\n", encoding="utf-8")
+            print(f"[HUB] LESSON-ACTIVATE {lesson_id} | approved_by=coordinator")
+            return
+    print(f"[HUB:ERROR] lesson {lesson_id} not found or already active", file=sys.stderr)
+    sys.exit(1)
+
+
+def action_lessons_retire(ai_root: Path, lesson_id: str, reason: str = "") -> None:
+    """Retire an active lesson."""
+    if not lesson_id:
+        print("[HUB:ERROR] lessons-retire requires --lesson-id", file=sys.stderr)
+        sys.exit(1)
+    now_str = datetime.now().strftime("%Y%m%dT%H%M%S")
+    paths_to_check = [
+        _knowledge_root() / "general" / "active-lessons.jsonl",
+        ai_root / "knowledge" / "active-lessons.jsonl",
+    ]
+    updated = False
+    for lesson_path in paths_to_check:
+        if not lesson_path.exists():
+            continue
+        output = []
+        for line in lesson_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                item = json.loads(line)
+                if item.get("id") == lesson_id and item.get("status") == "active":
+                    item["status"] = "retired"
+                    item.setdefault("retirement", {})["retired_at"] = now_str
+                    if reason:
+                        item["retirement"]["retire_reason"] = reason
+                    updated = True
+            except json.JSONDecodeError:
+                item = {}
+            if item:
+                output.append(json.dumps(item, ensure_ascii=False))
+        if updated:
+            lesson_path.write_text("\n".join(output) + "\n", encoding="utf-8")
+            print(f"[HUB] LESSON-RETIRE {lesson_id} | reason={reason or 'manual'}")
+            return
+    print(f"[HUB:ERROR] lesson {lesson_id} not found or not active", file=sys.stderr)
+    sys.exit(1)
 
 
 def _leases_path(ai_root: Path) -> Path:
@@ -3720,6 +4072,9 @@ def main() -> None:
     parser.add_argument("--rule")
     parser.add_argument("--ttl-hours", dest="ttl_hours", type=int, default=6)
     parser.add_argument("--clear-condition", dest="clear_condition", default="manual")
+    parser.add_argument("--lesson-id", dest="lesson_id")
+    parser.add_argument("--title")
+    parser.add_argument("--peers")
     parser.add_argument("--directive-id", dest="directive_id")
 
     args = parser.parse_args()
@@ -3874,6 +4229,23 @@ def main() -> None:
         action_directive_list(ai_root)
     elif act == "directive-clear":
         action_directive_clear(ai_root, args.directive_id or args.round_id or "")
+    elif act == "lessons-list":
+        action_lessons_list(ai_root, peer_id=args.peer or args.to or None)
+    elif act == "lessons-propose":
+        peer_ids = [p.strip() for p in (args.peers or "").split(",") if p.strip()] or None
+        action_lessons_propose(
+            ai_root,
+            title=args.text or args.title or "",
+            rule=args.rule or "",
+            category=args.category or "",
+            severity=args.severity or "medium",
+            scope=args.scope or "workspace",
+            peer_ids=peer_ids,
+        )
+    elif act == "lessons-activate":
+        action_lessons_activate(ai_root, lesson_id=args.lesson_id or args.round_id or "")
+    elif act == "lessons-retire":
+        action_lessons_retire(ai_root, lesson_id=args.lesson_id or args.round_id or "", reason=args.reason or "")
 
 if __name__ == "__main__":
     main()

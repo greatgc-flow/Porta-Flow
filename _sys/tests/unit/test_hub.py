@@ -868,31 +868,13 @@ class TestEnhancedCollaboration:
     def test_auto_promote_runtime_directive_on_repeated_failure(self, ai_dir, tmp_path):
         """동일 이유 실패 2회 연속 시 runtime directive 자동 생성."""
         rd_path = tmp_path / "runtime-directives.jsonl"
-        # Stateful mock: simulate read-modify-write without touching real health.json
-        health_state = [{
-            "context_health": {"status": "GREEN"},
-            "session_health": {
-                "consecutive_failures": 0, "last_failure_reason": None,
-                "session_count_today": 0, "session_date": "20260614",
-            },
-            "availability": {
-                "gate_open": True, "last_invocation_exit_code": 0,
-                "last_invocation_duration_ms": 0, "rate_limit_state": "ok",
-            },
-        }]
-
-        def fake_read(peer_id):
-            return (tmp_path / f"{peer_id}-health.json", dict(health_state[0]))
-
-        def fake_write(peer_id, data, ai_root=None):
-            health_state[0] = dict(data)
-
-        with patch.object(hub, "_runtime_directives_path", return_value=rd_path), \
-             patch.object(hub, "_read_peer_health", side_effect=fake_read), \
-             patch.object(hub, "_write_peer_health", side_effect=fake_write):
-            hub._record_ask_failure("gc", "rate_limit", "quota exceeded", 5, ai_dir)
+        health_dir = tmp_path / "gc_health"
+        health_dir.mkdir()
+        # health.json 없음 → 기본값(consecutive_failures=0)에서 시작
+        with patch.object(hub, "_runtime_directives_path", return_value=rd_path):
+            hub._record_ask_failure("gc", "rate_limit", "quota exceeded", 5, ai_dir, health_dir=health_dir)
             assert hub._get_active_runtime_directives(rd_path) == []
-            hub._record_ask_failure("gc", "rate_limit", "quota exceeded", 5, ai_dir)
+            hub._record_ask_failure("gc", "rate_limit", "quota exceeded", 5, ai_dir, health_dir=health_dir)
             active = hub._get_active_runtime_directives(rd_path)
             assert len(active) == 1
             assert "gc" in active[0]["rule"]
@@ -901,29 +883,45 @@ class TestEnhancedCollaboration:
     def test_first_success_clears_runtime_directive(self, ai_dir, tmp_path):
         """성공 시 first_success 조건 directive 자동 클리어."""
         rd_path = tmp_path / "runtime-directives.jsonl"
-        # _read_peer_health를 모킹해 실제 health.json 격리 (이전 테스트 오염 방지)
-        clean_health = {
-            "context_health": {"status": "GREEN"},
-            "session_health": {
-                "consecutive_failures": 0,
-                "last_failure_reason": None,
-                "session_count_today": 0,
-                "session_date": "20260614",
-            },
-            "availability": {
-                "gate_open": True,
-                "last_invocation_exit_code": 0,
-                "last_invocation_duration_ms": 0,
-                "rate_limit_state": "ok",
-            },
-        }
-        with patch.object(hub, "_runtime_directives_path", return_value=rd_path), \
-             patch.object(hub, "_read_peer_health", return_value=("GREEN", clean_health)), \
-             patch.object(hub, "_write_peer_health"):
+        health_dir = tmp_path / "gc_health"
+        health_dir.mkdir()
+        # health.json 없음 → last_failure_reason=None(기본값) → 클린 상태
+        with patch.object(hub, "_runtime_directives_path", return_value=rd_path):
             hub._save_runtime_directive(rd_path, "caution gc", "gc", "timeout", "", 6, "first_success")
             assert len(hub._get_active_runtime_directives(rd_path)) == 1
-            hub._record_ask_success("gc", 10, ai_dir)
+            hub._record_ask_success("gc", 10, ai_dir, health_dir=health_dir)
             assert hub._get_active_runtime_directives(rd_path) == []
+
+    def test_target_peers_filters_directive_injection(self, ai_dir, tmp_path):
+        """target_peers 필드: cc-only directive는 gc ask에 주입되지 않음."""
+        rd_path = tmp_path / "runtime-directives.jsonl"
+        with patch.object(hub, "_runtime_directives_path", return_value=rd_path):
+            # broadcast directive (no target_peers)
+            hub._save_runtime_directive(rd_path, "global rule", "system", "manual", "", target_peers=None)
+            # cc-only directive
+            hub._save_runtime_directive(rd_path, "cc-only rule", "gc", "rate_limit", "", target_peers=["cc"])
+            active = hub._get_active_runtime_directives(rd_path)
+            assert len(active) == 2
+
+        # Inject context for gc → only global rule visible
+        state_path = ai_dir / "state.json"
+        import json as _json
+        state = _json.loads(state_path.read_text("utf-8")) if state_path.exists() else {}
+        if not state.get("room_id"):
+            state["room_id"] = "room-test"
+            state["members"] = {"cc": {}, "gc": {}}
+            state_path.write_text(_json.dumps(state), encoding="utf-8")
+        room_dir = ai_dir / "sessions" / state["room_id"]
+        room_dir.mkdir(parents=True, exist_ok=True)
+
+        with patch.object(hub, "_runtime_directives_path", return_value=rd_path):
+            ctx_gc = hub._build_ask_query_with_context(ai_dir, "hello", to_peer="gc")
+            ctx_cc = hub._build_ask_query_with_context(ai_dir, "hello", to_peer="cc")
+
+        assert "global rule" in ctx_gc
+        assert "cc-only rule" not in ctx_gc
+        assert "global rule" in ctx_cc
+        assert "cc-only rule" in ctx_cc
 
     def test_artifact_claim_register_and_finalize(self, ai_dir, tmp_path, capsys):
         result = tmp_path / "Result.md"
@@ -937,3 +935,195 @@ class TestEnhancedCollaboration:
         assert item["drafts"]["cc"] == ".ai/artifacts/Result.cc.md"
         assert item["status"] == "finalized"
         assert item["hash"].startswith("sha256:")
+
+
+# ─── knowledge propagation ──────────────────────────────────
+class TestKnowledgePropagation:
+    """knowledge-propagation-spec.md 구현 테스트."""
+
+    def _make_lessons_jsonl(self, path: Path, lessons: list[dict]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join(json.dumps(l) for l in lessons) + "\n", encoding="utf-8")
+
+    def _seed_lesson(self, **kwargs) -> dict:
+        base = {
+            "id": "LL-TEST-001", "schema_version": 1, "status": "active",
+            "severity": "high", "title": "Test lesson", "compact_rule": "Do X not Y.",
+            "category": "shell-dialect", "scope": "global",
+            "applies_to": {"peer_ids": None, "os": None, "shell": None, "task_types": None},
+            "source_refs": [{"type": "debate", "id": "test", "peer": "cc", "ts": "20260614T000000"}],
+            "approval": {"approved_by": "coordinator", "approved_at": "20260614T000000", "record_ref": None},
+            "retirement": {"expires_at": None, "superseded_by": None, "review_after": None},
+        }
+        base.update(kwargs)
+        return base
+
+    def test_load_active_lessons_global_only(self, tmp_path):
+        """글로벌 lessons 파일에서 active 항목만 로드."""
+        lessons_dir = tmp_path / "general"
+        lessons_path = lessons_dir / "active-lessons.jsonl"
+        active = self._seed_lesson(id="LL-A", status="active")
+        retired = self._seed_lesson(id="LL-R", status="retired")
+        self._make_lessons_jsonl(lessons_path, [active, retired])
+
+        with patch.object(hub, "_knowledge_root", return_value=tmp_path):
+            result = hub._load_active_lessons(workspace_ai_root=None)
+
+        assert len(result) == 1
+        assert result[0]["id"] == "LL-A"
+
+    def test_load_active_lessons_merges_workspace(self, tmp_path):
+        """workspace-local lesson이 global에 추가됨 (중복 ID 제외)."""
+        global_dir = tmp_path / "general"
+        global_path = global_dir / "active-lessons.jsonl"
+        self._make_lessons_jsonl(global_path, [self._seed_lesson(id="LL-G")])
+
+        ws_knowledge = tmp_path / "ws" / "knowledge"
+        ws_path = ws_knowledge / "active-lessons.jsonl"
+        self._make_lessons_jsonl(ws_path, [
+            self._seed_lesson(id="LL-WS"),
+            self._seed_lesson(id="LL-G"),  # 중복 — 무시돼야 함
+        ])
+
+        with patch.object(hub, "_knowledge_root", return_value=tmp_path):
+            result = hub._load_active_lessons(workspace_ai_root=tmp_path / "ws")
+
+        ids = [l["id"] for l in result]
+        assert "LL-G" in ids
+        assert "LL-WS" in ids
+        assert ids.count("LL-G") == 1  # 중복 없음
+
+    def test_filter_lessons_by_peer_id(self, tmp_path):
+        """applies_to.peer_ids 필터: 해당 피어만 받음."""
+        cc_only = self._seed_lesson(id="LL-CC", applies_to={"peer_ids": ["cc"], "os": None, "shell": None, "task_types": None})
+        all_peers = self._seed_lesson(id="LL-ALL", applies_to={"peer_ids": None, "os": None, "shell": None, "task_types": None})
+
+        with patch.object(hub, "_knowledge_config", return_value={}):
+            gc_lessons = hub._filter_lessons_for_peer([cc_only, all_peers], "gc")
+
+        assert len(gc_lessons) == 1
+        assert gc_lessons[0]["id"] == "LL-ALL"
+
+    def test_filter_lessons_by_severity(self, tmp_path):
+        """min_severity=medium → low 제외."""
+        high = self._seed_lesson(id="LL-H", severity="high")
+        low = self._seed_lesson(id="LL-L", severity="low")
+
+        with patch.object(hub, "_knowledge_config", return_value={"filters": {"min_severity_default": "medium"}}):
+            result = hub._filter_lessons_for_peer([high, low], "cc")
+
+        ids = [l["id"] for l in result]
+        assert "LL-H" in ids
+        assert "LL-L" not in ids
+
+    def test_compile_lessons_block_renders(self, tmp_path):
+        """lessons_block 렌더링: [PEER LESSONS] 헤더 + 규칙 포함."""
+        lessons = [self._seed_lesson(id="LL-X", compact_rule="Never do Z.")]
+        with patch.object(hub, "_knowledge_config", return_value={
+            "delivery": {"enabled": True, "max_chars": 2000, "max_items": 8,
+                         "critical_always_include": True, "overflow_policy": "show_count_and_pointer"}
+        }):
+            block = hub._compile_lessons_block(lessons)
+
+        assert block is not None
+        assert "[PEER LESSONS]" in block
+        assert "Never do Z." in block
+
+    def test_compile_lessons_block_overflow(self, tmp_path):
+        """max_items 초과 시 Omitted 메시지 표시."""
+        lessons = [self._seed_lesson(id=f"LL-{i}", compact_rule=f"Rule {i}.") for i in range(10)]
+        with patch.object(hub, "_knowledge_config", return_value={
+            "delivery": {"enabled": True, "max_chars": 99999, "max_items": 3,
+                         "critical_always_include": False, "overflow_policy": "show_count_and_pointer"}
+        }):
+            block = hub._compile_lessons_block(lessons)
+
+        assert "Omitted:" in block
+
+    def test_compile_lessons_block_disabled(self, tmp_path):
+        """delivery.enabled=false → None 반환."""
+        lessons = [self._seed_lesson()]
+        with patch.object(hub, "_knowledge_config", return_value={"delivery": {"enabled": False}}):
+            block = hub._compile_lessons_block(lessons)
+        assert block is None
+
+    def test_lessons_injected_into_context(self, ai_dir, tmp_path):
+        """to_peer 있을 때 [PEER LESSONS] 블록이 컨텍스트에 주입됨."""
+        import json as _json
+        state = {"room_id": "room-kp", "members": {"cc": {}, "gc": {}}}
+        (ai_dir / "state.json").write_text(_json.dumps(state), encoding="utf-8")
+        (ai_dir / "sessions" / "room-kp").mkdir(parents=True, exist_ok=True)
+
+        lesson = self._seed_lesson(id="LL-INJ", compact_rule="Injected rule.")
+        with patch.object(hub, "_load_active_lessons", return_value=[lesson]), \
+             patch.object(hub, "_filter_lessons_for_peer", return_value=[lesson]), \
+             patch.object(hub, "_compile_lessons_block", return_value="[PEER LESSONS]\n- HIGH LL-INJ: Injected rule."):
+            ctx = hub._build_ask_query_with_context(ai_dir, "hello", to_peer="gc")
+
+        assert "[PEER LESSONS]" in ctx
+        assert "Injected rule." in ctx
+
+    def test_lessons_not_injected_without_to_peer(self, ai_dir, tmp_path):
+        """to_peer 없으면 [PEER LESSONS] 블록 주입 안 됨."""
+        import json as _json
+        state = {"room_id": "room-kp2", "members": {"cc": {}}}
+        (ai_dir / "state.json").write_text(_json.dumps(state), encoding="utf-8")
+        (ai_dir / "sessions" / "room-kp2").mkdir(parents=True, exist_ok=True)
+
+        ctx = hub._build_ask_query_with_context(ai_dir, "hello", to_peer=None)
+        assert "[PEER LESSONS]" not in ctx
+
+    def test_lessons_propose_and_activate(self, ai_dir, tmp_path, capsys):
+        """propose → candidate, activate → active 흐름 검증."""
+        # _knowledge_root() / "general" / "active-lessons.jsonl"
+        lessons_path = tmp_path / "general" / "active-lessons.jsonl"
+        lessons_path.parent.mkdir(parents=True, exist_ok=True)
+        lessons_path.write_text("", encoding="utf-8")
+        (tmp_path / "logs").mkdir(exist_ok=True)
+
+        with patch.object(hub, "_knowledge_root", return_value=tmp_path):
+            hub.action_lessons_propose(
+                ai_dir, title="Test rule", rule="Never do X.", category="shell-dialect",
+                severity="high", scope="global", peer_ids=["cc"],
+            )
+
+        lines = [json.loads(l) for l in lessons_path.read_text("utf-8").splitlines() if l.strip()]
+        assert len(lines) == 1
+        lesson_id = lines[0]["id"]
+        assert lines[0]["status"] == "candidate"
+
+        with patch.object(hub, "_knowledge_root", return_value=tmp_path):
+            hub.action_lessons_activate(ai_dir, lesson_id=lesson_id)
+
+        lines2 = [json.loads(l) for l in lessons_path.read_text("utf-8").splitlines() if l.strip()]
+        assert lines2[0]["status"] == "active"
+        assert lines2[0]["approval"]["approved_by"] == "coordinator"
+
+    def test_lessons_retire(self, ai_dir, tmp_path, capsys):
+        """active lesson → retired."""
+        lessons_path = tmp_path / "general" / "active-lessons.jsonl"
+        lesson = self._seed_lesson(id="LL-RET")
+        self._make_lessons_jsonl(lessons_path, [lesson])
+
+        with patch.object(hub, "_knowledge_root", return_value=tmp_path):
+            hub.action_lessons_retire(ai_dir, lesson_id="LL-RET", reason="no longer relevant")
+
+        result = json.loads(lessons_path.read_text("utf-8").splitlines()[0])
+        assert result["status"] == "retired"
+        assert result["retirement"]["retire_reason"] == "no longer relevant"
+
+    def test_lessons_invalid_json_skipped(self, tmp_path):
+        """잘못된 JSON 라인 무시."""
+        global_dir = tmp_path / "general"
+        global_path = global_dir / "active-lessons.jsonl"
+        global_path.parent.mkdir(parents=True, exist_ok=True)
+        global_path.write_text(
+            '{"id":"LL-OK","status":"active","severity":"high","compact_rule":"ok","category":"x","scope":"global","applies_to":{},"source_refs":[{"ts":"20260614T000000"}],"approval":{},"retirement":{}}\n'
+            'NOT VALID JSON\n'
+            '\n',
+            encoding="utf-8"
+        )
+        with patch.object(hub, "_knowledge_root", return_value=tmp_path):
+            result = hub._load_active_lessons(workspace_ai_root=None)
+        assert len(result) == 1
+        assert result[0]["id"] == "LL-OK"

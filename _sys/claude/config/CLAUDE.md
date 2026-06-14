@@ -28,11 +28,13 @@
 - Run ctx-save at natural pause points during a session
 - Run ctx-end when done for the day
 
-## Multi-Peer Collaboration Protocol (v4.0)
+## Multi-Peer Collaboration Protocol (v4.1)
 
 All peers (cc, gc, ag, cx) are **absolutely equal**. Any peer may communicate with user directly.
 Protocol config: **`P:\_sys\ai\protocol.json`** (single source of truth — collab_rate, routing, health, consensus)
 Protocol docs: `P:\_sys\docs\protocol-*.md` (composable domain files)
+Common peer rules (IPC paths, hub commands, session start): `P:\_sys\ai\common\peer-rules.md`
+MUST/MUST-NOT rules index: `P:\_sys\docs\PROTOCOL_INVARIANTS.md` (INV-01~18, PRO-01~15)
 
 > `_sys/ai/config.json "ratio"` is DEPRECATED → use `protocol.json["collab_rate"]["current"]`
 
