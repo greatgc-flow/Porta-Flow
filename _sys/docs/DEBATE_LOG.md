@@ -301,3 +301,53 @@
   - P:\.ai\debate\debate-protocol-v0.5.md (source)
 - Known issues deferred: encoding/mojibake remediation (v0.6); ledger compaction strategy (v0.6)
 - Full Log: P:\.ai\debate\debate-protocol-full.md
+
+
+---
+
+## [2026-06-15] sys-restructure-plan-exhaustive-cross-review
+
+- Proposal: sys-restructure-끝장교차검토-20260615 (cc+gc+cx R:10, 5-Lens Debate)
+- Participants: cc (coordinator + self-review), gc (5-lens exhaustive), cx (independent audit)
+- Decision: DEBATE_FINAL — 총 CRITICAL×3/HIGH×8/MEDIUM×7/LOW×3 발견, 전부 sys-restructure-plan.md에 반영 완료
+- Review Target: P:\_sys\docs\sys-restructure-plan.md (v1.0 → DEBATE_FINAL)
+
+### Lens 1 — MECE
+- peer.json vs config/ 단일진실소스 충돌 [HIGH/gc] → 경계 재정의: config/=전역, peers/=피어로컬
+- USER_MANUAL.md/TAXONOMY_v11.md protocol/ 오염 [MEDIUM/gc+cx] → protocol/reference/ 분리
+- knowledge/config.json 명칭 충돌 [MEDIUM/cx] → index.json + knowledge-policy.json 분리
+- 섹션번호 3-7·3-8 중복 / 파일매핑 불일치 [LOW/cc] → 수정 완료
+
+### Lens 2 — 선순환 피드백 루프
+- traceability.json 수동유지 drift [HIGH/gc+cx] → manage.py gen-traceability 자동생성
+- Phase 1+2 사이 broken-state 복구 루프 없음 [HIGH/gc+cx] → rollback-phase1.ps1 Phase 0 생성 의무
+- infra.json 로드실패 → hub.py bootstrap 루프 파손 [MEDIUM/cx] → __file__ hardcode fallback
+
+### Lens 3 — 5 Whys
+- Junction 파손 근본원인: 프로세스 잠금 없음 → fresh-session + 프리플라이트 process check
+- pytest Phase간 실패 근본원인: atomic 변경 분리 커밋 → Phase 1+2 단일 원자 커밋 (CRITICAL)
+- status.json 참조 누락 근본원인: 감사 범위 미달 → ALL 파일타입 grep
+- registry↔peer.json drift 근본원인: 스키마 강제 없음 → _ref 필수 + hub.py validation
+
+### Lens 4 — 다른 관점
+- 피어 dir 이동 생략: REJECT (clean root = 핵심 이득)
+- status.json write-through cache: ADOPT (31+개 참조 blast radius 최소화)
+- 7→4 Phase: REFINE (Phase 1+2 통합; 나머지 5개 안전 게이트 유지)
+
+### Lens 5 — 자원 효율
+- traceability.json 수동유지: auto-gen 대체
+- Phase 1+2 분리 커밋: 단일 커밋으로
+- cli-resolve.json: 필요성 확인 유지
+
+### 핵심 아키텍처 결정 (LOCKED)
+1. Phase 1+2 원자적 통합: 파일이동 + hub.py 경로업데이트 = 단일커밋 (MUST-NOT: 분리)
+2. status.json write-through cache: hub.py dual-write → 점진적 제거
+3. rollback-phase1.ps1: Phase 0 생성 의무 (filesystem backup 포함)
+4. traceability.json auto-gen: manage.py gen-traceability 명령으로 대체
+5. config/ 경계: 시스템전역 / peers/{id}/ = 피어-로컬 (MECE 성립)
+
+- Risk Class: HIGH_RISK (CRITICAL×3 발견 — Phase 실행 전 모두 해소 필수)
+- Promoted To Constitutional Layer: NO (구현 계획 문서)
+- Affected Artifacts:
+  - P:\_sys\docs\sys-restructure-plan.md (DESIGN_FINAL → DEBATE_FINAL)
+  - P:\_sys\docs\DEBATE_LOG.md (this file)
