@@ -305,6 +305,44 @@
 
 ---
 
+## [2026-06-15] sys-restructure-plan-R4-root-swap-ipc-glue
+
+- Proposal: sys-restructure-R4-20260615 (cc solo, 사용자 Round-4 지시 — 디스크 충분 확인)
+- Participants: cc (coordinator + 사용자 확인 반영), gc (Round-4 VIABLE & SUPERIOR 결정 반영)
+- Decision: ROOT SWAP ADOPTED + IPC 구조 설계 + 글루파일 slim화 설계 → sys-restructure-plan.md R4 업데이트 완료
+
+### R4 주요 아키텍처 결정 (LOCKED)
+
+1. **Root Swap ADOPTED (디스크 충분 확인):**
+   - Round-3 기각 이유 2(디스크) 소멸 → Round-3 이유 1(git 이력)은 Junction Stub으로 해결
+   - Junction Stub: `mklink /J _sys_new\env _sys\env` (물리복사 없음, git 미추적)
+   - 3단계: Build Phase(_sys_new/ 구축) → Validate(verify-all pre-cutover) → Cut-over(rename backup)
+
+2. **IPC 구조 per-peer 분리:**
+   - As-Is: `_sys/gemini/{peer}-*.txt` 혼재 → To-Be: `peers/{id}/ipc/inbox/` 전용
+   - infra.json `ipc_paths` 섹션으로 hub.py 경로 동적 해석
+   - archive_on_capture: inbox → history 자동 이동; .gitignore `_sys/peers/*/ipc/` 전체 무시
+
+3. **글루파일 slim 설계:**
+   - canonical: `protocol/peer-specific/{id}/{PEER}.md` (사람이 편집)
+   - stub: `peers/{id}/runtime/config/{PEER}.md` (hub.py sync-glue 자동 생성)
+   - peer.json: glue_file + glue_source 양쪽 등록; verify-all V13 sync 확인
+
+4. **verify-all V11~V15 추가 (gc R4):**
+   - V11: Registry-Dir 패리티
+   - V12: 절대경로 퍼지 체크
+   - V13: 엔트리포인트 + glue sync
+   - V14: .gitignore IPC 커버리지
+   - V15: Junction 실재 확인 (Gate 2 전용)
+
+- Risk Class: HIGH_RISK (마이그레이션 전략 재결정, Phase 절차 재설계)
+- Promoted To Constitutional Layer: NO (구현 계획 문서)
+- Affected Artifacts:
+  - P:\_sys\docs\sys-restructure-plan.md (DEBATE_FINAL_R4 — 마이그레이션 전략 + IPC + 글루파일 + V11~V15)
+  - P:\_sys\docs\DEBATE_LOG.md (this file)
+
+---
+
 ## [2026-06-15] sys-restructure-plan-exhaustive-cross-review
 
 - Proposal: sys-restructure-끝장교차검토-20260615 (cc+gc+cx R:10, 5-Lens Debate)
