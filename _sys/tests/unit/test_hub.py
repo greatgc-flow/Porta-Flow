@@ -880,7 +880,25 @@ class TestEnhancedCollaboration:
     def test_first_success_clears_runtime_directive(self, ai_dir, tmp_path):
         """성공 시 first_success 조건 directive 자동 클리어."""
         rd_path = tmp_path / "runtime-directives.jsonl"
-        with patch.object(hub, "_runtime_directives_path", return_value=rd_path):
+        # _read_peer_health를 모킹해 실제 health.json 격리 (이전 테스트 오염 방지)
+        clean_health = {
+            "context_health": {"status": "GREEN"},
+            "session_health": {
+                "consecutive_failures": 0,
+                "last_failure_reason": None,
+                "session_count_today": 0,
+                "session_date": "20260614",
+            },
+            "availability": {
+                "gate_open": True,
+                "last_invocation_exit_code": 0,
+                "last_invocation_duration_ms": 0,
+                "rate_limit_state": "ok",
+            },
+        }
+        with patch.object(hub, "_runtime_directives_path", return_value=rd_path), \
+             patch.object(hub, "_read_peer_health", return_value=("GREEN", clean_health)), \
+             patch.object(hub, "_write_peer_health"):
             hub._save_runtime_directive(rd_path, "caution gc", "gc", "timeout", "", 6, "first_success")
             assert len(hub._get_active_runtime_directives(rd_path)) == 1
             hub._record_ask_success("gc", 10, ai_dir)

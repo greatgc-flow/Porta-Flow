@@ -965,8 +965,8 @@ def _record_ask_success(peer_id: str, elapsed: int, ai_root: Path | None) -> Non
     availability.pop("workspace_not_trusted", None)
     availability.pop("retry_hint", None)
     _write_peer_health(peer_id, data, ai_root)
-    # Clear first_success runtime directives for this peer
-    _clear_peer_runtime_directives(peer_id, ai_root)
+    # Clear first_success runtime directives; pass previous_reason to narrow scope
+    _clear_peer_runtime_directives(peer_id, ai_root, trigger_reason=previous_reason)
 
 
 def _record_ask_failure(
@@ -1037,11 +1037,23 @@ def _build_ask_query_with_context(ai_root: Path | None, query: str) -> str:
         if directives:
             lines.extend(["", "[USER DIRECTIVES]", directives])
     # ── Runtime Directives 주입 (_sys/ai/runtime-directives.jsonl) ──
+    _RD_MAX_COUNT = 10
+    _RD_MAX_CHARS = 2000
     runtime_dir_path = Path(__file__).parent.parent / "ai" / "runtime-directives.jsonl"
     active_runtime = _get_active_runtime_directives(runtime_dir_path)
     if active_runtime:
-        rules_text = "\n".join(f"- [{r['id']}] {r['rule']}" for r in active_runtime)
-        lines.extend(["", "[RUNTIME DIRECTIVES]", rules_text])
+        # Sort newest-first; cap count and total chars to prevent prompt bloat
+        active_runtime = sorted(active_runtime, key=lambda r: r.get("effective", ""), reverse=True)[:_RD_MAX_COUNT]
+        rd_lines = []
+        rd_chars = 0
+        for r in active_runtime:
+            entry = f"- [{r['id']}] {r['rule']}"
+            if rd_chars + len(entry) > _RD_MAX_CHARS:
+                rd_lines.append(f"- [...{len(active_runtime) - len(rd_lines)} more directives omitted — check directive-list]")
+                break
+            rd_lines.append(entry)
+            rd_chars += len(entry)
+        lines.extend(["", "[RUNTIME DIRECTIVES]", "\n".join(rd_lines)])
     handoff_path = ai_root / "sessions" / room_id / "handoff.md"
     if handoff_path.exists():
         handoff = handoff_path.read_text(encoding="utf-8", errors="replace").strip()
@@ -2814,10 +2826,13 @@ def _save_runtime_directive(path: Path, rule: str, source_peer: str, trigger_rea
 
 
 def _bump_directive_trigger(path: Path, directive_id: str) -> None:
-    """Increment trigger_count on an existing active directive."""
+    """Increment trigger_count and extend TTL on an existing active directive.
+    Extending TTL prevents a repeatedly-triggered directive from expiring while the
+    failure condition is still active."""
     if not path.exists():
         return
     output = []
+    now_dt = datetime.now()
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
@@ -2825,6 +2840,10 @@ def _bump_directive_trigger(path: Path, directive_id: str) -> None:
             item = json.loads(line)
             if item.get("id") == directive_id:
                 item["trigger_count"] = int(item.get("trigger_count", 1)) + 1
+                item["last_triggered_at"] = now_dt.strftime("%Y%m%dT%H%M%S")
+                # Extend TTL from now so directive stays active while failures continue
+                ttl_hours = int(item.get("ttl_hours", 6))
+                item["expires"] = (now_dt + timedelta(hours=ttl_hours)).strftime("%Y%m%dT%H%M%S")
         except json.JSONDecodeError:
             item = {}
         if item:
@@ -2848,8 +2867,10 @@ def _auto_promote_runtime_directive(peer_id: str, reason: str, detail: str, ai_r
     print(f"[HUB] AUTO-DIRECTIVE {entry['id']} created for {peer_id} reason={reason}", file=sys.stderr)
 
 
-def _clear_peer_runtime_directives(peer_id: str, ai_root: Path | None) -> None:
-    """Clear active runtime directives for a peer on successful ask (first_success condition)."""
+def _clear_peer_runtime_directives(peer_id: str, ai_root: Path | None, trigger_reason: str | None = None) -> None:
+    """Clear active runtime directives for a peer on successful ask (first_success condition).
+    If trigger_reason is provided, only clears directives matching that reason.
+    This prevents clearing unrelated directives when multiple failure types are tracked."""
     if ai_root is None:
         return
     path = _runtime_directives_path(ai_root)
@@ -2865,9 +2886,13 @@ def _clear_peer_runtime_directives(peer_id: str, ai_root: Path | None) -> None:
             if (item.get("source_peer") == peer_id
                     and item.get("status") == "active"
                     and item.get("clear_condition") == "first_success"):
-                item["status"] = "resolved"
-                item["resolved_at"] = _now()
-                cleared.append(item["id"])
+                # If trigger_reason known, only clear matching directives
+                if trigger_reason and item.get("trigger_reason") and item["trigger_reason"] != trigger_reason:
+                    pass  # keep directive for other failure reasons
+                else:
+                    item["status"] = "resolved"
+                    item["resolved_at"] = _now()
+                    cleared.append(item["id"])
         except json.JSONDecodeError:
             item = {}
         if item:

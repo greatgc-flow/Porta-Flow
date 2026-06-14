@@ -96,6 +96,10 @@ def peer_default_args(peer_id: str, args: list[str]) -> list[str]:
         return _append_missing(current, ["-s", "workspace-write"])
 
     if peer_id == "ag":
+        # TODO: ag is currently inactive (disabled in orchestration.json).
+        # Correct minimum-permission flags for agy CLI are not yet confirmed.
+        # --dangerously-skip-permissions is a known gap (protocol-permissions.md §2 ag).
+        # DO NOT enable ag until this is replaced with the correct minimum flags.
         if _starts_with_command(current, _AGY_COMMANDS):
             return current
         if _has_flag(current, {"--dangerously-skip-permissions", "--sandbox"}):

@@ -47,11 +47,14 @@ codex exec -s workspace-write --json --ignore-rules
 
 ### ag (AntiGravity — inactive)
 ```
+# TARGET (not yet implemented in peer_console.py):
 agy --allowedTools Edit Write Read Glob Grep Bash MultiEdit \
     --permission-mode acceptEdits
 ```
-- Same profile as cc until agy-specific flags are confirmed
 - Status: `⚠️ inactive` — do not route asks until peer is re-enabled
+- **KNOWN GAP**: `peer_console.py` currently defaults ag to `--dangerously-skip-permissions`
+  because agy CLI flag names are not yet confirmed. This must be fixed before ag is re-enabled.
+- Do NOT re-enable ag until `peer_console.py` ag block is updated with correct minimum flags.
 
 ---
 
