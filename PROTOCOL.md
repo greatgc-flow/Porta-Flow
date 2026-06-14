@@ -15,7 +15,9 @@
 | [`_sys/docs/protocol-codex.md`](_sys/docs/protocol-codex.md) | cx (Codex) peer specifics, stdin invocation |
 | [`_sys/docs/protocol-permissions.md`](_sys/docs/protocol-permissions.md) | Minimum-permission model, per-peer profiles, MUST-NEVER list |
 | [`_sys/docs/protocol-directives.md`](_sys/docs/protocol-directives.md) | Directive management, auto-propagation, TTL, runtime-directives.jsonl |
-| [`_sys/docs/collaboration_protocol.md`](_sys/docs/collaboration_protocol.md) | **v4.1 Layered Coordination** — General/Specific split, connectors, and feedback loop |
+| [`_sys/docs/protocol-routing.md`](_sys/docs/protocol-routing.md) | Leader election, routing failover, human-interface continuity |
+| [`_sys/docs/PROTOCOL_INVARIANTS.md`](_sys/docs/PROTOCOL_INVARIANTS.md) | **Single source of truth** — all MUST/MUST-NOT rules (INV-01~18, PRO-01~15) |
+| [`_sys/docs/collaboration_protocol.md`](_sys/docs/collaboration_protocol.md) | **v4.1 Layered Coordination** — General/Specific split, connectors, COLLAB_RATE, feedback loop |
 | [`_sys/ai/collaboration_policy.schema.json`](_sys/ai/collaboration_policy.schema.json) | Validation schema for multi-peer collaboration policies |
 | [`_sys/ai/room_policy.example.json`](_sys/ai/room_policy.example.json) | Concrete example mapping intents to commands & tracking ambiguity |
 | [`_sys/ai/protocol.json`](_sys/ai/protocol.json) | **Master config** — all thresholds, routing, consensus settings |
@@ -250,70 +252,29 @@ Every new node participates in collaboration as a **Peer of the same rank** as o
 
 ---
 
-## §M-1 — Mutual Non-Interference
+## §M-1~§M-3 — Mandatory Rules & Invariants
 
-All nodes are equal, but each respects the other's **exclusive technical assets**.
+> **Full rule index → [`_sys/docs/PROTOCOL_INVARIANTS.md`](_sys/docs/PROTOCOL_INVARIANTS.md)** — Single authoritative MUST/MUST-NOT index (INV-01~18, PRO-01~15). Change requires R:10 unanimous consensus.
 
-| Owner Node | Inviolable Area | Other Node Access Method |
-|------------|----------------|--------------------------|
-| **Human** | Final Veto, Judgment on Scope Deviation | Phase 4 Gate or ESCALATE |
-| **All Nodes** | Security/Auth files (auth, USERPROFILE area) | No access |
-| **All Nodes** | Constitutional documents (`CLAUDE.md`, etc.) direct modification | **N-Way Consensus Mandatory** |
-
----
-
-## §M-2 — Transparent Communication
-
-**Principle**: All communication within the room is shared with all participating nodes without concealment. Use of private channels is prohibited, and consensus content is transparently recorded in `handoff.md`.
-
----
-
-## §M-3 — Invariants
-
-1. No execution before consensus (`FINALIZED` check mandatory).
-2. No departure from or fragmentation of `room-{uuid}` session.
-3. If the same error repeats 3 times, immediately HALT and restart consultation.
-4. All decisions must follow the principle of unanimity through voting.
+**Summary:**
+- §M-1 (Non-Interference): No peer accesses Security/Auth files; constitutional docs require N-Way consensus. (→ INV-12~14, PRO-12~13)
+- §M-2 (Transparent Communication): All room communication is shared; no private channels. (→ INV-17)
+- §M-3 (Invariants): No execution before `FINALIZED`; halt after `failure_error` consecutive failures (default 5, see `protocol.json["health"]`). (→ INV-01, INV-15)
 
 ---
 
 ## Part C: Collaboration Policy (COLLAB_RATE)
 
----
-
-## §C-0 — COLLAB_RATE Collaboration Depth (0~10)
-
-This system uses a model mixing an **autonomy gradient with 5 major anchors** to control the agents' scope of activity. Higher numbers mean higher consensus requirements; at 10, consensus is mandatory for all actions.
-
-| Anchor | Mode | Autonomy | Rules for Intervention and Consensus (PROPOSE) |
-|:------:|:----:|:--------:|:----------------------------------------------|
-| **0** | **Solo** | 100% | **Fully Autonomous**. Skip consensus process. Agent executes alone. |
-| **3** | **System Guard** | 75% | Autonomous modification of general code. However, **prior consensus is mandatory for modifying system structures (`_sys/`) and constitutional documents (`*.md`)**. |
-| **5** | **Partner** | 50% | Autonomous for detailed implementation. However, **cross-verification and consensus are mandatory at functional design start and milestone completion points**. |
-| **8** | **Strict** | 25% | **Prior consensus is mandatory for all logic changes** (function signatures, algorithms, core state transitions, etc.). Only minor changes such as typos/comments/logs are autonomously allowed. |
-| **10** | **Brain Sync** | 0% | **No Exceptions**. Strict prohibition of agent's arbitrary judgment for **any file modification actions**, including minor typos or obvious bug fixes. Must proceed only after prior consensus. |
-
-**Adaptive Rate by Task Risk** (applies within a session unless globally overridden):
-
-| Risk | Rate | Applies To |
-|------|------|------------|
-| Low | R:0 | Read-only, grep, explore, doc reads |
-| Med | R:3 | `workspace/` code changes |
-| High | R:5 | `_sys/` script changes |
-| Multi-script | R:8 | Spans multiple `_sys/` scripts (manual override) |
-| Critical | R:10 | `PROTOCOL.md`, `CLAUDE.md`, `GEMINI.md`, `hub.py`, `nodes.json` |
+> **§C-0 content moved to [`collaboration_protocol.md §6`](_sys/docs/collaboration_protocol.md)** — authoritative COLLAB_RATE table and Adaptive Rate rules live there.
+> Summary: 0=Solo, 3=System Guard, 5=Partner, 8=Strict, 10=Brain Sync. Current rate: see `protocol.json["collab_rate"]["current"]`.
 
 ---
 
 ## §P-11 — Zero-Token Symmetric Memory
 
-To prevent Context Decay due to context bloat, a **file-based blackboard system** is used instead of chat prompts.
+> **Detail in [`collaboration_protocol.md §5`](_sys/docs/collaboration_protocol.md)** — Exempt vs Governed operations, Declared Dry Connector Rule, R:10 Unanimity.
 
-1. **Blackboard Sharing**: All detailed summaries and architectural analyses are recorded in `.ai/sessions/room-{uuid}/summary_{agent}.md` (max 4KB) files. Only file paths are transmitted in the chat window.
-2. **Symmetric Checkpoint**: When executing `ctx-save`, the current state and mutual cross-summaries are recorded in both `CLAUDE.md` and `GEMINI.md` simultaneously to maintain equal memory between both nodes.
-3. **Re-orientation Phase**: Upon starting a new session or receiving instructions, the agent must first read the blackboard files and synchronize the project state before starting work.
-   - **Check**: Does `.ai/sessions/` contain a handoff.md? → Read it before any task begins.
-   - **Signal**: If skipping re-orientation, state explicitly: `[SKIPPED: no prior session found]`
+Key principle: local file reads (health, handoff, mailbox) are always zero-token. No model ping for routine health checks. Re-orientation (read handoff.md before work) is mandatory.
 
 ---
 

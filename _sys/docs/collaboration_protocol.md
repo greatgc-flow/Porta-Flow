@@ -25,16 +25,43 @@ Every collaboration cycle follows one state machine:
 
 `observe -> classify -> decide -> sync -> act_or_ask -> record -> handoff -> improve`
 
-- Observe: read existing JSON, logs, health, mailbox, handoff, and payload references.
+- Observe: read existing JSON, logs, health, mailbox, handoff, payload references, **and active runtime directives** (`runtime-directives.jsonl`). Runtime directives are injected into every peer ask via `_build_ask_query_with_context()` and must be treated as standing operational context, not optional hints.
 - Classify: map observations to declared rules without semantic invention.
 - Decide: choose the next local action, connector, peer ask, or human escalation.
 - Sync: acquire the declared lock target, resolve contention, and apply retry/backoff.
 - Act or ask: execute a declared connector, ask a peer, or escalate according to policy.
-- Record: write provenance, event name, policy version, input refs, output refs, and result.
+- Record: write provenance, event name, policy version, input refs, output refs, and result. **Peer ask outcomes (exit code, stderr) are also classified into health signals** via `_record_ask_success/failure()` — this is not a separate step, it is part of record.
 - Handoff: compact durable state into the blackboard; store large content as file refs.
-- Improve: convert resolved ambiguity into a narrower Specific rule or a General proposal.
+- Improve: convert resolved ambiguity into a narrower Specific rule or a General proposal. **Repeated operational failures auto-promote to TTL-bound Runtime Directives** (see `protocol-directives.md §4`) which feed back into the next Observe step — closing the operational learning loop automatically. Manual lessons become user-directives.md entries.
 
 Handoff is an emitted lifecycle artifact. It records state; it is not an independent policy authority.
+
+### 2a. Operational Health Sub-Loop (closed, automated)
+
+A second loop runs in parallel, governing peer availability:
+
+```
+ask_outcome → _record_ask_success/failure()
+           → health.json updated (consecutive_failures, gate_open)
+           → routing precheck reads health.json (zero-token)
+           → RED/gate-closed peers excluded from next ask
+           → peer-recover → gate_open=true → routing restored
+           → _record_ask_success() clears runtime directives (first_success condition)
+```
+
+This loop is fully automated, zero-token (no model calls), and self-healing. It does not require human intervention unless the peer requires repair (RED with critical reason). See `protocol-health.md` for thresholds and recovery runbooks.
+
+### 2b. Durable State Stores (MECE)
+
+Two durable stores persist across session boundaries — they are complementary, not overlapping:
+
+| Store | File | Content | TTL |
+|-------|------|---------|-----|
+| **Session blackboard** | `.ai/sessions/<room>/handoff.md` | Current tasks, decisions, blockers | Until archived |
+| **Operational directives** | `_sys/ai/runtime-directives.jsonl` | Behavioral corrections from failures | TTL-bound (default 6h) |
+
+handoff.md = volatile session state (what we're doing).
+runtime-directives.jsonl = durable policy corrections (how to behave differently due to past failures).
 
 ## 3. Connector Resolution
 
@@ -98,7 +125,35 @@ Out-of-band direct file writes (e.g., modifying files directly via tool APIs/fil
 - **Offline Node Policy**: An offline peer auto-abstain does NOT satisfy the unanimity requirement at R:10. If a node is offline, a human override or policy downgrade is required to resolve the deadlock.
 - **Handoff recording**: Writing the handoff for finalized consensus is part of the consensus connector itself, but editing protocol files or core configuration still requires full consensus.
 
-## 6. Required Safety Dimensions
+## 6. COLLAB_RATE — Collaboration Depth (0~10)
+
+> Moved from `PROTOCOL.md §C-0` (authoritative copy is here). PROTOCOL.md §C-0 now references this section.
+
+`COLLAB_RATE` controls how much consensus is required before a peer acts. Higher = more consensus required.
+
+| Anchor | Mode | Autonomy | Intervention Rule |
+|:------:|:----:|:--------:|:------------------|
+| **0** | **Solo** | 100% | Fully autonomous. No consensus. |
+| **3** | **System Guard** | 75% | Autonomous for general code. Consensus mandatory for `_sys/` changes and constitutional docs. |
+| **5** | **Partner** | 50% | Autonomous for implementation. Consensus at design start + milestone. |
+| **8** | **Strict** | 25% | Consensus mandatory for all logic changes. Only typos/comments autonomous. |
+| **10** | **Brain Sync** | 0% | No exceptions. Any file modification requires prior consensus. |
+
+**Adaptive Rate by Task Risk** (session default, unless overridden):
+
+| Risk | Rate | Applies To |
+|------|------|------------|
+| Low | R:0 | Read-only, grep, explore, doc reads |
+| Med | R:3 | `workspace/` code changes |
+| High | R:5 | `_sys/` script changes |
+| Multi-script | R:8 | Spans multiple `_sys/` scripts |
+| Critical | R:10 | `PROTOCOL.md`, `CLAUDE.md`, `GEMINI.md`, `hub.py`, `nodes.json` |
+
+Zero-token local operations (observe/validate/classify) are **exempt** from COLLAB_RATE at all levels. See §5.1.
+
+---
+
+## 7. Required Safety Dimensions
 
 The policy schema must cover:
 

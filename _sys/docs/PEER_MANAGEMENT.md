@@ -184,34 +184,44 @@ _sys/data/
 ## 5. Health Schema (`health.json`)
 
 All peers use the same health.json schema, updated by `hub.py health-update --peer <id>`.
+Authoritative field names match `hub.py _read_peer_health()` and `protocol-health.md §2`.
 
 ```json
 {
+  "_version": "1.0",
+  "peer_id": "gc",
   "context_health": {
     "status": "GREEN | YELLOW | RED",
     "jsonl_mb": 0.0,
-    "last_updated": "ISO-8601",
-    "consecutive_failures": 0
+    "checked_at": "20260614T120000",
+    "source": "self"
   },
   "session_health": {
-    "status": "GREEN | YELLOW | RED",
-    "failures": 0,
-    "last_success_at": "ISO-8601",
-    "session_count_today": 0
+    "consecutive_failures": 0,
+    "last_failure_reason": null,
+    "last_success_at": "2026-06-14T12:00:00",
+    "session_count_today": 0,
+    "session_date": "20260614"
   },
   "availability": {
-    "authenticated": true,
+    "gate_open": true,
     "entrypoint_ok": true,
-    "last_invocation_duration_ms": null,
-    "last_invocation_exit_code": null
+    "authenticated": true,
+    "rate_limit_state": "ok",
+    "last_invocation_exit_code": null,
+    "last_invocation_duration_ms": null
   }
 }
 ```
 
 **Key Invariants:**
-- `availability.authenticated = True` is auto-set when `health-update --status GREEN --failures 0` succeeds
-- `availability.entrypoint_ok = False` when status is RED
+- `context_health.checked_at` — timestamp written by hub.py (not `last_updated`)
+- `session_health.consecutive_failures` — incremented on failure, reset on success (not `failures`)
+- `session_health.last_failure_reason` — last classified failure reason (timeout, rate_or_session_limit, etc.)
+- `availability.gate_open` — false when peer is quarantined; blocks routing
 - `cx` additionally writes `last_invocation_duration_ms` via `codex_entry.py`
+
+> Cross-reference: `protocol-health.md §2` for status transition rules, `§11` for gc-specific legacy gate.
 
 ---
 
@@ -258,6 +268,41 @@ Entry points for launching each peer with health+auth pre-checks:
 | `ag` | `_sys/cli/agy.bat` → `agy_entry.py` | `_sys/antigravity/health.json` |
 
 Console autonomy defaults (minimum permission profiles) are documented in `_sys/docs/protocol-permissions.md`.
+
+---
+
+## 9. New Peer Onboarding Checklist
+
+Use this checklist when activating a new peer or re-activating an inactive one (e.g., bringing ag back online after the `--dangerously-skip-permissions` gap is resolved).
+
+### 9-1. Pre-Activation (Before any ask)
+
+- [ ] **Read mandatory docs**: `PROTOCOL.md`, `_sys/docs/PROTOCOL_INVARIANTS.md`, `_sys/docs/protocol-permissions.md`
+- [ ] **Verify permission profile**: `python _sys/core/hub.py profile-validate --peer <id>` — must pass parity check (no FORBIDDEN flags, no missing REQUIRED flags)
+- [ ] **Initialize health file**: `python _sys/core/hub.py health-update --peer <id> --status GREEN --failures 0`
+- [ ] **Register in peers.json**: Add capability entry and gate config (if peer has a legacy gate file like gc's `status.json`)
+- [ ] **Add to `orchestration.json`**: CLI invocation command with correct minimum flags (DIR-002)
+- [ ] **Add to `protocol.json["collab_rate"]["r10_voters"]`**: Only if peer will participate in R:10 votes
+
+### 9-2. First Ask Validation
+
+- [ ] Run `python _sys/core/hub.py health-precheck --peer <id>` — must return GREEN/YELLOW, gate_open=true
+- [ ] Send a minimal smoke-test ask: `python _sys/core/hub.py ask --to <id> --query-file <test_file>`
+- [ ] Confirm `_record_ask_success()` ran (health.json `consecutive_failures` reset to 0)
+- [ ] Confirm session fingerprint written to health.json (if peer supports session resume)
+
+### 9-3. Mandatory Invariants (INV-05, PRO-01~05)
+
+- **NEVER** pass raw user text as executable arguments (PRO-01)
+- **NEVER** grant root/admin elevation (PRO-02)
+- **NEVER** use bypass/full-danger flags (`yolo`, `dangerously-bypass-*`) (PRO-03)
+- **MUST** run minimum non-interactive permissions as specified in `protocol-permissions.md §2` (INV-12)
+
+### 9-4. ag-Specific Gate (PRO-15)
+
+ag remains inactive until `peer_console.py` ag block is updated with correct minimum flags.
+Current known gap: `--dangerously-skip-permissions` is used but violates PRO-03.
+Recovery path: Replace with `--permission-mode acceptEdits --allowedTools Edit Write Read Glob Grep Bash MultiEdit`, then re-run `profile-validate`.
 
 ---
 

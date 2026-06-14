@@ -289,6 +289,47 @@ python _sys/core/hub.py lease-sweep    # manually run orphan cleanup
 
 ---
 
+## 11. gc Legacy Gate Mirror (`status.json`)
+
+gc has a **peer-specific gate file** (`_sys/gemini/status.json`) in addition to the universal `health.json`. This is a legacy compatibility mirror — not a second source of truth.
+
+### Why it exists
+
+`gemini-status.bat` and `gemini-gate.bat` were written before the unified `health.json` schema and read `status.json` directly. Migrating those scripts to read `health.json` is the long-term fix; until then, both files must be kept in sync.
+
+### How sync is maintained
+
+`hub.py _sync_peer_gate_file()` is called by both `peer-quarantine` and `peer-recover`:
+
+```python
+# Called after updating health.json gate_open
+_sync_peer_gate_file(peer_id, mode_on=False, reason=reason)  # quarantine
+_sync_peer_gate_file(peer_id, mode_on=True,  reason=reason)  # recover
+```
+
+The gate config is declared in `_sys/ai/peers.json` under `peers.gc.gate`:
+```json
+{
+  "status_file": "gemini/status.json",
+  "mode_key": "mode",
+  "mode_on_value": "ON"
+}
+```
+
+### 5 Whys root cause
+
+1. Why two stores? `health.json` added `gate_open`; `status.json` already existed as gc's local gate.
+2. Why retained? Legacy batch scripts read `status.json`; changing them risked breaking existing gate flow.
+3. Why did they diverge? `peer-recover` only updated `health.json`, leaving `status.json.mode = "OFF"`.
+4. Why wasn't this caught earlier? No test verified display consistency across both stores.
+5. **Root cause**: Incomplete migration — two readers of the same logical concept (peer availability) with no write-side sync.
+
+### Future consolidation path
+
+Make `gemini-status.bat` read `_sys/gemini/health.json["availability"]["gate_open"]` directly, then remove `peers.gc.gate` config and `_sync_peer_gate_file()` gc branch.
+
+---
+
 ## HISTORY
 
 - v4.3 (2026-06-14): Added §10 Heartbeat/Lease mechanism; zombie-guard logic; cc+cx T2 debate findings.

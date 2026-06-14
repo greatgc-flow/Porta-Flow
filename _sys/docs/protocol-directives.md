@@ -118,9 +118,9 @@ python _sys/core/hub.py directive-clear --directive-id RD-20260614-001
 To prevent context bloat, only **active + non-expired** entries are injected.
 If the active list grows large, the oldest entries should be resolved or allowed to expire.
 
-Recommended hard caps (enforced by policy, not yet by code):
-- Max active runtime directives: **10**
-- Max chars injected per ask from runtime directives: **2000**
+Hard caps (enforced in `hub.py _build_ask_query_with_context()`):
+- Max active runtime directives injected: **10** (oldest first if exceeded)
+- Max chars injected per ask from runtime directives: **2000** (overflow → truncation notice appended)
 
 ---
 

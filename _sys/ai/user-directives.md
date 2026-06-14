@@ -33,7 +33,7 @@
 - References:
   - `_sys/ai/orchestration.json`
   - `_sys/cli/peer_console.py`
-  - `_sys/docs/peer-console-defaults.md`
+  - `_sys/docs/protocol-permissions.md` (authoritative per-peer profiles)
 
 ## Revoked Directives
 
