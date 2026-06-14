@@ -233,6 +233,14 @@ def test_ask_cx_resume_failure_retries_fresh(ai_dir):
     assert entry["session_id"] == "019ec163-test-uuid"  # new thread_id stored
 
 
+def test_session_fingerprint_gc_stable_across_calls():
+    """gc fingerprint must be identical across calls (must not include random UUID)."""
+    fp1 = hub._session_fingerprint("gc", "gemini")
+    fp2 = hub._session_fingerprint("gc", "gemini")
+    assert fp1 == fp2, "gc fingerprint must be stable (no random UUID component)"
+    assert len(fp1) == 8
+
+
 def test_session_fingerprint_stored_on_success(ai_dir):
     """Successful ask stores session fingerprint in session state."""
     ok_proc = _make_mock_proc(stdout=THREAD_STARTED_JSONL, returncode=0)

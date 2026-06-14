@@ -1214,6 +1214,29 @@ def _new_member_sids(members: dict) -> dict:
     return {agent: _short_id(agent[:1]) for agent in members.keys()}
 
 
+def _sync_peer_gate_file(peer_id: str, mode_on: bool, reason: str) -> None:
+    """Sync the peer-specific gate file (e.g. status.json) when it exists.
+    Some peers (gc/gemini) have a separate gate file read by peer-status display.
+    Without this, peer-quarantine/peer-recover only update health.json and the
+    peer-status display stays inconsistent (shows wrong ON/OFF state)."""
+    peers = _load_peers()
+    peer_cfg = (peers.get("peers") or peers).get(peer_id, {})
+    gate_cfg = peer_cfg.get("gate")
+    if not gate_cfg:
+        return
+    sys_dir = Path(__file__).parent.parent
+    gate_file = sys_dir / gate_cfg["status_file"]
+    if not gate_file.exists():
+        return
+    try:
+        gd = json.loads(gate_file.read_text(encoding="utf-8"))
+        gd[gate_cfg["mode_key"]] = gate_cfg["mode_on_value"] if mode_on else "OFF"
+        gd["reason"] = reason or ("recovered" if mode_on else "quarantined")
+        gate_file.write_text(json.dumps(gd, indent=2, ensure_ascii=False), encoding="utf-8")
+    except Exception as e:
+        print(f"[HUB:WARN] could not sync gate file for {peer_id}: {e}", file=sys.stderr)
+
+
 def action_peer_quarantine(ai_root: Path, peer_id: str, reason: str) -> None:
     _, data = _read_peer_health(peer_id)
     data.setdefault("context_health", {})["status"] = "RED"
@@ -1225,6 +1248,7 @@ def action_peer_quarantine(ai_root: Path, peer_id: str, reason: str) -> None:
     availability["gate_open"] = False
     availability["quarantined"] = True
     _write_peer_health(peer_id, data, ai_root)
+    _sync_peer_gate_file(peer_id, mode_on=False, reason=reason or "manual_quarantine")
     _append_handoff_item(ai_root, "PENDING_ISSUES", f"{_now()} {peer_id}: quarantined ({reason or 'manual'})")
     print(f"[HUB] PEER-QUARANTINE {peer_id} | reason={reason or 'manual'}")
 
@@ -1245,6 +1269,7 @@ def action_peer_recover(ai_root: Path, peer_id: str, reason: str) -> None:
     availability.pop("workspace_not_trusted", None)
     availability.pop("retry_hint", None)
     _write_peer_health(peer_id, data, ai_root)
+    _sync_peer_gate_file(peer_id, mode_on=True, reason=reason or "manual_recover")
     _append_handoff_item(ai_root, "RECENT_COMPLETED", f"{_now()} {peer_id}: recovered ({reason or 'manual'})")
     print(f"[HUB] PEER-RECOVER {peer_id} | reason={reason or 'manual'}")
 
@@ -1472,10 +1497,17 @@ def _compute_scope_key(ai_root: Path | None, explicit_scope: str | None = None) 
 
 
 def _session_fingerprint(health_peer: str, exe_name: str) -> str:
-    """Compute a short fingerprint of the peer session invocation profile.
-    Used to detect flag drift that would break session resume compatibility."""
-    probe_args, _, _ = _build_session_cmd(health_peer, None, exe_name)
-    raw = exe_name + "|" + ",".join(probe_args)
+    """Compute a short fingerprint of the static peer session invocation flags.
+    Excludes per-session dynamic values (e.g. --session-id <uuid> for gc) so the
+    fingerprint is stable across calls and only changes when permission flags change."""
+    if health_peer == "cx":
+        static_flags = ["-s", "workspace-write", "--json", "--ignore-rules"]
+    elif health_peer == "gc":
+        # Exclude --session-id <uuid> (dynamic) — only stable permission flags
+        static_flags = ["-p", "-", "-o", "text", "--approval-mode", "auto_edit", "--skip-trust"]
+    else:
+        static_flags = []
+    raw = exe_name + "|" + ",".join(static_flags)
     return hashlib.sha1(raw.encode()).hexdigest()[:8]
 
 
