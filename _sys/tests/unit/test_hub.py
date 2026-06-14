@@ -868,7 +868,28 @@ class TestEnhancedCollaboration:
     def test_auto_promote_runtime_directive_on_repeated_failure(self, ai_dir, tmp_path):
         """동일 이유 실패 2회 연속 시 runtime directive 자동 생성."""
         rd_path = tmp_path / "runtime-directives.jsonl"
-        with patch.object(hub, "_runtime_directives_path", return_value=rd_path):
+        # Stateful mock: simulate read-modify-write without touching real health.json
+        health_state = [{
+            "context_health": {"status": "GREEN"},
+            "session_health": {
+                "consecutive_failures": 0, "last_failure_reason": None,
+                "session_count_today": 0, "session_date": "20260614",
+            },
+            "availability": {
+                "gate_open": True, "last_invocation_exit_code": 0,
+                "last_invocation_duration_ms": 0, "rate_limit_state": "ok",
+            },
+        }]
+
+        def fake_read(peer_id):
+            return (tmp_path / f"{peer_id}-health.json", dict(health_state[0]))
+
+        def fake_write(peer_id, data, ai_root=None):
+            health_state[0] = dict(data)
+
+        with patch.object(hub, "_runtime_directives_path", return_value=rd_path), \
+             patch.object(hub, "_read_peer_health", side_effect=fake_read), \
+             patch.object(hub, "_write_peer_health", side_effect=fake_write):
             hub._record_ask_failure("gc", "rate_limit", "quota exceeded", 5, ai_dir)
             assert hub._get_active_runtime_directives(rd_path) == []
             hub._record_ask_failure("gc", "rate_limit", "quota exceeded", 5, ai_dir)

@@ -1686,7 +1686,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         return
 
     # ── Subprocess path (with optional session-retry) ──────────
-    heartbeat_sec, lease_timeout_sec = _lease_cfg()
+    heartbeat_sec, lease_timeout_sec, zombie_timeout_sec = _lease_cfg()
     ask_id = _short_id("ask-")
     lease_status = "open"
     t0 = time.monotonic()
@@ -1712,8 +1712,8 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         raw_out = b""
         raw_err = b""
         # Zombie-process guard: kill after this many consecutive silent heartbeats (no output, alive).
-        # Each heartbeat is heartbeat_sec seconds; max_silent_heartbeats * heartbeat_sec = max wait.
-        _MAX_SILENT_HEARTBEATS = max(1, int(_lease_cfg()[1] // _lease_cfg()[0]))  # lease_timeout_sec / heartbeat_sec
+        # Uses zombie_timeout_sec (separate from lease_timeout_sec) — see communication_policy.
+        _MAX_SILENT_HEARTBEATS = max(1, zombie_timeout_sec // heartbeat_sec)
         _silent_beats = 0
 
         while True:
@@ -2959,12 +2959,17 @@ def _leases_path(ai_root: Path) -> Path:
     return ai_root / "leases.json"
 
 
-def _lease_cfg() -> tuple[int, int]:
-    """Return (heartbeat_sec, lease_timeout_sec) from communication_policy."""
+def _lease_cfg() -> tuple[int, int, int]:
+    """Return (heartbeat_sec, lease_timeout_sec, zombie_timeout_sec) from communication_policy.
+
+    zombie_timeout_sec is intentionally separate from lease_timeout_sec:
+    lease = orphan-cleanup window (long), zombie = silent-process kill threshold (short).
+    """
     comm = _load_protocol_cfg().get("communication_policy", {})
     h = max(5, int(comm.get("heartbeat_sec", 30) or 30))
     l = max(h + 30, int(comm.get("lease_timeout_sec", 300) or 300))
-    return h, l
+    z = max(h * 2, int(comm.get("zombie_timeout_sec", 600) or 600))
+    return h, l, z
 
 
 def _lease_open(ai_root: Path | None, peer_id: str, pid: int, lease_timeout_sec: int, ask_id: str | None = None, ask_query_file: str | None = None) -> None:
@@ -3470,6 +3475,55 @@ def action_health_sweep(ai_root: Path) -> None:
     print(f"[HUB] HEALTH-SWEEP stale={swept}")
 
 
+def _check_flag_parity() -> list[str]:
+    """Verify hub._build_session_cmd and peer_console.peer_default_args agree on required security flags."""
+    import importlib.util
+    errors: list[str] = []
+
+    cli_path = Path(__file__).parent.parent / "cli" / "peer_console.py"
+    try:
+        spec = importlib.util.spec_from_file_location("peer_console", cli_path)
+        pc_mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+        spec.loader.exec_module(pc_mod)  # type: ignore[union-attr]
+        peer_default_args = pc_mod.peer_default_args
+    except Exception as e:
+        errors.append(f"PARITY: could not import peer_console.py: {e}")
+        return errors
+
+    # Flags that MUST appear in both hub and console paths
+    # Note: --json (cx output format) is hub-internal only, excluded intentionally.
+    REQUIRED: dict[str, set[str]] = {
+        "cx": {"-s", "workspace-write", "--ignore-rules"},
+        "gc": {"--approval-mode", "auto_edit", "--skip-trust"},
+    }
+    # Flags that must NEVER appear in any managed peer invocation
+    FORBIDDEN = {
+        "dangerously-bypass-approvals-and-sandbox",
+        "yolo",
+        "full-auto",
+    }
+    EXE = {"cx": "codex", "gc": "gemini"}
+
+    for peer_id, required in REQUIRED.items():
+        hub_args, _, _ = _build_session_cmd(peer_id, None, EXE[peer_id])
+        console_args = peer_default_args(peer_id, [])
+        hub_set = set(hub_args)
+        console_set = set(console_args)
+
+        for flag in required:
+            if flag not in hub_set:
+                errors.append(f"PARITY {peer_id}: required flag '{flag}' missing from hub path (_build_session_cmd)")
+            if flag not in console_set:
+                errors.append(f"PARITY {peer_id}: required flag '{flag}' missing from console path (peer_console.py)")
+
+        for path_name, flag_set in [("hub", hub_set), ("console", console_set)]:
+            for flag in FORBIDDEN:
+                if any(flag in f for f in flag_set):
+                    errors.append(f"PARITY {peer_id}: forbidden flag '{flag}' found in {path_name} path")
+
+    return errors
+
+
 def action_validate_profiles(node_id: str | None = None) -> None:
     """Cross-check model_profiles.json against status_checks.json for each node."""
     errors = []
@@ -3508,11 +3562,14 @@ def action_validate_profiles(node_id: str | None = None) -> None:
             if expected not in known_overrides:
                 errors.append(f"{target}: invoke_override '{key}' not in status_checks known_overrides.{expected}")
 
+    # Parity check: hub._build_session_cmd vs peer_console.peer_default_args
+    errors.extend(_check_flag_parity())
+
     if errors:
         for err in errors:
             print(f"[HUB:PROFILE:ERR] {err}", file=sys.stderr)
         sys.exit(1)
-    print(f"[HUB] PROFILE-VALIDATE OK ({len(targets)} nodes checked)")
+    print(f"[HUB] PROFILE-VALIDATE OK ({len(targets)} nodes checked, parity verified)")
 
 
 def action_lease_status(ai_root: Path) -> None:

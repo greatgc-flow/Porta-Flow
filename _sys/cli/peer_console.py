@@ -93,7 +93,7 @@ def peer_default_args(peer_id: str, args: list[str]) -> list[str]:
             "-a",
         }):
             return current
-        return _append_missing(current, ["-s", "workspace-write"])
+        return _append_missing(current, ["-s", "workspace-write", "--ignore-rules"])
 
     if peer_id == "ag":
         # TODO: ag is currently inactive (disabled in orchestration.json).

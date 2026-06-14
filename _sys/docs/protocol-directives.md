@@ -88,8 +88,11 @@ Logic in `hub.py` `_record_ask_success()`:
 
 - Default TTL: **6 hours** (adjustable via `--ttl-hours` on `directive-add`)
 - `_get_active_runtime_directives()` filters out entries where `expires < now`
-- Expired entries remain in the JSONL file (for audit) but are never injected into peer context
-- No automatic archiving; the JSONL grows append-only
+- Expired entries remain in the file (for audit) but are never injected into peer context
+- No automatic archiving
+- **File type: State Journal** (JSONL-formatted but mutable) — entries are rewritten in-place
+  during bump and clear operations. This differs from append-only **Event Logs**
+  (e.g. `feedback.jsonl`) where entries are never modified after creation.
 
 ---
 
