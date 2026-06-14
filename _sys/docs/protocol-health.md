@@ -195,6 +195,34 @@ hub.py peer-recover --peer gc --reason quota_reset
 - Do not let a stale coordinator keep ownership without a checkpoint.
 - Do not route around a failing peer silently; record quarantine, failover, or recovery in handoff.
 
+---
+
+## 9b. Min-Token Health Inference (Ask-Outcome Classifier)
+
+**Principle**: Routine health checks are zero-token (local file reads). A dedicated model-ping ask is forbidden as a default health check.
+
+However, every real ask already returns an exit code + stderr + output — this is a free signal.
+
+### Classification Rules (implemented in `_classify_ask_failure()`)
+
+| Signal | Health inference |
+|--------|-----------------|
+| exit_code == 0, non-empty response | GREEN (record via `_record_ask_success`) |
+| exit_code != 0, known critical marker in stderr | RED (sandbox_spawn_eperm, rate_or_session_limit, cli_not_found) |
+| exit_code != 0, rate/quota marker | YELLOW → RED after threshold |
+| exit_code != 0, unknown/generic | failure recorded, threshold-based degradation |
+| Process alive but zero output for 30 min | Zombie-killed; treated as timeout failure |
+
+### Rules
+
+1. **Local-file-first**: `hub.py health-check` / `hub.py health-precheck` read local `health.json` — 0 model tokens
+2. **Piggyback on real asks**: `_record_ask_success/failure()` update health from ask outcomes automatically
+3. **MUST NOT**: Send a dedicated model ping just to check health (wastes tokens)
+4. **MUST NOT**: Infer health from arbitrary prose content — only from transport signals (exit code, stderr markers)
+5. **SHOULD**: Classify stderr patterns into named reasons (`timeout`, `rate_or_session_limit`, `sandbox_spawn_eperm`, etc.)
+
+---
+
 ## 10. Heartbeat / Lease Mechanism
 
 ### 10.1 — Purpose

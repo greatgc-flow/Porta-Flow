@@ -233,6 +233,48 @@ def test_ask_cx_resume_failure_retries_fresh(ai_dir):
     assert entry["session_id"] == "019ec163-test-uuid"  # new thread_id stored
 
 
+def test_session_fingerprint_stored_on_success(ai_dir):
+    """Successful ask stores session fingerprint in session state."""
+    ok_proc = _make_mock_proc(stdout=THREAD_STARTED_JSONL, returncode=0)
+    with patch("shutil.which", return_value="/usr/bin/codex"), \
+         patch("subprocess.Popen", return_value=ok_proc):
+        hub.action_ask("cx", "hello", None, 120, ai_dir, session_policy="reuse")
+
+    entry = hub._get_active_session("cx", "room-test")
+    assert entry is not None
+    assert entry.get("fingerprint") is not None
+    assert len(entry["fingerprint"]) == 8  # sha1 hexdigest[:8]
+
+
+def test_session_fingerprint_drift_retires_session(ai_dir):
+    """If stored fingerprint differs from current, session is retired before ask."""
+    # Store session with a deliberately different/wrong fingerprint
+    hub._set_active_session("cx", "room-test", "old-uuid", "ask-0", ai_dir, fingerprint="deadbeef")
+
+    ok_proc = _make_mock_proc(stdout=THREAD_STARTED_JSONL, returncode=0)
+    with patch("shutil.which", return_value="/usr/bin/codex"), \
+         patch("subprocess.Popen", return_value=ok_proc):
+        hub.action_ask("cx", "hello", None, 120, ai_dir, session_policy="reuse")
+
+    # Session was retired and a fresh one was created with the real fingerprint
+    entry = hub._get_active_session("cx", "room-test")
+    assert entry is not None
+    assert entry["session_id"] != "old-uuid"
+    real_fp = hub._session_fingerprint("cx", "codex")
+    assert entry["fingerprint"] == real_fp
+
+
+def test_ask_uses_project_root_as_cwd(ai_dir):
+    """action_ask sets Popen cwd to ai_root.parent (project root), not caller's cwd."""
+    ok_proc = _make_mock_proc(stdout=b"response", returncode=0)
+    with patch("shutil.which", return_value="/usr/bin/gemini"), \
+         patch("subprocess.Popen", return_value=ok_proc) as mock_popen:
+        hub.action_ask("gc", "test", None, 120, ai_dir, session_policy="none")
+
+    call_kwargs = mock_popen.call_args.kwargs
+    assert call_kwargs.get("cwd") == str(ai_dir.parent)
+
+
 def test_new_topic_clears_sessions(ai_dir):
     """new-topic clears active sessions for all peers."""
     hub._set_active_session("cx", "room-test", "uuid-cx", "ask-1", ai_dir)

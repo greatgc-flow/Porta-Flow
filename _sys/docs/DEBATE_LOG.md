@@ -5,6 +5,71 @@
 
 ---
 
+## [2026-06-14] T2-debate-system-audit-phase2-implementation
+
+- Proposal: T2-끝장토론 Phase 2 (cc solo + cx async audit, gc quota exhausted)
+- Participants: cc (implementer), cx (T2 auditor — 6 topic exhaustive review)
+- Decision: IMPLEMENTED — All HIGH/MEDIUM cx findings from T2 audit applied
+
+### cx T2 Audit Findings → Actions
+
+| Topic | cx Severity | cc Action |
+|-------|-------------|-----------|
+| Q1 Lease/Zombie gap | HIGH | Zombie guard: `_MAX_SILENT_HEARTBEATS=60`, force-kill after 30 min silence |
+| Q2 Min-token health | MEDIUM | Codified in `protocol-health.md §9b` — no model-ping; piggyback on ask outcomes |
+| Q3 Feedback propagation | HIGH | `runtime-directives.jsonl` system: auto-promote after 2 failures; auto-clear on first_success |
+| Q4a cx session resume | HIGH | Session fingerprint: hash(exe+flags); auto-retire on drift before resume |
+| Q4b vote typos | HIGH | Already fixed in Phase 1; regression tests added |
+| Q4c blat files | MEDIUM | Popen cwd fix (ai_root.parent); attribution deferred to recurrence |
+| Q4d tests vs behavior | LOW | Tests updated in Phase 1 |
+| Q5 MECE enforcement | HIGH | `protocol-permissions.md` (canonical model); parity validator exists (`profile-validate`) |
+| Q6 NEVER boundaries | HIGH | `protocol-permissions.md §4` MUST-NEVER list; docs-only items promoted to docs |
+
+### Key Architectural Decisions
+
+- **Two-layer directive model**: `user-directives.md` (human-confirmed, never auto-written) + `runtime-directives.jsonl` (machine-generated, TTL-based, auto-cleared)
+- **Cross-peer propagation**: A gc failure creates a directive injected into ALL peer asks — prevents same-peer routing while degraded
+- **Session fingerprint invalidation**: Prevents silent session resume failures after flag changes (was causing cx exit=2 errors)
+- **Protocol MECE**: 3 stale docs archived; 2 new canonical docs added (protocol-permissions.md, protocol-directives.md)
+
+- Risk Class: HIGH_RISK (hub.py core modified, session reuse path changed)
+- Promoted To Constitutional Layer: NO
+- gc T2 participation: DEFERRED (quota reset needed; will run separately)
+
+- Affected Artifacts:
+  - P:\_sys\core\hub.py (directive system, session fingerprint, zombie guard, cwd fix)
+  - P:\_sys\ai\runtime-directives.jsonl (NEW — auto-generated peer runtime rules)
+  - P:\_sys\docs\protocol-permissions.md (NEW — minimum permission model)
+  - P:\_sys\docs\protocol-directives.md (NEW — directive management spec)
+  - P:\_sys\docs\protocol-health.md (§9b min-token health, §10 lease/heartbeat)
+  - P:\PROTOCOL.md (new docs registered)
+  - Garbage: 3 stale collaboration docs archived
+
+---
+
+## [2026-06-14] knowledge-propagation-design
+
+- Proposal: knowledge-propagation-design-20260614 (cc+cx, §16 exhaustive planning session)
+- Participants: cc (coordinator), cx (peer review — READY_FOR_SPEC)
+- Decision: Design specification complete — 구현 대기 (사용자 결정 4개 확인 후 착수)
+- Key decisions:
+  - 3-Layer 구조: Raw Events → Active Lesson Registry → Compiled Delivery Packs
+  - Feedback ≠ Lesson ≠ Directive: user-directives.md(Tier 1.5)는 절대 오염 금지
+  - Hash-ACK: 동일 세션 내 재전송 시 hash만 전송 (토큰 제로 달성)
+  - Config-driven: knowledge.config.json이 모든 임계값·경로·승인규칙 소유
+  - Global/Workspace 2-레이어 분리; workspace-profile.json이 General-Specific 연결점
+  - Base Template: 신규 워크스페이스 자동 시작 지원
+  - 초기 lesson 7개 정의 (LL-001~007)
+  - 구현 10단계 정의 (Phase 1: hub.py 주입까지, Phase 2: 자동 감지기)
+  - 문서 전략: DEBATE_PROTOCOL.md §0/§8 확장; user-directives.md 비확장
+- Risk Class: NORMAL (설계 문서만, 구현 미착수)
+- Promoted To Constitutional Layer: NO
+- Affected Artifacts:
+  - P:\_sys\docs\knowledge-propagation-spec.md (신규 — 전체 설계 스펙)
+  - P:\_sys\docs\DEBATE_LOG.md (this file)
+
+---
+
 ## [2026-06-14] debate-protocol-peer-reinclude-review
 
 - Proposal: peer-reinclude-review-20260614 (cc+cx, §16 exhaustive work session)
