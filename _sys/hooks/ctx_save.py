@@ -55,6 +55,11 @@ def main() -> None:
     else:
         print("[ctx-save] Notice: GEMINI.md not found at junction. Updated CLAUDE.md only.")
 
+    agents_md = cwd / "AGENTS.md"
+    if agents_md.exists():
+        _update_current_state_marker(agents_md, marker)
+        print("[ctx-save] Symmetric Memory updated: AGENTS.md (cx session continuity)")
+
     # Gemini blackboard summary (skip if unavailable)
     venv_py = _SYS_DIR / "env" / "venv" / "Scripts" / "python.exe"
     python = str(venv_py) if venv_py.exists() else sys.executable

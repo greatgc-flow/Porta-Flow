@@ -348,55 +348,45 @@
     "routing_rules": [
       {
         "task_type": "doc",
-        "preferred": [
-          "gc",
-          "cc"
-        ],
-        "fallback": "cc"
+        "preferred": ["gc", "cc", "cx"],
+        "fallback": "first_healthy",
+        "_note": "gc: large-context drafting; cc/cx: structured doc generation"
       },
       {
         "task_type": "script",
-        "preferred": [
-          "cc"
-        ],
-        "fallback": "cc"
+        "preferred": ["cc", "gc", "cx"],
+        "fallback": "first_healthy",
+        "_note": "All active peers support script generation"
       },
       {
         "task_type": "verify",
-        "preferred": [
-          "cc"
-        ],
-        "fallback": "cc"
+        "preferred": ["gc", "cc", "cx"],
+        "fallback": "first_healthy",
+        "_note": "gc: large-corpus verification; cc/cx: contract and test verification"
       },
       {
         "task_type": "code",
-        "preferred": [
-          "cx",
-          "cc"
-        ],
-        "fallback": "cc"
+        "preferred": ["cx", "cc", "gc"],
+        "fallback": "first_healthy",
+        "_note": "cx: patch-first; cc: architecture-aware; gc: zero-shot generation"
       },
       {
         "task_type": "code-review",
-        "preferred": [
-          "cx",
-          "cc"
-        ],
-        "fallback": "cc"
+        "preferred": ["cx", "gc", "cc"],
+        "fallback": "first_healthy",
+        "_note": "cx: diff-level review; gc: cross-file consistency; cc: invariant checks"
       },
       {
         "task_type": "large-corpus",
-        "preferred": [
-          "gc"
-        ],
-        "fallback": "cc"
+        "preferred": ["gc", "cc", "cx"],
+        "fallback": "first_healthy",
+        "_note": "gc: 1M-token context; cc/cx: supplemental deep-dive"
       },
       {
         "task_type": "shell-ops",
-        "preferred": [
-          "cc"
-        ],
-        "fallback": "cc"
+        "preferred": ["cc", "cx", "gc"],
+        "fallback": "first_healthy",
+        "_note": "cc: Bash+PowerShell toolset; cx: workspace-scoped; gc: plan-mode shell"
       }
     ],
     "user_communication": {

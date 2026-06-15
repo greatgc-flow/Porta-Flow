@@ -1902,6 +1902,69 @@ def _thin_forward_envelope(ai_root: Path, query: str, coordinator: str, from_pee
     return f"{meta}\n\nUSER_QUERY:\n{query}"
 
 
+def action_ask_all(query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, exclude: list[str] | None = None, quiet: bool = False) -> None:
+    """모든 활성 피어에게 동일 쿼리를 병렬 브로드캐스트하고 응답을 출력한다."""
+    import threading
+
+    query_text = _read_query_arg(query, query_file)
+    orch = _load_orchestration()
+    disabled_ids = {
+        n["node_id"] for n in orch.get("hub_nodes", [])
+        if n.get("enabled") is False and n.get("node_id")
+    }
+    exclude_set = set(exclude or []) | disabled_ids
+    peers = [
+        n["node_id"] for n in orch.get("hub_nodes", [])
+        if n.get("node_id")
+        and n.get("type", "peer") == "peer"
+        and n["node_id"] not in exclude_set
+    ]
+    if not peers:
+        print("[HUB] ask-all: no active peers found", file=sys.stderr)
+        return
+
+    hub_py = Path(__file__)
+    py_exe = sys.executable
+    results: dict[str, str] = {}
+    lock = threading.Lock()
+
+    def _ask_one(peer_id: str) -> None:
+        tmp = Path(os.environ.get("TEMP", "/tmp")) / f"hub-ask-all-{peer_id}-{uuid.uuid4().hex[:8]}.txt"
+        tmp.write_text(query_text, encoding="utf-8")
+        cmd = [py_exe, str(hub_py), "ask", "--to", peer_id, "--query-file", str(tmp)]
+        if timeout_sec and timeout_sec > 0:
+            cmd += ["--timeout", str(timeout_sec)]
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                               timeout=(timeout_sec if timeout_sec > 0 else None))
+            out = (r.stdout or "").strip()
+            err = (r.stderr or "").strip()
+            combined = out + (f"\n[STDERR] {err}" if err and not quiet else "")
+        except subprocess.TimeoutExpired:
+            combined = f"[TIMEOUT after {timeout_sec}s]"
+        except Exception as exc:
+            combined = f"[ERROR] {exc}"
+        finally:
+            try: tmp.unlink()
+            except Exception: pass
+        with lock:
+            results[peer_id] = combined
+
+    threads = [threading.Thread(target=_ask_one, args=(p,), daemon=True) for p in peers]
+    print(f"[HUB] ask-all → {', '.join(peers)}", file=sys.stderr)
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=(timeout_sec + 5 if timeout_sec > 0 else None))
+
+    for peer_id in peers:
+        sep = "━" * 60
+        print(f"\n{sep}")
+        print(f"  PEER: {peer_id.upper()}")
+        print(sep)
+        print(results.get(peer_id, "[NO RESPONSE]"))
+
+
 def action_ask_coordinator(ai_root: Path, query: str, query_file: str | None, timeout_sec: int, from_peer: str, quiet: bool = False, output_file: str | None = None) -> None:
     query_text = _read_query_arg(query, query_file)
     state = _read_json(ai_root / "state.json")
@@ -2478,10 +2541,26 @@ def action_checkpoint(ai_root: Path, agent: str, note: str) -> None:
 
 
 def action_context_fill(ai_root: Path, sections: list[str] | None = None) -> None:
-    """handoff.md에서 지정 섹션만 읽어 컨텍스트 채우기용 블록 출력 — 제로토큰."""
+    """handoff.md에서 지정 섹션만 읽어 컨텍스트 채우기용 블록 출력 — 제로토큰.
+
+    Special section "lessons": injects PEER LESSONS block (sticky+critical first).
+    """
     cfg = _load_protocol_cfg()
     default_sections = cfg.get("session", {}).get("context_fill_sections", ["GOAL", "PENDING_ISSUES", "KEY_DECISIONS", "ACTIVE_THREADS"])
     wanted = set(sections or default_sections)
+
+    # Handle "lessons" section — always available, no room required
+    if "lessons" in wanted:
+        all_lessons = _load_active_lessons(workspace_ai_root=ai_root)
+        block = _compile_lessons_block(all_lessons, workspace_ai_root=ai_root)
+        if block:
+            print(block)
+        else:
+            print("[HUB] CONTEXT-FILL: no active lessons")
+        wanted.discard("lessons")
+        if not wanted:
+            return
+
     state = _read_json(ai_root / "state.json")
     room_id = state.get("room_id")
     if not room_id:
@@ -2973,9 +3052,15 @@ def _compile_lessons_block(lessons: list[dict], workspace_ai_root: Path | None =
     max_chars = int(delivery.get("max_chars", 1200))
     max_items = int(delivery.get("max_items", 8))
 
-    # Critical lessons always first, then by severity rank
+    # Sticky+critical first, then by severity rank
     severity_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3}
-    sorted_lessons = sorted(lessons, key=lambda x: severity_rank.get(x.get("severity", "medium"), 2))
+    sorted_lessons = sorted(
+        lessons,
+        key=lambda x: (
+            0 if (x.get("sticky") and x.get("severity") == "critical") else 1,
+            severity_rank.get(x.get("severity", "medium"), 2),
+        ),
+    )
 
     lines = []
     chars = 0
@@ -3287,6 +3372,21 @@ def action_lessons_propose(
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     print(f"[HUB] LESSON-PROPOSE {entry['id']} | scope={scope} | status=candidate | title={title[:60]}")
     print(f"      Activate with: hub.py lessons-activate --lesson-id {entry['id']}")
+    # Fair review: notify all room members so any peer can object before activation
+    try:
+        state = _read_json(ai_root / "state.json")
+        members = list(state.get("members", {}).keys())
+        if members:
+            review_msg = (
+                f"[LESSON_REVIEW_REQUEST:{entry['id']}] "
+                f"Severity={severity.upper()} — \"{title}\" | "
+                f"Rule: {rule[:100]} | "
+                f"Activate with: lessons-activate --lesson-id {entry['id']}"
+            )
+            action_broadcast(ai_root, "system", review_msg, members, "LESSON_REVIEW", priority="P2")
+            print(f"[HUB] LESSON-PROPOSE review notified → {','.join(members)}")
+    except Exception:
+        pass
 
 
 def action_lessons_activate(ai_root: Path, lesson_id: str) -> None:
@@ -3331,9 +3431,22 @@ def action_lessons_activate(ai_root: Path, lesson_id: str) -> None:
         if updated:
             lesson_path.write_text("\n".join(output) + "\n", encoding="utf-8")
             print(f"[HUB] LESSON-ACTIVATE {lesson_id} | approved_by=coordinator")
+            _try_lesson_broadcast(ai_root, lesson_id, from_peer="system")
             return
     print(f"[HUB:ERROR] lesson {lesson_id} not found or already active", file=sys.stderr)
     sys.exit(1)
+
+
+def _try_lesson_broadcast(ai_root: Path, lesson_id: str, from_peer: str = "system") -> None:
+    """Best-effort lesson broadcast — skips silently if room has no members."""
+    try:
+        state = _read_json(ai_root / "state.json")
+        targets = [n for n in state.get("members", {}).keys() if n != from_peer]
+        if not targets:
+            return
+        action_lesson_broadcast(ai_root, lesson_id, from_peer=from_peer)
+    except Exception:
+        pass
 
 
 def action_lessons_retire(ai_root: Path, lesson_id: str, reason: str = "") -> None:
@@ -3449,13 +3562,20 @@ def action_lesson_sweep(ai_root: Path, min_triggers: int = 3, stale_days: int = 
                 item["promoted_to_directive"] = True
                 promoted += 1
                 print(f"[HUB] LESSON-SWEEP promote {item['id']} (triggers={trigger_count})")
-            # Retire stale
-            if last_triggered and last_triggered < cutoff and trigger_count == 0:
+            # Retire: low-trigger AND stale — sticky=True lessons are immune
+            is_low_trigger = trigger_count < min_triggers
+            is_stale = (last_triggered is None) or (last_triggered < cutoff)
+            should_retire = is_low_trigger and is_stale
+            if should_retire and not item.get("sticky"):
                 item["status"] = "retired"
                 item.setdefault("retirement", {})["retired_at"] = now.strftime("%Y%m%dT%H%M%S")
-                item["retirement"]["retire_reason"] = f"stale: no triggers in {stale_days}d"
+                item["retirement"]["retire_reason"] = (
+                    f"stale: trigger_count={trigger_count} < min={min_triggers}"
+                )
                 retired += 1
-                print(f"[HUB] LESSON-SWEEP retire {item['id']} (stale)")
+                print(f"[HUB] LESSON-SWEEP retire {item['id']} (triggers={trigger_count}/{min_triggers})")
+            elif should_retire and item.get("sticky"):
+                print(f"[HUB] LESSON-SWEEP skip-retire {item['id']} (sticky=true)")
             output.append(json.dumps(item, ensure_ascii=False))
         lesson_path.write_text("\n".join(output) + "\n", encoding="utf-8")
     print(f"[HUB] LESSON-SWEEP done | promoted={promoted} retired={retired}")
@@ -3654,6 +3774,65 @@ def action_proposal_list(ai_root: Path) -> None:
         pending = sum(1 for v in voters if re.search(rf"^- {re.escape(v)}: PENDING", content, re.MULTILINE))
         status = "CONSENSUS_OK" if agreed == len(voters) else ("PENDING" if pending > 0 else "PARTIAL")
         print(f"{path.stem:<45} {status:<15} agree={agreed}/{len(voters)}")
+
+
+def _api_signature_patterns() -> tuple[str, ...]:
+    """Return the patterns for public hub.py APIs to snapshot."""
+    return ("_lease_cfg", "_build_session_cmd")
+
+
+def _extract_hub_signatures() -> dict:
+    """Extract current hub.py public API signatures as a serializable dict."""
+    import inspect as _inspect
+    _ACTION_PREFIX = "action_"
+    sigs: dict = {}
+    current_module = sys.modules[__name__]
+    for name in dir(current_module):
+        if name in _api_signature_patterns() or name.startswith(_ACTION_PREFIX):
+            obj = getattr(current_module, name)
+            if not callable(obj):
+                continue
+            try:
+                sig = _inspect.signature(obj)
+            except (ValueError, TypeError):
+                continue
+            params: dict = {}
+            for pname, p in sig.parameters.items():
+                entry: dict = {"kind": p.kind.name}
+                if p.default is not _inspect.Parameter.empty:
+                    try:
+                        json.dumps(p.default)
+                        entry["default"] = p.default
+                    except (TypeError, ValueError):
+                        entry["default"] = repr(p.default)
+                if p.annotation is not _inspect.Parameter.empty:
+                    entry["annotation"] = str(p.annotation)
+                params[pname] = entry
+            sigs[name] = {"params": params, "return": str(sig.return_annotation)}
+    return sigs
+
+
+def action_update_signatures() -> None:
+    """Regenerate _sys/ai/snapshots/hub_api.json with current hub.py API signatures.
+
+    Run this AFTER updating test_contracts.py when a public API changes.
+    This file is the source of truth for test_signatures.py drift detection.
+    """
+    from datetime import datetime as _dt
+    snapshot_dir = Path(__file__).parent.parent / "ai" / "snapshots"
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_path = snapshot_dir / "hub_api.json"
+
+    sigs = _extract_hub_signatures()
+    payload = {
+        "generated_at": _dt.now().strftime("%Y-%m-%dT%H:%M:%S"),
+        "source": "hub.py",
+        "count": len(sigs),
+        "signatures": sigs,
+    }
+    snapshot_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"[HUB] update-signatures: wrote {len(sigs)} signatures → {snapshot_path}")
+    print("  Next: update test_contracts.py to match any changed signatures.")
 
 
 def _leases_path(ai_root: Path) -> Path:
@@ -4354,7 +4533,7 @@ def action_approval_request(ai_root: Path, from_peer: str, action: str, auth_nee
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="hub", description="AI 협업 허브 — Protocol v4.1")
-    parser.add_argument("action", choices=["init-session", "end-session", "send", "broadcast", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "ask-coordinator", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint", "peer-quarantine", "peer-recover", "new-topic", "clear-room", "preflight", "context-hash", "context-ack", "report-error", "feedback-add", "feedback-list", "feedback-resolve", "artifact-claim", "artifact-status", "artifact-finalize", "leader-yield", "leader-claim", "elect-leader", "discover", "assign-role", "release-role", "role-status", "health-precheck", "health-sweep", "append-handoff", "task-checkpoint", "task-status", "task-failover", "approval-request", "file-lock", "file-unlock", "lock-status", "profile-validate", "lease-status", "lease-sweep", "model-status", "transient-scan", "directive-add", "directive-list", "directive-clear", "lessons-list", "lessons-propose", "lessons-activate", "lessons-retire", "lesson-broadcast", "lesson-sweep", "lesson-inject", "thread-new", "thread-append", "thread-react", "proposal-add", "proposal-vote", "proposal-list"])
+    parser.add_argument("action", choices=["init-session", "end-session", "send", "broadcast", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "ask-all", "ask-coordinator", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint", "peer-quarantine", "peer-recover", "new-topic", "clear-room", "preflight", "context-hash", "context-ack", "report-error", "feedback-add", "feedback-list", "feedback-resolve", "artifact-claim", "artifact-status", "artifact-finalize", "leader-yield", "leader-claim", "elect-leader", "discover", "assign-role", "release-role", "role-status", "health-precheck", "health-sweep", "append-handoff", "task-checkpoint", "task-status", "task-failover", "approval-request", "file-lock", "file-unlock", "lock-status", "profile-validate", "lease-status", "lease-sweep", "model-status", "transient-scan", "directive-add", "directive-list", "directive-clear", "lessons-list", "lessons-propose", "lessons-activate", "lessons-retire", "lesson-broadcast", "lesson-sweep", "lesson-inject", "thread-new", "thread-append", "thread-react", "proposal-add", "proposal-vote", "proposal-list", "update-signatures"])
     parser.add_argument("--needs")
     parser.add_argument("--effort", default="mid")
     parser.add_argument("--agent")
@@ -4440,6 +4619,13 @@ def main() -> None:
         try: ai_root_opt = find_ai_root()
         except: pass
         action_ask(args.to_, args.query, args.query_file, args.timeout, ai_root_opt, quiet=args.quiet, output_file=args.output_file, session_policy=args.session_policy, explicit_scope=args.scope)
+        return
+    if args.action == "ask-all":
+        ai_root_opt = None
+        try: ai_root_opt = find_ai_root()
+        except: pass
+        exclude_list = [x.strip() for x in args.peers.split(",") if x.strip()] if getattr(args, "peers", None) else []
+        action_ask_all(args.query, args.query_file, args.timeout, ai_root_opt, exclude=exclude_list or None, quiet=args.quiet)
         return
 
     ai_root = find_ai_root()
@@ -4631,6 +4817,8 @@ def main() -> None:
         action_proposal_vote(ai_root, proposal_id=args.proposal_id, voter=args.voter or args.peer or args.agent or "cc", vote=args.vote_val, reason=args.reason or "")
     elif act == "proposal-list":
         action_proposal_list(ai_root)
+    elif act == "update-signatures":
+        action_update_signatures()
 
 if __name__ == "__main__":
     main()

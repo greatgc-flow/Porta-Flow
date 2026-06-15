@@ -12,9 +12,68 @@ import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 
+_WATCHDOG_RUNNING = False  # 재진입 방지 플래그
+
 _SCRIPT_DIR = Path(__file__).parent
 _SYS_DIR = _SCRIPT_DIR.parent
 _PORTABLE_ROOT = _SYS_DIR.parent
+
+
+def run_contract_watchdog(
+    ai_root: Path | None = None,
+    python_exe: str | None = None,
+) -> None:
+    """Post-flight contract check — runs check_contracts.py and alerts on failure.
+
+    On success: silent.
+    On failure: creates a hub thread with [SYSTEM_ALERT] and failure log tail.
+    Re-entrant calls are no-ops (prevents ctx-end recursion).
+    """
+    global _WATCHDOG_RUNNING
+    if _WATCHDOG_RUNNING:
+        return
+    _WATCHDOG_RUNNING = True
+    try:
+        py = python_exe or sys.executable
+        check_script = _SYS_DIR / "checks" / "check_contracts.py"
+        if not check_script.exists():
+            return
+
+        result = subprocess.run(
+            [py, str(check_script), "--always"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        if result.returncode == 0:
+            return  # silent on success
+
+        failure_output = (result.stdout + result.stderr).strip()
+        tail = "\n".join(failure_output.splitlines()[-20:])
+
+        # Notify via hub thread — hub.py is in _SYS_DIR/core/hub.py
+        hub_py = _SYS_DIR / "core" / "hub.py"
+        if not hub_py.exists() or ai_root is None:
+            print(f"[ctx-end watchdog] ALERT: contract violation:\n{tail}")
+            return
+
+        msg = f"[SYSTEM_ALERT] Contract violation at session end.\n\n{tail}"
+        subprocess.run(
+            [py, str(hub_py), "thread-new",
+             "--ai-root", str(ai_root),
+             "--topic", "SYSTEM_ALERT: contract violation",
+             "--from-peer", "watchdog",
+             "--msg", msg],
+            capture_output=True,
+            timeout=30,
+        )
+        print(f"[ctx-end watchdog] ALERT: contract violation — thread created")
+        print(tail)
+    except Exception as exc:
+        print(f"[ctx-end watchdog] Error (non-fatal): {exc}")
+    finally:
+        _WATCHDOG_RUNNING = False
 
 
 def _check_prerequisites(claude_config_dir: Path) -> bool:
@@ -231,6 +290,15 @@ def main() -> None:
         compact_memory(_PORTABLE_ROOT)
     except Exception as exc:
         print(f"[ctx-end] Memory compaction skipped ({exc}).")
+
+    # GAP-4 watchdog: post-flight contract check (non-blocking, silent on pass)
+    venv_py2 = _SYS_DIR / "env" / "venv" / "Scripts" / "python.exe"
+    py2 = str(venv_py2) if venv_py2.exists() else sys.executable
+    ai_root_default = _PORTABLE_ROOT / ".ai"
+    run_contract_watchdog(
+        ai_root=ai_root_default if ai_root_default.exists() else None,
+        python_exe=py2,
+    )
 
 
 if __name__ == "__main__":

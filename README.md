@@ -2,7 +2,7 @@
 
 [![Python 3.14+](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/downloads/)
 [![Windows](https://img.shields.io/badge/os-windows-green.svg)](https://microsoft.com/windows)
-[![Tests: 299 Pass](https://img.shields.io/badge/tests-299%20pass-success.svg)](_sys/tests)
+[![Tests: 370 Pass](https://img.shields.io/badge/tests-370%20pass-success.svg)](_sys/tests)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A Windows-first portable dev workspace where Claude (`cc`), Gemini (`gc`), Codex (`cx`), and Antigravity (`ag`) collaborate as **equal peers** alongside human developers — fully portable on USB or cloud drive, with a **self-evolving collaboration loop** that learns from every session.
@@ -140,7 +140,7 @@ REM Full unit suite
 python -m pytest _sys\tests\unit
 ```
 
-**Current baseline:** `299 passed, 11 xfail (manage.py API migration pending)` — core hub and collaboration: 100% green.
+**Current baseline:** `370 passed, 11 xfail (manage.py API migration pending)` — core hub and collaboration: 100% green. Includes 46 contract tests + 7 watchdog + 15 signature + 7 lesson propagation tests.
 
 ---
 

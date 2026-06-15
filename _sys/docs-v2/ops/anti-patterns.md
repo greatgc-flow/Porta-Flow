@@ -109,3 +109,12 @@
 - **AP-21 Context Hoarding**: Storing complex analysis in peer-local memory only.
   - [SIGNAL] Peer output says "I recall X" but X is not in any shared doc.
   - [FIX] Peer must dump local context to a .md file in _archive/ and link it in handoff.md.
+
+---
+
+## 7. Test Integrity Anti-Patterns (1 pattern)
+
+- **AP-22 Silent Contract Drift**: API signature changed without updating test_contracts.py.
+  - [SIGNAL] `check_contracts.py` fails after a hub.py commit. Or `_lease_cfg()`, `_build_session_cmd()`, `action_*()` returns a different arity/type than before without a matching contract update.
+  - [CAUSE] This is how 26 tests silently broke when `_lease_cfg()` changed from 2-tuple to 3-tuple.
+  - [FIX] Any commit touching hub.py public API MUST update `test_contracts.py` in the same commit. Run `python _sys/checks/check_contracts.py --always` before finalizing. See DIR-003 / LL-008.
