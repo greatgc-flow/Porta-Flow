@@ -1,25 +1,29 @@
 ﻿# PROTOCOL.md — Universal Multi-Peer Collaboration Protocol (v4.1 Index)
 
-> **v4.1**: Layered policy division (General, Specific, Connectors, Ambiguity). Composable domain files in `_sys/docs/`. Config-driven via `_sys/ai/protocol.json`. 5-node voting support (cc, ca, gc, ag, cx). Zero-token health management.
-> Coding Convention → CONVENTION.md | Architecture → SYSTEM_ARCHITECTURE.md | Agent Workflow → CLAUDE.md
+> **v4.1**: Layered policy division (General, Specific, Connectors, Ambiguity). Composable domain files in `_sys/docs-v2/`. Config-driven via `_sys/ai/protocol.json`. 5-node voting support (cc, ca, gc, ag, cx). Zero-token health management.
+> Coding Convention → CONVENTION.md | Architecture → `_sys/docs-v2/20-architecture.md` | Agent Workflow → CLAUDE.md
 
 ## Quick Reference — Composable Protocol Files
 
+> SSOT: `_sys/docs-v2/` (v1.1, active). Load order: `10-invariants.md` → `general/` → `specific/{peer}.md`
+
 | File | Domain |
 |------|--------|
-| [`_sys/docs/protocol/protocol-consensus.md`](_sys/docs/protocol/protocol-consensus.md) | Consensus voting, R=10, tiebreak, Final Call |
-| [`_sys/docs/protocol/protocol-session.md`](_sys/docs/protocol/protocol-session.md) | Session resume/fill decision tree, handoff structure |
-| [`_sys/docs/protocol/protocol-health.md`](_sys/docs/protocol/protocol-health.md) | Health schema, thresholds, zero-token monitoring |
-| [`_sys/docs/protocol/protocol-workload.md`](_sys/docs/protocol/protocol-workload.md) | Peer equality, capability registry, routing rules |
-| [`_sys/docs/protocol/protocol-antigravity.md`](_sys/docs/protocol/protocol-antigravity.md) | ag (agy) peer specifics, PTY voting policy |
-| [`_sys/docs/protocol/protocol-codex.md`](_sys/docs/protocol/protocol-codex.md) | cx (Codex) peer specifics, stdin invocation |
-| [`_sys/docs/protocol/protocol-permissions.md`](_sys/docs/protocol/protocol-permissions.md) | Minimum-permission model, per-peer profiles, MUST-NEVER list |
-| [`_sys/docs/protocol/protocol-directives.md`](_sys/docs/protocol/protocol-directives.md) | Directive management, auto-propagation, TTL, runtime-directives.jsonl |
-| [`_sys/docs/protocol/protocol-routing.md`](_sys/docs/protocol/protocol-routing.md) | Leader election, routing failover, human-interface continuity |
-| [`_sys/docs/protocol/PROTOCOL_INVARIANTS.md`](_sys/docs/protocol/PROTOCOL_INVARIANTS.md) | **Single source of truth** — all MUST/MUST-NOT rules (INV-01~18, PRO-01~15) |
-| [`_sys/docs/protocol/collaboration_protocol.md`](_sys/docs/protocol/collaboration_protocol.md) | **v4.1 Layered Coordination** — General/Specific split, connectors, COLLAB_RATE, feedback loop |
+| [`_sys/docs-v2/10-invariants.md`](_sys/docs-v2/10-invariants.md) | **Hard rules** — all MUST/MUST-NOT (INV-01~18, PRO-01~15). Load first. |
+| [`_sys/docs-v2/general/protocol.md`](_sys/docs-v2/general/protocol.md) | **v4.1 Layered Coordination** — COLLAB_RATE, feedback loop |
+| [`_sys/docs-v2/general/consensus.md`](_sys/docs-v2/general/consensus.md) | Consensus voting, R=10, tiebreak, Final Call |
+| [`_sys/docs-v2/general/session.md`](_sys/docs-v2/general/session.md) | Session resume/fill decision tree, handoff structure |
+| [`_sys/docs-v2/general/health.md`](_sys/docs-v2/general/health.md) | Health schema, thresholds, zero-token monitoring |
+| [`_sys/docs-v2/general/routing.md`](_sys/docs-v2/general/routing.md) | Leader election, routing failover, first_healthy fallback |
+| [`_sys/docs-v2/general/permissions.md`](_sys/docs-v2/general/permissions.md) | Minimum-permission model, per-peer profiles, MUST-NEVER list |
+| [`_sys/docs-v2/general/directives.md`](_sys/docs-v2/general/directives.md) | Directive management, auto-propagation, TTL, runtime-directives.jsonl |
+| [`_sys/docs-v2/specific/ag.md`](_sys/docs-v2/specific/ag.md) | ag (agy) peer specifics, PTY voting policy |
+| [`_sys/docs-v2/specific/cx.md`](_sys/docs-v2/specific/cx.md) | cx (Codex) peer specifics, stdin invocation |
+| [`_sys/docs-v2/specific/cc.md`](_sys/docs-v2/specific/cc.md) | cc (Claude Code) peer specifics, gate flags |
+| [`_sys/docs-v2/specific/gc.md`](_sys/docs-v2/specific/gc.md) | gc (Gemini CLI) peer specifics, gate flags |
+| [`_sys/docs-v2/ops/anti-patterns.md`](_sys/docs-v2/ops/anti-patterns.md) | 21 peer failure modes (AP-01~AP-21) |
+| [`_sys/docs-v2/ops/audit-checklist.md`](_sys/docs-v2/ops/audit-checklist.md) | MECE audit items — bootstrap, SUBST, cleanup, collab, docs |
 | [`_sys/ai/collaboration_policy.schema.json`](_sys/ai/collaboration_policy.schema.json) | Validation schema for multi-peer collaboration policies |
-| [`_sys/ai/room_policy.example.json`](_sys/ai/room_policy.example.json) | Concrete example mapping intents to commands & tracking ambiguity |
 | [`_sys/ai/protocol.json`](_sys/ai/protocol.json) | **Master config** — all thresholds, routing, consensus settings |
 
 ## Active Constraints (Quick Check)

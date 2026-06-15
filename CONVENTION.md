@@ -75,10 +75,11 @@ set "_BASE=%BASE_DIR%"
 
 ## 2. Integrated Management and Installation Rules
 
-### 2-1. Integrated Manager (manage.bat)
-All environment registration/unregistration and status management via `_sys\cli\manage.bat` (Logic: `manage.py`).
-- `manage.bat Register`: SUBST mapping, registry menu registration, `local.config.bat` state storage.
-- `manage.bat Unregister`: Global cleanup (SUBST release, registry removal), state initialization.
+### 2-1. Entry Point Batch Files
+Root-level batch files delegate all logic to `_sys\core\dispatch.bat` → `_sys\core\dispatcher.py`.
+- `register.bat`: SUBST mapping, registry menu registration, state storage.
+- `unregister.bat`: SUBST release, registry removal, state cleanup.
+- `CLEANUP.bat`: Tier 1~4 space optimization (via `_sys\cli\cleanup.py`).
 
 ### 2-2. Installation and Recovery (install.bat)
 - `install.bat`: Automatically downloads and configures all runtimes via `setup.py`. (Supports ZeroBase)

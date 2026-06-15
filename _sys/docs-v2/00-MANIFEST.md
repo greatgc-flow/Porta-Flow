@@ -36,6 +36,7 @@ For human onboarding: `user/manual.md` → then `00-MANIFEST.md`
 | `ops/debate.md` | Exhaustive work session rules (끝장 작업) | DEBATE_PROTOCOL v0.10 |
 | `ops/templates.md` | Goal frame, closure manifest, round templates | — |
 | `ops/anti-patterns.md` | 21 peer failure modes (adversarial review) | — |
+| `ops/audit-checklist.md` | MECE audit items — bootstrap, SUBST, cleanup, collab, docs | session-verified (2026-06-16) |
 | `user/manual.md` | Human onboarding + daily workflow | USER_MANUAL.md |
 | `_exceptions/` | Non-MECE items pending reclassification | — |
 

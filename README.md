@@ -2,7 +2,7 @@
 
 [![Python 3.14+](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/downloads/)
 [![Windows](https://img.shields.io/badge/os-windows-green.svg)](https://microsoft.com/windows)
-[![Tests: 370 Pass](https://img.shields.io/badge/tests-370%20pass-success.svg)](_sys/tests)
+[![Tests: 381 Pass](https://img.shields.io/badge/tests-381%20pass-success.svg)](_sys/tests)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A Windows-first portable dev workspace where Claude (`cc`), Gemini (`gc`), Codex (`cx`), and Antigravity (`ag`) collaborate as **equal peers** alongside human developers — fully portable on USB or cloud drive, with a **self-evolving collaboration loop** that learns from every session.
@@ -96,13 +96,13 @@ _sys\tests\run-tests.bat --all
 └── _sys/
     ├── ai/             ← protocol.json (SSOT), peers.json, knowledge/, proposals/
     │   └── common/     ← tool-registry.json + 9 agents + 6 skills (shared across peers)
-    ├── core/           ← hub.py (IPC hub v4.2), launcher.py, setup.py, config.py
-    ├── cli/            ← msg.bat, peer wrappers, manage.py, peer_console.py
+    ├── core/           ← hub.py (IPC hub v4.3), dispatcher.py, setup.py, config.py
+    ├── cli/            ← msg.bat, peer wrappers, peer_console.py
     ├── checks/         ← Health, policy, portability, risk checks (Axis A-I)
     ├── docs-v2/        ← SSOT v1.1: invariants, general rules, peer-specific, ops
     ├── docs/           ← Archive: history/, architecture/, plans/, user/
     ├── hooks/          ← ctx-save, ctx-end, collab-log, memory-compactor
-    ├── tests/          ← 299 unit tests + integration + WSB sandbox
+    ├── tests/          ← 381 unit tests + integration + WSB sandbox
     ├── templates/      ← CLAUDE_*.md, GEMINI.md templates
     ├── claude/         ← Claude config, agents, skills, health
     ├── gemini/         ← Gemini config, health, session state
@@ -140,7 +140,7 @@ REM Full unit suite
 python -m pytest _sys\tests\unit
 ```
 
-**Current baseline:** `370 passed, 11 xfail (manage.py API migration pending)` — core hub and collaboration: 100% green. Includes 46 contract tests + 7 watchdog + 15 signature + 7 lesson propagation tests.
+**Current baseline:** `381 passed, 0 xfailed` — core hub and collaboration: 100% green. Includes 46 contract tests + 7 watchdog + 15 signature + 7 lesson propagation tests.
 
 ---
 
