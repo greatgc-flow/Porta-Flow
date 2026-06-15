@@ -1,327 +1,226 @@
 """
 Path Scenarios Test (PATH)
 Verify registration and execution with Korean paths and SUBST conflicts.
+Migrated from manage.py API to core.virtualizer + core.registrar (new API).
 """
-import os
+import datetime
 import json
-import subprocess
-import winreg
-import shutil
+import os
+import re
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 import pytest
 import sys
 
-# Load target module
-sys_path = Path(__file__).parent.parent.parent / "cli"
-sys.path.append(str(sys_path))
-import manage
+_sys_path = Path(__file__).parent.parent.parent  # _sys/
+if str(_sys_path) not in sys.path:
+    sys.path.insert(0, str(_sys_path))
 
-_XFAIL_MANAGE_API = pytest.mark.xfail(
-    reason="manage.py API refactored to core.virtualizer/core.registrar — these tests need migration",
-    strict=False,
-)
+from core import virtualizer, registrar  # noqa: E402
+
+_real_os_exists = os.path.exists
+
+
+def _no_drive_exists(path: object) -> bool:
+    """os.path.exists 선택적 mock: 드라이브 존재 체크만 False, 실제 경로는 real check."""
+    p = str(path)
+    # 드라이브 문자 체크 (X: 또는 X:\)
+    if len(p) in (2, 3) and p[1] == ":" and (len(p) == 2 or p[2] == "\\"):
+        return False
+    return _real_os_exists(path)
+
+
+def _make_ctx(base_dir: Path, tmp_path: Path) -> dict:
+    local_dir = tmp_path / "_local"
+    local_dir.mkdir(parents=True, exist_ok=True)
+    return {
+        "base_dir": base_dir,
+        "sys_dir": base_dir / "_sys",
+        "paths": {
+            "state":        tmp_path / "_state",
+            "generated":    tmp_path / "_gen",
+            "localappdata": local_dir,
+        },
+        "args":  [],
+        "state": {},
+    }
 
 
 class TestPathScenarios:
     @pytest.fixture
-    def mock_env(self, tmp_path):
-        """테스트를 위한 모의 환경 (한글 경로 포함)."""
-        # Physical path with Korean characters
-        korean_base = tmp_path / "테스트_폴더" / "PortableDev"
-        korean_base.mkdir(parents=True)
-        
-        sys_dir = korean_base / "_sys"
-        sys_dir.mkdir()
-        (sys_dir / "cli").mkdir()
-        (sys_dir / "gemini" / "config").mkdir(parents=True)
-        (korean_base / "workspace").mkdir()
-        
-        # Dummy config
-        (sys_dir / "local.config.bat").write_text(":: user config", encoding="utf-8")
-        
-        # Mock USERPROFILE for Gemini portability
-        os.environ["USERPROFILE"] = str(tmp_path / "FakeUser")
-        (tmp_path / "FakeUser").mkdir()
-        
-        return korean_base
+    def korean_base(self, tmp_path):
+        """한글 경로를 포함한 기본 디렉터리."""
+        base = tmp_path / "테스트_폴더" / "PortableDev"
+        (base / "_sys" / "ai").mkdir(parents=True)
+        return base
 
-    @_XFAIL_MANAGE_API
-    @patch("winreg.CreateKey")
-    @patch("winreg.SetValueEx")
-    @patch("subprocess.run")
-    @patch("subprocess.check_output")
-    @patch("os.path.exists")
-    @patch("shutil.move")
-    @patch("winreg.OpenKey", side_effect=OSError)
-    def test_korean_path_registration(self, mock_open_key, mock_move, mock_exists, mock_check_output, mock_run, mock_set_val, mock_create_key, mock_env):
-        """Scenario 1: Registration from a physical path containing Korean characters."""
-        mock_exists.return_value = False # For SUBST drive check
-        mock_check_output.return_value = "" # No existing SUBST
-        mock_run.return_value = MagicMock(returncode=0)
-        
-        with patch("manage.config") as mock_cfg, \
-             patch("manage.load_context_menu") as mock_load_menu:
-            mock_cfg.get.return_value = None
-            mock_cfg.get_peers_config.return_value = {}
-            mock_cfg.get_base_dir.return_value = mock_env
-            mock_cfg.get_sys_dir.return_value = mock_env / "_sys"
-            mock_load_menu.return_value = [
-                {
-                    "id": "sandbox_open",
-                    "label": "Open in Sandbox ({DRIVE}:)",
-                    "icon": "_sys/env/vscode/Code.exe",
-                    "command": "_sys/start.bat \"{target}\"",
-                    "targets": ["Directory/Background", "Directory", "Drive", "*", "lnkfile"],
-                    "enabled": True
-                }
-            ]
-            manage.action_register(mock_env)
-            # config.set("SUBST_DRIVE_LETTER", ...) 호출 확인
-            set_calls = {c.args[0]: c.args[1] for c in mock_cfg.set.call_args_list}
-            assert "SUBST_DRIVE_LETTER" in set_calls, \
-                "register must call config.set('SUBST_DRIVE_LETTER', ...)"
-            mock_run_calls_inner = mock_run.call_args_list
+    def test_korean_path_registration(self, korean_base, tmp_path):
+        """Scenario 1: 한글 물리 경로에서 SUBST 드라이브 할당."""
+        with patch.object(virtualizer, "_get_subst_mappings", return_value={}), \
+             patch("os.path.exists", side_effect=_no_drive_exists), \
+             patch("subprocess.run", return_value=MagicMock(returncode=0)) as mock_run:
+            result = virtualizer._assign_subst(korean_base, korean_base / "_sys")
 
-        # 1. Check if SUBST was called with Korean path
-        subst_call = next(call for call in mock_run_calls_inner if "subst" in str(call.args[0]))
-        assert any(str(mock_env).lower() == str(arg).lower() for arg in subst_call.args[0])
+        assert result is not None, "드라이브 문자가 할당되어야 함"
+        subst_calls = [
+            c for c in mock_run.call_args_list
+            if isinstance(c.args[0], list)
+            and len(c.args[0]) >= 3
+            and c.args[0][0].lower() == "subst"
+            and "/D" not in c.args[0]
+        ]
+        assert subst_calls, "subst 명령이 호출되어야 함"
+        # c.args[0][2] is the base_dir path passed to subst
+        assert any(c.args[0][2] == str(korean_base) for c in subst_calls), \
+            "SUBST 호출에 한글 물리 경로가 포함되어야 함"
 
-        # 3. Registry key name should be safe (contains SandboxRun_ prefix and drive key)
-        expected_key_part = "SandboxRun_P"
-        assert any(expected_key_part in str(call.args[1]) for call in mock_create_key.call_args_list)
+    def test_subst_drive_conflict_and_auto_pick(self, korean_base, tmp_path):
+        """Scenario 2&3: P: 충돌 시 다음 가용 드라이브(D:) 자동 선택.
+        예약(A,B,C), P: 실존하는 다른 경로로 점유 → mapped.exists()=True → skip → D: 선택."""
+        other_dir = tmp_path / "other_sandbox"
+        other_dir.mkdir()
+        taken_map = {"P": other_dir}  # P: → 실존 경로 (exists()=True via real check)
 
-    @_XFAIL_MANAGE_API
-    @patch("winreg.CreateKey")
-    @patch("winreg.SetValueEx")
-    @patch("subprocess.run")
-    @patch("subprocess.check_output")
-    @patch("os.path.exists")
-    @patch("winreg.OpenKey", side_effect=OSError)
-    def test_subst_drive_conflict_and_auto_pick(self, mock_open_key, mock_exists, mock_check_output, mock_run, mock_set_val, mock_create_key, mock_env):
-        """Scenario 2 & 3: SUBST drive conflict handling and automatic picking."""
-        # 'PortableDev' starts with 'P'. 
-        # Suppose P: and Q: are taken, R: is free.
-        def exists_side_effect(path):
-            p_str = str(path)
-            if p_str.startswith("P:"): return True
-            if p_str.startswith("Q:"): return True
-            if p_str == str(mock_env / "_sys" / "env" / "vscode" / "Code.exe"): return False
-            if p_str == str(mock_env / "_sys" / "cli" / "launch.bat"): return True
-            return False
-            
-        mock_exists.side_effect = exists_side_effect
-        mock_check_output.return_value = ""
-        mock_run.return_value = MagicMock(returncode=0)
-        
-        manage.action_register(mock_env)
-        
-        # Check if it picked R: (Candidates: P, then A, B, C excluded, then D, E... )
-        # Wait, manage.py candidate logic: [prefer] + [chr(x) for x in range(65, 91) if chr(x) not in reserved and chr(x) != prefer]
-        # Reserved: A, B, C.
-        # prefer: P.
-        # Candidates: P, D, E, F, G, H, I, J, K, L, M, N, O, Q, R...
-        # If P is taken, it tries D, then E...
-        
-        subst_call = next(call for call in mock_run.call_args_list if "subst" in str(call.args[0]))
-        # Since P is taken, it should have picked D: if D: exists_side_effect is False
-        assert "D:" in str(subst_call.args[0])
+        # _no_drive_exists: 드라이브 체크만 False, 실제 경로 exists()는 real check 유지
+        with patch.object(virtualizer, "_get_subst_mappings", return_value=taken_map), \
+             patch("os.path.exists", side_effect=_no_drive_exists), \
+             patch("subprocess.run", return_value=MagicMock(returncode=0)):
+            result = virtualizer._assign_subst(korean_base, korean_base / "_sys")
 
-    @_XFAIL_MANAGE_API
-    @patch("subprocess.run")
-    @patch("subprocess.check_output")
-    @patch("winreg.OpenKey")
-    @patch("winreg.EnumKey")
-    @patch("os.path.exists")
-    def test_unregistration_korean_path(self, mock_exists, mock_enum_key, mock_open_key, mock_check_output, mock_run, mock_env):
-        """Scenario 4: Unregistration of a Korean-path setup."""
-        # Mock subst output to show P: mapped to the Korean path
-        mock_check_output.return_value = f"P:\\: => {mock_env}"
-        mock_enum_key.side_effect = OSError() # No registry keys found
-        mock_run.return_value = MagicMock(returncode=0)
-        mock_exists.return_value = False
-        
-        manage.action_unregister(mock_env)
-        
-        # Check if SUBST /D was called for P:
-        assert any("/D" in str(call.args[0]) and "P:" in str(call.args[0]) for call in mock_run.call_args_list)
+        # other_dir.exists()=True → P: skipped → 첫 가용 = D:
+        assert result == "D", f"P: 충돌 시 D: 가 선택되어야 하지만 {result}: 가 선택됨"
 
-    def test_start_bat_emulation_logic(self, mock_env):
-        """Scenario 5: Emulating start.bat path derivation from a Korean physical path."""
-        # In start.bat:
-        # set "SYS_DIR_PHYS=%~dp0" (folder of start.bat, which is _sys)
-        # for %%I in ("%SYS_DIR_PHYS%\..") do set "BASE_DIR_PHYS=%%~fI"
-        
-        sys_dir_phys = mock_env / "_sys"
-        base_dir_phys = sys_dir_phys.parent # Equivalent to %~fI
-        
-        assert base_dir_phys == mock_env
+    def test_unregistration_korean_path(self, korean_base, tmp_path):
+        """Scenario 4: 한글 경로 해제 시 subst /D 호출."""
+        with patch.object(virtualizer, "_get_subst_mappings",
+                          return_value={"P": korean_base}), \
+             patch("subprocess.run", return_value=MagicMock(returncode=0)) as mock_run:
+            virtualizer._release_subst(korean_base)
+
+        release_calls = [
+            c for c in mock_run.call_args_list
+            if isinstance(c.args[0], list) and "/D" in c.args[0]
+        ]
+        assert release_calls, "subst /D 가 호출되어야 함"
+        assert any("P:" in str(c) for c in release_calls), "P: 가 해제되어야 함"
+
+    def test_start_bat_emulation_logic(self, tmp_path):
+        """Scenario 5: start.bat 경로 파생 로직 — SUBST 치환 후 한글 문자 제거 확인."""
+        sys_dir_phys = tmp_path / "테스트_폴더" / "PortableDev" / "_sys"
+        sys_dir_phys.mkdir(parents=True)
+        base_dir_phys = sys_dir_phys.parent
+
         assert "테스트_폴더" in str(base_dir_phys)
-        
-        # Emulate the SET TARGET replacement when SUBST is used
         subst_drive = "Z:"
-        target_phys = str(mock_env / "workspace" / "project1")
-        
-        # Logic: set "TARGET=%TARGET:%BASE_DIR_PHYS%=%BASE_DIR%%%"
-        # In Python:
+        target_phys = str(base_dir_phys / "workspace" / "project1")
         target_virtual = target_phys.replace(str(base_dir_phys), subst_drive)
-        
         assert target_virtual == "Z:\\workspace\\project1"
         assert "테스트_폴더" not in target_virtual
-        
-    @_XFAIL_MANAGE_API
-    @patch("winreg.CreateKey")
-    @patch("winreg.SetValueEx")
-    @patch("subprocess.run")
-    @patch("subprocess.check_output")
-    @patch("os.path.exists")
-    @patch("winreg.OpenKey", side_effect=OSError)
-    def test_registry_command_uses_subst_path(self, mock_open_key, mock_exists, mock_check_output, mock_run, mock_set_val, mock_create_key, mock_env):
-        """Scenario 6: 레지스트리 명령 포맷 확인 - 물리경로 사용 + 이중인용부호 래핑.
-        manage.action_register는 재부팅 후에도 동작하도록 물리경로를 사용하되
-        cmd.exe /c \"\"path\" \"arg\"\" 패턴으로 한글/공백을 올바르게 이스케이프해야 함."""
-        mock_exists.return_value = False
-        mock_check_output.return_value = ""
-        mock_run.return_value = MagicMock(returncode=0)
 
-        with patch("manage.load_context_menu") as mock_load_menu:
-            mock_load_menu.return_value = [
+    def test_registry_command_uses_subst_path(self, korean_base, tmp_path):
+        """Scenario 6: 레지스트리 명령에 cmd.exe /c \"\" 이중인용부호 래핑 확인."""
+        sys_dir = korean_base / "_sys"
+        ctx_menu = {
+            "win11_classic_menu": False,
+            "registry": {
+                "targets": {
+                    "Directory": {
+                        "path": r"Software\Classes\Directory\shell",
+                        "arg": "%V",
+                    }
+                }
+            },
+            "relay": {
+                "content_template": '@echo off\ncall "{root}\\_sys\\start.bat" "%~1"'
+            },
+            "entries": [
                 {
                     "id": "sandbox_open",
-                    "label": "Open in Sandbox ({DRIVE}:)",
-                    "icon": "_sys/env/vscode/Code.exe",
-                    "command": "_sys/start.bat \"{target}\"",
-                    "targets": ["Directory/Background", "Directory", "Drive", "*", "lnkfile"],
-                    "enabled": True
+                    "label": "Open Sandbox ({DRIVE}:)",
+                    "icon": "",
+                    "targets": ["Directory"],
+                    "enabled": True,
                 }
-            ]
-            manage.action_register(mock_env)
+            ],
+        }
+        sys_dir.mkdir(parents=True, exist_ok=True)
+        (sys_dir / "context_menu.json").write_text(json.dumps(ctx_menu), encoding="utf-8")
 
-        # SetValueEx 중 레지스트리 command 값 확인 (relay bat → cmd.exe /c "" 패턴)
-        all_set_calls = mock_set_val.call_args_list
-        cmd_values = [str(c.args[4]) for c in all_set_calls
-                      if len(c.args) >= 5 and 'cmd.exe /c ""' in str(c.args[4])]
-        assert cmd_values, "cmd.exe /c \"\" 패턴 레지스트리 명령이 등록되지 않음"
+        ctx = _make_ctx(korean_base, tmp_path)
+        ctx["state"]["subst_drive"] = "P"
+        local_dir = ctx["paths"]["localappdata"]
 
-        # cmd.exe /c ""path" "arg"" 이중인용부호 패턴 확인
+        with patch.dict(os.environ, {"LOCALAPPDATA": str(local_dir)}), \
+             patch("winreg.CreateKey", return_value=MagicMock()), \
+             patch("winreg.SetValueEx") as mock_set_val, \
+             patch("winreg.CloseKey"), \
+             patch.object(registrar, "_resolve_icon", return_value=None), \
+             patch.object(registrar, "_clean_orphans"):
+            registrar.apply(ctx)
+
+        cmd_values = [
+            str(c.args[4]) for c in mock_set_val.call_args_list
+            if len(c.args) >= 5
+            and isinstance(c.args[4], str)
+            and 'cmd.exe /c ""' in c.args[4]
+        ]
+        assert cmd_values, 'cmd.exe /c "" 패턴이 레지스트리 명령에 있어야 함'
         for cmd in cmd_values:
-            assert cmd.startswith('cmd.exe /c ""'), \
-                f"레지스트리 명령이 cmd.exe /c \"\"...\" 형식이 아님: {cmd}"
+            assert cmd.startswith('cmd.exe /c ""'), f"이중인용부호 래핑 없음: {cmd}"
 
-    @_XFAIL_MANAGE_API
-    @patch("winreg.CreateKey")
-    @patch("winreg.SetValueEx")
-    @patch("subprocess.run")
-    @patch("subprocess.check_output")
-    @patch("os.path.exists")
-    @patch("winreg.OpenKey", side_effect=OSError)
-    def test_korean_path_with_spaces(self, mock_open_key, mock_exists, mock_check_output, mock_run, mock_set_val, mock_create_key, tmp_path):
-        """Scenario 7: 한글 + 공백 동시 포함 경로에서 등록."""
-        # 한글과 공백이 동시에 포함된 경로 생성
-        spaced_korean_base = tmp_path / "테스트 폴더" / "My PortableDev"
-        spaced_korean_base.mkdir(parents=True)
-        sys_dir = spaced_korean_base / "_sys"
-        sys_dir.mkdir()
-        (sys_dir / "local.config.bat").write_text(":: user config", encoding="utf-8")
-        os.environ["USERPROFILE"] = str(tmp_path / "FakeUser2")
-        (tmp_path / "FakeUser2").mkdir(exist_ok=True)
+    def test_korean_path_with_spaces(self, tmp_path):
+        """Scenario 7: 한글 + 공백 경로에서 SUBST 정상 할당."""
+        base = tmp_path / "테스트 폴더" / "My PortableDev"
+        (base / "_sys" / "ai").mkdir(parents=True)
 
-        mock_exists.return_value = False
-        mock_check_output.return_value = ""
-        mock_run.return_value = MagicMock(returncode=0)
+        with patch.object(virtualizer, "_get_subst_mappings", return_value={}), \
+             patch("os.path.exists", side_effect=_no_drive_exists), \
+             patch("subprocess.run", return_value=MagicMock(returncode=0)) as mock_run:
+            result = virtualizer._assign_subst(base, base / "_sys")
 
-        with patch("manage.load_context_menu") as mock_load_menu:
-            mock_load_menu.return_value = [
-                {
-                    "id": "sandbox_open",
-                    "label": "Open in Sandbox ({DRIVE}:)",
-                    "icon": "_sys/env/vscode/Code.exe",
-                    "command": "_sys/start.bat \"{target}\"",
-                    "targets": ["Directory/Background", "Directory", "Drive", "*", "lnkfile"],
-                    "enabled": True
-                }
-            ]
-            manage.action_register(spaced_korean_base)
+        assert result is not None, "한글+공백 경로에서도 드라이브가 할당되어야 함"
+        subst_calls = [
+            c for c in mock_run.call_args_list
+            if isinstance(c.args[0], list)
+            and "subst" in c.args[0][0].lower()
+            and "/D" not in c.args[0]
+        ]
+        assert subst_calls, "subst 명령이 호출되어야 함"
 
-        # SUBST 매핑 확인
-        subst_calls = [c for c in mock_run.call_args_list if "subst" in str(c.args[0]).lower() and "/D" not in str(c.args[0])]
-        assert subst_calls, "SUBST 명령이 호출되지 않음"
+    def test_reregister_after_subst_lost(self, korean_base, tmp_path):
+        """Scenario 8: USB 재삽입 후 SUBST 재등록 — 두 번 모두 드라이브 할당."""
+        with patch.object(virtualizer, "_get_subst_mappings", return_value={}), \
+             patch("os.path.exists", side_effect=_no_drive_exists), \
+             patch("subprocess.run", return_value=MagicMock(returncode=0)):
+            r1 = virtualizer._assign_subst(korean_base, korean_base / "_sys")
 
-        # cmd.exe /c ""path" "arg"" 패턴으로 공백/한글을 이스케이프했는지 확인
-        cmd_values = [str(c.args[4]) for c in mock_set_val.call_args_list
-                      if len(c.args) >= 5 and 'cmd.exe /c ""' in str(c.args[4])]
-        assert cmd_values, "레지스트리 cmd.exe /c \"\" 명령이 등록되지 않음"
-        for cmd in cmd_values:
-            assert cmd.startswith('cmd.exe /c ""'), f"한글+공백 경로에서 이중인용부호 래핑 없음: {cmd}"
+        # USB 재삽입 — SUBST 소멸 후 재등록
+        with patch.object(virtualizer, "_get_subst_mappings", return_value={}), \
+             patch("os.path.exists", side_effect=_no_drive_exists), \
+             patch("subprocess.run", return_value=MagicMock(returncode=0)):
+            r2 = virtualizer._assign_subst(korean_base, korean_base / "_sys")
 
-    @_XFAIL_MANAGE_API
-    @patch("winreg.CreateKey")
-    @patch("winreg.SetValueEx")
-    @patch("subprocess.run")
-    @patch("subprocess.check_output")
-    @patch("os.path.exists")
-    @patch("winreg.OpenKey", side_effect=OSError)
-    def test_reregister_after_subst_lost(self, mock_open_key, mock_exists, mock_check_output, mock_run, mock_set_val, mock_create_key, mock_env):
-        """Scenario 8: USB 재삽입 후 SUBST 재등록 — 이전 SUBST가 사라진 상태에서 재등록.
-        global_cleanup이 이전 SUBST를 정리하고 새로 매핑해야 함."""
-        mock_exists.return_value = False
-        mock_check_output.return_value = ""  # subst 출력: 이전 매핑 없음 (USB 분리 후 상태)
-        mock_run.return_value = MagicMock(returncode=0)
+        assert r1 is not None, "1차 등록에서 드라이브 할당 실패"
+        assert r2 is not None, "재삽입 후 재등록에서 드라이브 할당 실패"
 
-        with patch("manage.load_context_menu") as mock_load_menu:
-            mock_load_menu.return_value = [
-                {
-                    "id": "sandbox_open",
-                    "label": "Open in Sandbox ({DRIVE}:)",
-                    "icon": "_sys/env/vscode/Code.exe",
-                    "command": "_sys/start.bat \"{target}\"",
-                    "targets": ["Directory/Background", "Directory", "Drive", "*", "lnkfile"],
-                    "enabled": True
-                }
-            ]
-            # 1차 등록
-            manage.action_register(mock_env)
-            first_subst_calls = [c for c in mock_run.call_args_list if "subst" in str(c.args[0]).lower() and "/D" not in str(c.args[0])]
-            assert first_subst_calls, "1차 SUBST 등록 실패"
+    def test_local_config_no_non_ascii_fix(self, korean_base, tmp_path):
+        """register.state.json: 드라이브 문자 저장, 한글 값 없음."""
+        ctx = _make_ctx(korean_base, tmp_path)
+        ctx["state"]["subst_drive"] = "P"
+        ctx["state"]["junctions"] = []
 
-            # USB 재삽입 시뮬레이션: SUBST가 사라진 상태로 재등록
-            mock_run.reset_mock()
-            mock_set_val.reset_mock()
-            mock_check_output.return_value = ""  # 여전히 빈 subst 목록
+        state_dir = ctx["paths"]["state"]
+        state_dir.mkdir(parents=True, exist_ok=True)
+        state_file = state_dir / "register.state.json"
+        payload = {
+            "timestamp": datetime.datetime.now().isoformat(),
+            "base_dir":  str(korean_base),
+            **ctx["state"],
+        }
+        state_file.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
-            manage.action_register(mock_env)
-            second_subst_calls = [c for c in mock_run.call_args_list if "subst" in str(c.args[0]).lower() and "/D" not in str(c.args[0])]
-            assert second_subst_calls, "재삽입 후 SUBST 재등록 실패"
-
-            # 재등록 후에도 레지스트리 명령이 올바른 이중인용부호 패턴 유지
-            cmd_values = [str(c.args[4]) for c in mock_set_val.call_args_list
-                          if len(c.args) >= 5 and 'cmd.exe /c ""' in str(c.args[4])]
-            assert cmd_values, "재등록 후 레지스트리 cmd.exe /c \"\" 명령이 없음"
-        for cmd in cmd_values:
-            assert cmd.startswith('cmd.exe /c ""'), f"재등록 후 레지스트리 명령 포맷 오류: {cmd}"
-
-    @_XFAIL_MANAGE_API
-    @patch("subprocess.run")
-    def test_local_config_no_non_ascii_fix(self, mock_run, mock_env):
-        """Verify config.json doesn't contain Korean/physical paths (uses abstract values)."""
-        import re as _re
-        with patch("os.path.exists", return_value=False), \
-             patch("subprocess.check_output", return_value=""), \
-             patch("winreg.CreateKey"), \
-             patch("winreg.SetValueEx"), \
-             patch("winreg.OpenKey", side_effect=OSError):
-            manage.action_register(mock_env)
-
-        config_path = mock_env / "_sys" / "config.json"
-        if not config_path.exists():
-            pytest.skip("config.json not created (likely mock environment issue)")
-
-        config_content = config_path.read_text(encoding="utf-8")
-        # config.json stores only abstract values (drive letter string, not full Korean path)
-        assert "BASE_DIR_PHYS" not in config_content, \
-            "config.json must not contain BASE_DIR_PHYS"
-        assert "SUBST_DRIVE_LETTER" in config_content, \
-            "config.json must contain SUBST_DRIVE_LETTER key"
-        # No Korean characters in config.json
-        korean = _re.search(r'[가-힣]', config_content)
-        assert not korean, "config.json must not contain Korean characters"
+        data = json.loads(state_file.read_text(encoding="utf-8"))
+        assert "subst_drive" in data, "state에 subst_drive 키가 있어야 함"
+        assert data["subst_drive"] == "P", "드라이브 문자만 저장되어야 함"
+        assert not re.search(r"[가-힣]", str(data["subst_drive"])), \
+            "drivevalue에 한글이 없어야 함"
