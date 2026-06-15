@@ -445,3 +445,58 @@
 - Affected Artifacts:
   - P:\_sys\docs\sys-restructure-plan.md (DEBATE_FINAL_R4 → DEBATE_FINAL_R5)
   - P:\_sys\docs\DEBATE_LOG.md (this file)
+
+---
+
+## [2026-06-15] sys-restructure-plan-R6-transaction-closure
+
+- Proposal: R5 결과 재귀적 끝장교차검토 R6 — 트랜잭션 완결 + invariant coverage matrix
+- Participants: cc (coordinator), cx (7-criteria R6 audit — full response), gc (응답 단절 — cx로 대체)
+- Decision: DEBATE_FINAL_R6 — CRITICAL×2/HIGH×8/MEDIUM×5 발견, 전부 sys-restructure-plan.md R6에 반영
+
+### CRITICAL 발견 → 즉시 해소
+
+| 발견 | 해소 |
+|------|------|
+| apply → junction created → registry write FAIL: 미복구 상태 (MECE I-08 위반) | §3-7e: operation journal (planned→fs_created→registry_committed→audit_committed) + virtualizer.py recover 명령 |
+| prune → physical delete → registry write FAIL: managed_orphan_already_absent 상태 미정의 | §3-7e: prune 역복구 로직 명시 + audit entry |
+
+### HIGH 발견 → 설계 보완
+
+| 발견 | 해소 |
+|------|------|
+| SHA256 manifest step 8c (너무 이름 — build 전) → 토큰 무효화 위험 | Phase 0 step 8c 삭제 → step 11b (Validate PASS 직후)로 이동 |
+| pathmap.lock schema 없음 → stale-lock 탐지/복구 불가 | §3-7e: lock schema (pid/host/started_at/command/op_id) + 30분 TTL auto-release |
+| Day-1 bootstrap sequence 미정의 | §3-7e: 8단계 bootstrap 시퀀스 추가 |
+| path-map.json vs managed-links.json 권위 충돌 규칙 없음 | §3-7e: 권위 행렬 (desired/actual/orphan/missing 4가지 케이스) |
+| entry_id 중복 → apply 시 충돌 미처리 | §3-7e: preflight에서 entry_id/link_path/exception_path 중복 → ABORT |
+| T2 sync-glue FAIL 시 hub.py 동작 미정의 | §3-7g: --strict(abort) / 기본(known-good hash 비교) 정책 |
+| auto-repair vs T1/T2 sync-glue 경계 모호 | §3-7g: auto-repair 예외 조건 3가지 명시 (MUST-NOT 충돌 해소) |
+| rollback이 junction 내부 재귀 삭제할 수 있음 | §3-7e prune rollback: reparse-aware delete 명시 |
+
+### MEDIUM 발견 → 문서화
+
+- quarantine/ terminal state → 상태 전이 추가 (§3-7f: quarantine-index.jsonl + 4가지 outbound transition)
+- pathmap-audit.jsonl 위치 분류 모호 (state vs log) → §11-2/§11-7에 "stateful journal" 명시
+- data/inbox/ 소비자/보존 정책 미정 → §11-1 "human classification buffer only" 명시
+- §3-6 virtualizer.py 설명 구식 → pathmap 전체 명령 목록으로 업데이트
+- MECE 불변식 coverage matrix 없음 → §11-8 I-01~I-10/N-01~N-08 전체 coverage 표 추가
+
+### verify-all 확장
+
+- V16: Bootstrap 공백 상태 체크 (managed-links.json/lock/journal)
+- V17: Audit 무결성 + mutation operation_id 체크
+
+### 핵심 아키텍처 결정 (LOCKED — R6)
+
+1. **Operation Journal**: apply/prune은 4-phase commit (planned→fs_created→registry_committed→audit_committed); crash recovery 의무
+2. **SHA256 manifest timing**: Validate PASS 직후만 유효 (step 11b) — build 중 생성 금지
+3. **pathmap.lock**: pid+host+started_at 스키마; 30분 TTL stale-lock auto-release
+4. **auto-repair 경계**: Read-Only stub 재생성만 허용; junction/registry/quarantine은 항상 explicit confirm
+5. **불변식 coverage**: I-01~I-10 모두 이행, N-01~N-08 중 N-02/N-03/N-04/N-08은 N/A (발생 불가)
+
+- Risk Class: MEDIUM (CRITICAL 2개 해소 완료; 남은 위험 = 실행 시 운영 실수)
+- Promoted To Constitutional Layer: NO (구현 계획 문서)
+- Affected Artifacts:
+  - P:\_sys\docs\sys-restructure-plan.md (DEBATE_FINAL_R5 → DEBATE_FINAL_R6)
+  - P:\_sys\docs\DEBATE_LOG.md (this file)
