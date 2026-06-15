@@ -389,3 +389,59 @@
 - Affected Artifacts:
   - P:\_sys\docs\sys-restructure-plan.md (DESIGN_FINAL → DEBATE_FINAL)
   - P:\_sys\docs\DEBATE_LOG.md (this file)
+
+---
+
+## [2026-06-15] sys-restructure-plan-R5-MECE-integration
+
+- Proposal: MECE_Directory_Architecture_Specification_v2.md 전면 통합 — R5 끝장교차검토 (cc+gc+cx, 5-Lens × 7-Criteria)
+- Participants: cc (coordinator), gc (5-lens 끝장검토), cx (7-criteria independent audit — ag 비활성화)
+- Decision: DEBATE_FINAL_R5 — CRITICAL×4/HIGH×12/MEDIUM×9/LOW×4 발견, 전부 sys-restructure-plan.md R5에 반영
+
+### CRITICAL 발견 → 즉시 해소
+
+| 발견 | 심각도 | 출처 | 해소 |
+|------|--------|------|------|
+| managed-links.json 미존재 (MECE I-03 위반) | CRITICAL | gc+cx | §3-7e에 spec 추가; §4-4 신규 생성; virtualizer.py 시맨틱 내재화 |
+| Ghost Junction — rollback 시 junction 미재등록 | CRITICAL | cc | §3-7e ghost junction 방지; Phase 0 step 5a rollback.ps1 명시; 리스크 CRITICAL 등록 |
+| infra.json desired/actual state 혼용 (MECE CVD 위반) | CRITICAL | gc+cx | infra.json → 매크로루트만; path-map.json(desired) + managed-links.json(actual) 3-way 분리 |
+| IPC 피드백 루프 미완결 (성공 경로만) | CRITICAL | cx | §3-7f F1~F4 실패 모드 + quarantine/ + max_age_hours 완비 |
+
+### HIGH 발견 → 설계 보완
+
+| 발견 | 출처 | 해소 |
+|------|------|------|
+| pathmap.lock 없음 (MECE I-04 위반) | gc+cx | §3-7e + §4-4 + Phase 0 step 8b 추가 |
+| pathmap-audit.jsonl 없음 (MECE I-05 위반) | gc+cx | §3-7e + §4-4 추가 |
+| 글루 sync 피드백 루프 파손 (push-only) | gc+cx | §3-7g T1~T4 트리거 + Read-Only stub + glue_state hash drift |
+| virtualizer.py pathmap 시맨틱 미내재화 | gc+cx | §3-7e virtualizer.py 의무 시맨틱 명시 + §5-1 업데이트 |
+| hub.py T1 sync-glue 트리거 없음 | cx | §3-7g T1 eager 트리거 + §5-1 업데이트 |
+| SHA256 manifest (Copy-Verify-Delete 토큰) 없음 | gc | Phase 0 step 8c manifest 생성 추가 |
+| peer.json.ipc vs infra.json ipc_paths 이중 권위 | gc+cx | infra.json ipc_paths 완전 제거 → peer.json.ipc 단일 권위 |
+| V4/V8/V15 FAIL 시 repair 경로 없음 | cx | virtualizer.py prune/repair 시맨틱으로 대응 연결 |
+| data/inbox/ 없음 (MECE [00_Inbox] 없음) | gc+cx | §3-7e + §4-4 추가 |
+| P:\ 하드코딩 portability 위험 | gc | 리스크 MEDIUM 등록 + V12 절대경로 퍼지 강화 + path-map.json AUTO_DETECT |
+
+### MEDIUM/LOW 발견 → 문서화
+
+- Cloud Sync 위험 (MECE N-06) → §3-7e + 리스크 MEDIUM 등록
+- session_state.json 분류 애매함 → §11-1 결정 (현재 위치 유지, R6 재검토)
+- log 이중 위치 혼용 → §11-2 명확 분류 (raw→data/logs/, curated→knowledge/logs/)
+- runtime-directives.jsonl TTL 성격 → §11-3 data/state/로 확정
+- 아웃바운드 정션 Physical/Logical 구분 → §11-4 명시
+- managed-links.json primary key 드라이브 독립 → §11-5 EXTERNAL 프리픽스 결정
+- infra.json vs path-map.json 최종 경계 → §11-6 확정
+
+### 핵심 아키텍처 결정 (LOCKED — R5)
+
+1. **3-way 설정 분리**: `infra.json`(매크로루트) + `path-map.json`(desired state) + `managed-links.json`(actual state) — SSOT 분리 완결
+2. **virtualizer.py pathmap 내재화**: preflight→plan→apply(lock+audit)→status→prune — registry 없는 "생성만 하는" 도구 금지
+3. **IPC 실패 종단 상태**: quarantine/ + max_age_hours — "성공 경로만" 설계 탈피
+4. **글루 드리프트 피드백 루프**: T1(eager)/T2(lazy)/T3(post-restructure)/T4(manual) + Read-Only stub
+5. **§11 엣지케이스 섹션**: MECE 분류 불확실 항목은 결정을 여기에 명시 — 분류 미정 방치 금지
+
+- Risk Class: HIGH_RISK (Ghost Junction CRITICAL 새로 발견 — rollback.ps1 배포 전 필수 해소)
+- Promoted To Constitutional Layer: NO (구현 계획 문서)
+- Affected Artifacts:
+  - P:\_sys\docs\sys-restructure-plan.md (DEBATE_FINAL_R4 → DEBATE_FINAL_R5)
+  - P:\_sys\docs\DEBATE_LOG.md (this file)
