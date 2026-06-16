@@ -1,17 +1,17 @@
-# Porta-Flow: The BIVCA-Powered Multi-AI Dev Workspace
+# Engram: The BIVCA-Powered Multi-AI Dev Workspace
 
 [![Python 3.14+](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/downloads/)
 [![Windows](https://img.shields.io/badge/os-windows-green.svg)](https://microsoft.com/windows)
 [![Tests: 62 Pass](https://img.shields.io/badge/tests-62%20pass-success.svg)](_sys/tests)
 [![Architecture: BIVCA](https://img.shields.io/badge/architecture-BIVCA_v1.1-purple.svg)](_sys/docs-v2)
 
-A Windows-first portable dev workspace where Claude (`cc`), Gemini (`gc`), Codex (`cx`), and Antigravity (`ag`) collaborate as **equal peers** alongside human developers. Built on the **Brain-Inspired Virtuous Cycle Architecture (BIVCA)**, Porta-Flow ensures a MECE-compliant, self-healing, and self-evolving ecosystem without context blowout.
+A Windows-first portable dev workspace where Claude (`cc`), Gemini (`gc`), Codex (`cx`), and Antigravity (`ag`) collaborate as **equal peers** alongside human developers. Built on the **Brain-Inspired Virtuous Cycle Architecture (BIVCA)**, Engram ensures a MECE-compliant, self-healing, and self-evolving ecosystem without context blowout.
 
 ---
 
 ## 🧠 BIVCA: The Brain-Inspired Virtuous Cycle Architecture
 
-Porta-Flow is designed to mimic human cognitive processes, ensuring zero-token waste and absolute traceability.
+Engram is designed to mimic human cognitive processes, ensuring zero-token waste and absolute traceability.
 
 *   **[AMYGDALA] Reactive Alerts**: Fast, TTL-based threat detection (`runtime-alerts.jsonl`). Triggers Tier-0 blocking alerts for severe anomalies.
 *   **[HIPPOCAMPUS] Learning & Forgetting**: Captures **Zero-Token Shorthand** insights (`[LEARN: ...]`). Lessons decay over time (-0.05/day) or get promoted (weight > 0.8) to prevent context flooding.
@@ -23,7 +23,7 @@ Porta-Flow is designed to mimic human cognitive processes, ensuring zero-token w
 
 ## 🏗 Modular, JSON-Driven, "No Code" Design
 
-Porta-Flow embraces a **Composable, General-Specific MECE Structure**.
+Engram embraces a **Composable, General-Specific MECE Structure**.
 
 *   **Config-Driven**: Hardcoded values (caps, TTLs, weights) are stripped from code and managed entirely via `_sys/ai/bivca_config.json` and other `config/` registries.
 *   **PARA Mapped**: 

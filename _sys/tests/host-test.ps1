@@ -1,4 +1,4 @@
-# host-test.ps1 — Porta-Flow Host-Side Integration Tests
+# host-test.ps1 — Engram Host-Side Integration Tests
 # Tests Claude Code settings, statusline, VS Code integration, npm config.
 # These tests are HOST-DEPENDENT and cannot run inside WSB.
 #
@@ -59,7 +59,7 @@ function T-Content { param([string]$label, [string]$path, [string]$needle)
 # ----------------------------------------------------------------
 log ""
 log "================================================================="
-log "  Porta-Flow Host-Side Integration Tests"
+log "  Engram Host-Side Integration Tests"
 log "  BaseDir: $BaseDir"
 log "================================================================="
 

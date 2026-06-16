@@ -1,5 +1,5 @@
 # ================================================================
-# integration-test.ps1  -  Porta-Flow Full Integration Test Suite
+# integration-test.ps1  -  Engram Full Integration Test Suite
 #
 # Coverage:
 #   A. Zero-base component completeness
@@ -58,7 +58,7 @@ function H($group) {
 # ── Header ──────────────────────────────────────────────────────
 $header = @"
 ================================================================
-  Porta-Flow Integration Test Report
+  Engram Integration Test Report
   Base  : $BASE
   Run   : $ts
 ================================================================
