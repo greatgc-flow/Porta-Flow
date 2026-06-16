@@ -137,6 +137,47 @@ _sys/gemini/config.json
 _sys/docs/Remains
 
 # =================================================================
+# 5b. Codex runtime data in config/ (untracked extras)
+# =================================================================
+_sys/codex/config/.personality_migration
+_sys/codex/config/auth.json
+_sys/codex/config/cache/
+_sys/codex/config/cap_sid
+_sys/codex/config/config.toml
+_sys/codex/config/history.jsonl
+_sys/codex/config/installation_id
+_sys/codex/config/models_cache.json
+_sys/codex/config/plugins/
+_sys/codex/config/skills/
+_sys/codex/config/version.json
+
+# =================================================================
+# 5c. Root Swap — Build Staging & New-Structure Runtime Ignores
+# =================================================================
+# _sys_new/ is the parallel build staging area (never committed directly)
+_sys_new/
+
+# New peer IPC directories (after cut-over: _sys/peers/*/ipc/)
+_sys/peers/*/ipc/inbox/
+_sys/peers/*/ipc/history/
+_sys/peers/*/ipc/quarantine/
+
+# New peer runtime config/project (after cut-over — replaces _sys/*/config/ patterns)
+_sys/peers/cc/runtime/config/**
+_sys/peers/gc/runtime/config/**
+_sys/peers/cx/runtime/config/**
+_sys/peers/ag/runtime/config/**
+!_sys/peers/ag/runtime/config/bin/agentapi.bat
+_sys/peers/*/runtime/project/settings.local.json
+
+# pathmap state (lock, journal, manifest)
+_sys/data/state/pathmap/pathmap.lock
+_sys/data/state/pathmap/op-journal.jsonl
+_sys/data/state/pathmap/managed-links.json.tmp
+_sys/data/state/pathmap/manifest.sha256
+_sys/data/inbox/
+
+# =================================================================
 # 6. Test Environments & Results
 # =================================================================
 _sys/tests/results/
