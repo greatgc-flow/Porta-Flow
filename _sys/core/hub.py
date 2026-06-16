@@ -213,7 +213,7 @@ def _validate_state(state: dict) -> None:
         if not isinstance(leadership, dict):
             raise ValueError("state.leadership must be an object")
         status = leadership.get("status")
-        if status is not None and status not in {"ACTIVE", "VACANT", "YIELDED"}:
+        if status is not None and status not in {"ACTIVE", "PENDING", "VACANT", "YIELDED"}:
             raise ValueError("state.leadership.status is invalid")
     assignments = state.get("role_assignments")
     if assignments is not None:
@@ -224,9 +224,40 @@ def _validate_state(state: dict) -> None:
                 raise ValueError("state.role_assignments entries must include peer strings")
 
 
+def _write_json_atomic(path: Path, data: dict) -> None:
+    """Atomic write using a temporary file and os.replace."""
+    temp_path = path.with_suffix(path.suffix + ".tmp")
+    try:
+        temp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        # os.replace is atomic on both POSIX and Windows (replaces existing)
+        os.replace(str(temp_path), str(path))
+    except Exception as e:
+        if temp_path.exists():
+            try: temp_path.unlink()
+            except: pass
+        raise e
+
+
+def _journal_op(ai_root: Path, op_type: str, status: str, metadata: dict) -> None:
+    """Record an operation in the Recovery Journal (.ai/operations.jsonl)."""
+    entry = {
+        "ts": _now(),
+        "op_id": _short_id("op-"),
+        "op_type": op_type,
+        "status": status,
+        "metadata": metadata
+    }
+    _append_jsonl(ai_root / "operations.jsonl", entry)
+
+
+def _write_json(path: Path, data: dict) -> None:
+    """Legacy helper — delegates to atomic write for safety."""
+    _write_json_atomic(path, data)
+
+
 def _write_state(ai_root: Path, state: dict) -> None:
     _validate_state(state)
-    _write_json(ai_root / "state.json", state)
+    _write_json_atomic(ai_root / "state.json", state)
 
 
 def _validate_task_registry(data: dict) -> None:
@@ -249,17 +280,13 @@ def _validate_task_registry(data: dict) -> None:
 
 def _write_task_registry(ai_root: Path, data: dict) -> None:
     _validate_task_registry(data)
-    _write_json(_task_registry_path(ai_root), data)
+    _write_json_atomic(_task_registry_path(ai_root), data)
 
 
 def _append_jsonl(path: Path, item: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(item, ensure_ascii=False) + "\n")
-
-
-def _write_json(path: Path, data: dict) -> None:
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _now() -> str:
@@ -459,23 +486,48 @@ def _render_handoff(sections: dict) -> str:
 
 
 def _read_handoff(session_dir: Path) -> dict:
-    path = session_dir / "handoff.md"
-    if not path.exists():
-        return {s: [] for s in _HANDOFF_SECTIONS}
-    return _parse_handoff(path.read_text(encoding="utf-8"))
+    json_path = session_dir / "handoff.json"
+    md_path = session_dir / "handoff.md"
+    
+    # 1. JSON (Typed Source) 우선
+    if json_path.exists():
+        try:
+            data = json.loads(json_path.read_text(encoding="utf-8"))
+            return data.get("sections", {s: [] for s in _HANDOFF_SECTIONS})
+        except json.JSONDecodeError:
+            pass
+            
+    # 2. Markdown Fallback
+    if md_path.exists():
+        return _parse_handoff(md_path.read_text(encoding="utf-8"))
+        
+    return {s: [] for s in _HANDOFF_SECTIONS}
 
 
 def _write_handoff(session_dir: Path, sections: dict) -> None:
+    # Trim sections
     sections["RECENT_COMPLETED"] = sections.get("RECENT_COMPLETED", [])[-HANDOFF_MAX_COMPLETED:]
     sections["PENDING_ISSUES"]   = sections.get("PENDING_ISSUES", [])[-HANDOFF_MAX_ISSUES:]
     sections["KEY_DECISIONS"]    = sections.get("KEY_DECISIONS", [])[-HANDOFF_MAX_DECISIONS:]
     sections["CONSENSUS_HISTORY"] = sections.get("CONSENSUS_HISTORY", [])[-HANDOFF_MAX_CONSENSUS:]
     sections["ACTIVE_THREADS"]    = sections.get("ACTIVE_THREADS", [])[-HANDOFF_MAX_THREADS:]
+    
     text = _render_handoff(sections)
     while len(text) > HANDOFF_MAX_CHARS and sections["RECENT_COMPLETED"]:
         sections["RECENT_COMPLETED"].pop(0)
         text = _render_handoff(sections)
+        
+    # Dual Write
+    # A. Markdown (Human readable)
     (session_dir / "handoff.md").write_text(text, encoding="utf-8")
+    
+    # B. JSON (Machine readable sidecar)
+    json_data = {
+        "schema_version": 1,
+        "updated_at": _now(),
+        "sections": sections
+    }
+    _write_json_atomic(session_dir / "handoff.json", json_data)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1107,22 +1159,33 @@ def _parse_compact_ts(value: str | None) -> datetime | None:
     return None
 
 
-def _peer_effective_health(peer_id: str, stale_minutes: int | None = None) -> tuple[str, dict]:
+def _peer_effective_health(peer_id: str, stale_minutes: int | None = None, ai_root: Path | None = None) -> tuple[str, dict]:
     if stale_minutes is None:
         stale_minutes = int(_load_protocol_cfg().get("leader_election", {}).get("health_stale_minutes", 120) or 120)
     _, data = _read_peer_health(peer_id)
     status = data.get("context_health", {}).get("status", "UNKNOWN")
     checked_at = data.get("context_health", {}).get("checked_at")
     checked_dt = _parse_compact_ts(checked_at)
-    if checked_dt and (datetime.now() - checked_dt).total_seconds() > stale_minutes * 60:
-        status = "STALE"
+    
+    is_stale = checked_dt and (datetime.now() - checked_dt).total_seconds() > stale_minutes * 60
+    
+    if is_stale and status != "RED":
+        # Proactive Self-Healing: Auto-recover STALE peers
+        if ai_root:
+            print(f"[HUB:AUTO] Peer {peer_id} is STALE. Proactively recovering...", file=sys.stderr)
+            action_peer_recover(ai_root, peer_id, "proactive_auto_recover")
+            _, data = _read_peer_health(peer_id)
+            status = "GREEN"
+        else:
+            status = "STALE"
+            
     if data.get("availability", {}).get("quarantined"):
         status = "RED"
     return status, data
 
 
-def _healthy_peer(peer_id: str) -> bool:
-    status, data = _peer_effective_health(peer_id)
+def _healthy_peer(peer_id: str, ai_root: Path | None = None) -> bool:
+    status, data = _peer_effective_health(peer_id, ai_root=ai_root)
     return status not in {"RED", "STALE"} and data.get("availability", {}).get("gate_open") is not False
 
 
@@ -1277,6 +1340,13 @@ def action_peer_quarantine(ai_root: Path, peer_id: str, reason: str) -> None:
 
 
 def action_peer_recover(ai_root: Path, peer_id: str, reason: str) -> None:
+    if peer_id.lower() == "all":
+        peers = _load_peers()
+        peer_list = list((peers.get("peers") or peers).keys())
+        for p in peer_list:
+            action_peer_recover(ai_root, p, reason)
+        return
+
     _, data = _read_peer_health(peer_id)
     data.setdefault("context_health", {})["status"] = "GREEN"
     data["context_health"]["checked_at"] = datetime.now().strftime("%Y%m%dT%H%M%S")
@@ -1523,15 +1593,39 @@ def _session_fingerprint(health_peer: str, exe_name: str) -> str:
     """Compute a short fingerprint of the static peer session invocation flags.
     Excludes per-session dynamic values (e.g. --session-id <uuid> for gc) so the
     fingerprint is stable across calls and only changes when permission flags change."""
+    # Ensure only the base executable name is hashed to avoid path-based drift
+    base_exe = os.path.basename(exe_name)
+    
     if health_peer == "cx":
+        # Static permission flags for Codex
         static_flags = ["-s", "workspace-write", "--json", "--ignore-rules"]
     elif health_peer == "gc":
         # Exclude --session-id <uuid> (dynamic) — only stable permission flags
         static_flags = ["-p", "-", "-o", "text", "--approval-mode", "auto_edit", "--skip-trust"]
     else:
         static_flags = []
-    raw = exe_name + "|" + ",".join(static_flags)
+        
+    raw = base_exe + "|" + ",".join(static_flags)
     return hashlib.sha1(raw.encode()).hexdigest()[:8]
+
+
+def _classify_resume_failure(stderr: str) -> str:
+    """Classify resume failure as 'transient' (worth retrying) or 'permanent' (go fresh)."""
+    s = (stderr or "").lower()
+    if not s:
+        return "permanent"
+        
+    # Transient: connectivity, rate limits, infrastructure issues
+    transient_patterns = [
+        "timeout", "timed out", "rate limit", "quota", "503", "429", 
+        "connection refused", "network error", "unable to reach"
+    ]
+    if any(p in s for p in transient_patterns):
+        return "transient"
+        
+    # Permanent: session identity, auth, or structural issues
+    # "session not found", "expired", "invalid", etc.
+    return "permanent"
 
 
 def _build_session_cmd(health_peer: str, session_id: str | None, exe: str) -> tuple[list[str], bool, str | None]:
@@ -1761,44 +1855,53 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         # ── Session resume failure → fallback to fresh ─────────
         if proc.returncode != 0 and is_resume_attempt and scope_key:
             clean_err_r = _strip_ansi(_decode_output(raw_err))
-            print(f"[HUB:WARN] {to} session resume failed (exit={proc.returncode}), retrying fresh", file=sys.stderr)
-            _retire_session(health_peer, scope_key, "resume_failed", ai_root)
-            _lease_close(ai_root, to, proc.pid, "retry")
+            fail_type = _classify_resume_failure(clean_err_r)
+            
+            if fail_type == "permanent":
+                print(f"[HUB:WARN] {to} session resume failed (permanent: {fail_type}), retrying fresh", file=sys.stderr)
+                _retire_session(health_peer, scope_key, "resume_failed", ai_root)
+                _lease_close(ai_root, to, proc.pid, "retry")
 
-            fresh_args, _, gc_new_session_id = _build_session_cmd(health_peer, None, exe_name)
-            fresh_cmd = [exe] + fresh_args
-            proc = subprocess.Popen(fresh_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=process_env)
-            _lease_open(ai_root, to, proc.pid, lease_timeout_sec, ask_id=ask_id + "-r")
-            t1 = time.monotonic()
-            try:
-                raw_out, raw_err = proc.communicate(input=query.encode("utf-8"), timeout=timeout_sec if timeout_sec > 0 else None)
-            except subprocess.TimeoutExpired:
-                _kill_process_tree(proc)
-                raise
-            elapsed = int(time.monotonic() - t0)
-            raw_text = _strip_ansi(_decode_output(raw_out))
-            output = _extract_jsonl_text(raw_text, to, ai_root) if health_peer == "cx" else raw_text
-            is_resume_attempt = False
-            if proc.returncode == 0:
-                _record_ask_success(health_peer, elapsed, ai_root)
-                _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, True, None)
-                _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="success", latency_sec=elapsed) if ai_root else None
-                if use_session and scope_key:
-                    if health_peer == "cx":
-                        tid = _extract_jsonl_thread_id(raw_text)
-                        if tid:
-                            _set_active_session(health_peer, scope_key, tid, ask_id + "-r", ai_root, fingerprint=current_fp)
-                    elif health_peer == "gc" and gc_new_session_id:
-                        _set_active_session(health_peer, scope_key, gc_new_session_id, ask_id + "-r", ai_root, fingerprint=current_fp)
+                fresh_args, _, gc_new_session_id = _build_session_cmd(health_peer, None, exe_name)
+                fresh_cmd = [exe] + fresh_args
+                proc = subprocess.Popen(fresh_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=process_env)
+                _lease_open(ai_root, to, proc.pid, lease_timeout_sec, ask_id=ask_id + "-r")
+                t1 = time.monotonic()
+                try:
+                    raw_out, raw_err = proc.communicate(input=query.encode("utf-8"), timeout=timeout_sec if timeout_sec > 0 else None)
+                except subprocess.TimeoutExpired:
+                    _kill_process_tree(proc)
+                    raise
+                elapsed = int(time.monotonic() - t0)
+                raw_text = _strip_ansi(_decode_output(raw_out))
+                output = _extract_jsonl_text(raw_text, to, ai_root) if health_peer == "cx" else raw_text
+                is_resume_attempt = False
+                if proc.returncode == 0:
+                    _record_ask_success(health_peer, elapsed, ai_root)
+                    _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, True, None)
+                    _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="success", latency_sec=elapsed) if ai_root else None
+                    if use_session and scope_key:
+                        if health_peer == "cx":
+                            tid = _extract_jsonl_thread_id(raw_text)
+                            if tid:
+                                _set_active_session(health_peer, scope_key, tid, ask_id + "-r", ai_root, fingerprint=current_fp)
+                        elif health_peer == "gc" and gc_new_session_id:
+                            _set_active_session(health_peer, scope_key, gc_new_session_id, ask_id + "-r", ai_root, fingerprint=current_fp)
+                else:
+                    clean_err = _strip_ansi(_decode_output(raw_err))
+                    reason, extra = _classify_ask_failure(clean_err + "\n" + output)
+                    extra["session_recovered"] = False
+                    lease_status = "failed"
+                    _record_ask_failure(health_peer, reason, clean_err or output, elapsed, ai_root, extra)
+                    _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, False, reason)
+                    print(f"[HUB:ERROR] {to} exited {proc.returncode}\n{clean_err}", file=sys.stderr)
             else:
-                clean_err = _strip_ansi(_decode_output(raw_err))
-                reason, extra = _classify_ask_failure(clean_err + "\n" + output)
-                extra["session_recovered"] = False
-                lease_status = "failed"
-                _record_ask_failure(health_peer, reason, clean_err or output, elapsed, ai_root, extra)
+                # Transient failure: do not retire session, just report error and exit
+                print(f"[HUB:WARN] {to} session resume failed (transient: {fail_type}), keeping session for retry", file=sys.stderr)
+                reason, extra = _classify_ask_failure(clean_err_r + "\n" + output)
+                _record_ask_failure(health_peer, reason, clean_err_r, elapsed, ai_root, extra)
                 _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, False, reason)
-                print(f"[HUB:ERROR] {to} exited {proc.returncode}\n{clean_err}", file=sys.stderr)
-                sys.exit(1)
+                sys.exit(proc.returncode)
 
         elif proc.returncode != 0:
             clean_err = _strip_ansi(_decode_output(raw_err))
@@ -1971,7 +2074,7 @@ def action_ask_coordinator(ai_root: Path, query: str, query_file: str | None, ti
     coordinator = state.get("active_coordinator") or state.get("leader")
     if not coordinator:
         coordinator = _load_orchestration().get("consensus", {}).get("default_proposer", "cc")
-    if not _healthy_peer(coordinator):
+    if not _healthy_peer(coordinator, ai_root=ai_root):
         print(f"[HUB:ERROR] active coordinator {coordinator} is not healthy", file=sys.stderr)
         sys.exit(2)
     if "ask-coordinator" in query_text.lower():
@@ -2034,7 +2137,29 @@ def action_consensus_vote(ai_root: Path, round_id: str, voter: str, vote_val: st
             _log_p2p("DECISION", f"ID={round_id} Status={data['status'].upper()} Outcome={data['outcome']}", from_node="SYSTEM")
             print(f"[HUB] DECISION {round_id} {data['status'].upper()} | {data['outcome']}")
             _append_consensus_history(ai_root, round_id, data["subject"], data["status"].upper())
+            
+            if data["status"] == "finalized":
+                _emit_decision_capsule(ai_root, data)
         else: _write_json(rpath, data)
+
+
+def _emit_decision_capsule(ai_root: Path, data: dict) -> None:
+    """Emit a machine-readable Decision Capsule (.capsule.json) for DocsSyncer."""
+    round_id = data["round_id"]
+    capsule = {
+        "round_id": round_id,
+        "ts": _now(),
+        "status": "finalized",
+        "subject": data["subject"],
+        "proposed_by": data["proposed_by"],
+        # Defaults for the capsule schema (filled by DocsSyncer or manually in future)
+        "approved_scope": data.get("approved_scope") or [],
+        "change_summary": data["subject"],
+        "doc_targets": data.get("doc_targets") or [],
+        "consensus_hash": hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()[:12]
+    }
+    capsule_path = ai_root / "consensus" / f"{round_id}.capsule.json"
+    _write_json_atomic(capsule_path, capsule)
 
 
 def _append_consensus_history(ai_root: Path, round_id: str, subject: str, outcome: str) -> None:
@@ -2470,36 +2595,63 @@ def action_leader_yield(ai_root: Path, agent: str, reason: str = "") -> None:
 
 
 def action_leader_claim(ai_root: Path, agent: str, reason: str = "", domain: str = "") -> None:
-    """새로운 피어가 리더십을 획득."""
+    """새로운 피어가 리더십을 획득 시도. Challenge Window를 통해 경합 허용."""
     state_path = ai_root / "state.json"
+    proto_cfg = _load_protocol_cfg()
+    challenge_min = proto_cfg.get("leader_election", {}).get("challenge_window_minutes", 1) # Default 1m for USB speed
+
     with _get_lock(ai_root, "state"):
         state = _read_json(state_path)
         current_leader = state.get("active_coordinator") or state.get("leader")
         
+        # AP-20: Coordinator Monopoly Guard
+        history = state.get("coordinator_history", [])
+        last_3 = [h.get("peer") for h in history[-3:]]
+        if len(last_3) == 3 and all(p == agent for p in last_3):
+            print(f"[HUB:ERR] AP-20 Violation: {agent} has been coordinator for 3 consecutive terms. Yield to others.", file=sys.stderr)
+            sys.exit(1)
+
         if current_leader and current_leader != agent:
             status, _ = _peer_effective_health(current_leader)
-            
-            if status != "RED" and status != "STALE":
+            # 챌린지 윈도우 확인
+            leadership = state.get("leadership", {})
+            until_str = leadership.get("challenge_until")
+            if until_str:
+                until_dt = datetime.strptime(until_str, "%Y-%m-%dT%H:%M:%S")
+                if datetime.now() < until_dt:
+                    # 챌린지 진행 중: Score 기반 경합 (여기선 단순 덮어쓰기 허용하되 로그 기록)
+                    print(f"[HUB] CHALLENGE: {agent} is challenging {current_leader}'s pending claim.")
+                elif status != "RED" and status != "STALE":
+                    print(f"[HUB:ERR] Cannot claim leadership. {current_leader} is still active and healthy ({status}).", file=sys.stderr)
+                    sys.exit(1)
+            elif status != "RED" and status != "STALE":
                 print(f"[HUB:ERR] Cannot claim leadership. {current_leader} is still active and healthy ({status}).", file=sys.stderr)
                 sys.exit(1)
                 
+        # 챌린지 윈도우 설정
+        challenge_until = (datetime.now() + timedelta(minutes=challenge_min)).strftime("%Y-%m-%dT%H:%M:%S")
+        
         state["leader"] = agent
         state["active_coordinator"] = agent
         state["leadership"] = {
             "peer": agent,
-            "status": "ACTIVE",
+            "status": "PENDING",
             "domain": domain or reason or "general",
             "reason": reason or "manual_claim",
             "claimed_at": _now(),
+            "challenge_until": challenge_until
         }
+        # 히스토리 업데이트
+        history.append({"peer": agent, "at": _now(), "room": state.get("room_id")})
+        state["coordinator_history"] = history[-10:] # Keep last 10
         state["updated_at"] = _now()
         _write_state(ai_root, state)
         
-    entry = f"[{_now()}] ({agent}) [CLAIM] claimed leadership. Domain: {domain or 'general'} Reason: {reason or 'manual_claim'}"
+    entry = f"[{_now()}] ({agent}) [CLAIM-PENDING] claiming leadership. Challenge until: {challenge_until} Reason: {reason or 'manual_claim'}"
     _append_handoff_item(ai_root, "ACTIVE_THREADS", entry)
     
-    _log_p2p("LEADER-CLAIM", f"agent={agent} domain={domain or 'general'} reason={reason or 'manual_claim'}", from_node=agent)
-    print(f"[HUB] LEADER-CLAIM {agent} | domain={domain or 'general'} | reason={reason or 'manual_claim'}")
+    _log_p2p("LEADER-CLAIM", f"agent={agent} status=PENDING until={challenge_until}", from_node=agent)
+    print(f"[HUB] LEADER-CLAIM {agent} | status=PENDING | challenge_until={challenge_until}")
 
 
 def action_discover(ai_root: Path, needs: str, effort: str = "mid") -> None:
@@ -2538,6 +2690,76 @@ def action_checkpoint(ai_root: Path, agent: str, note: str) -> None:
     _append_handoff_item(ai_root, "ACTIVE_THREADS", entry)
     _log_p2p("CHECKPOINT", f"agent={agent} room={room_id} note={note[:60]}")
     print(f"[HUB] CHECKPOINT {agent} | room={room_id} | {note[:80]}")
+
+
+def action_alert_raise(ai_root: Path, agent: str, severity: str, msg: str) -> None:
+    """긴급 알림(P0/P1)을 발동하여 모든 거버넌스 작업을 차단."""
+    if severity.upper() not in ("P0", "P1"):
+        print(f"[HUB:ERROR] invalid severity '{severity}'; must be P0 or P1", file=sys.stderr)
+        sys.exit(1)
+        
+    with _get_lock(ai_root, "state"):
+        state = _read_json(ai_root / "state.json")
+        alert = {
+            "id": _short_id("alert-"),
+            "ts": _now(),
+            "severity": severity.upper(),
+            "from": agent,
+            "msg": msg,
+            "status": "OPEN",
+            "ack_pending": list(state.get("members", {}).keys())
+        }
+        state["alert_active"] = alert
+        state["blocked"] = f"{severity.upper()} Alert: {msg[:40]}..."
+        state["updated_at"] = _now()
+        _write_state(ai_root, state)
+        
+    _log_p2p("ALERT-RAISE", f"Severity={severity.upper()} Msg='{msg}'", from_node=agent)
+    print(f"[HUB] !!! {severity.upper()} ALERT RAISED by {agent} !!!: {msg}")
+    
+    # 모든 멤버에게 mailbox 발송
+    for peer in state.get("members", {}).keys():
+        if peer != agent:
+            action_send(ai_root, agent, peer, f"[CRITICAL-ALERT] {severity.upper()}: {msg}", msg_type="ALERT", priority="CRITICAL")
+
+
+def action_thread_promote(ai_root: Path, msg_id: str, to_thread_id: str, agent: str) -> None:
+    """Mailbox 메시지를 Durable Room Thread로 승격(복사)."""
+    # 1. 메시지 찾기
+    mailbox_path = ai_root / "mailbox.json"
+    mbox = _read_json(mailbox_path)
+    found_msg = None
+    for m in mbox.get("messages", []):
+        if m.get("id") == msg_id:
+            found_msg = m
+            break
+            
+    if not found_msg:
+        print(f"[HUB:ERROR] message {msg_id} not found in mailbox", file=sys.stderr)
+        sys.exit(1)
+        
+    # 2. 스레드에 추가
+    topic_slug = re.sub(r"[^\w-]", "-", to_thread_id.lower())[:40]
+    path = _threads_dir(ai_root) / f"{topic_slug}.jsonl"
+    
+    entry = {
+        "id": _short_msg_id(),
+        "ts": found_msg.get("ts", _now()),
+        "from": found_msg.get("from", "unknown"),
+        "type": "MSG_PROMOTED",
+        "content": f"[PROMOTED from {msg_id}] {found_msg.get('msg')}",
+        "promoted_by": agent,
+        "promoted_at": _now(),
+        "reactions": {}
+    }
+    _append_jsonl(path, entry)
+    
+    # 3. 마킹
+    found_msg["promoted_to"] = topic_slug
+    _write_json_atomic(mailbox_path, mbox)
+    
+    _log_p2p("THREAD-PROMOTE", f"Msg={msg_id} → Thread={topic_slug}", from_node=agent)
+    print(f"[HUB] Message {msg_id} promoted to thread {topic_slug}")
 
 
 def action_context_fill(ai_root: Path, sections: list[str] | None = None) -> None:
@@ -4531,9 +4753,59 @@ def action_approval_request(ai_root: Path, from_peer: str, action: str, auth_nee
     print(f"[HUB] APPROVAL-REQUEST {from_peer or 'unknown'} -> {target}")
 
 
+# ─────────────────────────────────────────────────────────────
+# BIVCA Cognitive Algorithms (Shorthand, Focus, Limits)
+# ─────────────────────────────────────────────────────────────
+
+def _extract_shorthand_lessons(peer_id: str, response_text: str) -> list[dict]:
+    """Extract [LEARN: ...] markers into proposed lessons."""
+    import re
+    from datetime import datetime
+    LEARN_PATTERN = re.compile(r'\[LEARN:\s*(.+?)\]', re.DOTALL)
+    matches = LEARN_PATTERN.findall(response_text)
+    
+    extracted = []
+    for content in matches:
+        extracted.append({
+            "id": f"LL-{peer_id}-{_short_id()}",
+            "content": content.strip(),
+            "status": "proposed",
+            "weight": 0.5,
+            "trigger_count": 0,
+            "domain_tags": [],
+            "source": peer_id,
+            "ts": datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        })
+    return extracted
+
+def _apply_hard_cap(lessons: list[dict], max_cap: int) -> list[dict]:
+    """Apply hard capacity limit to a list of lessons, sorting by weight."""
+    lessons_sorted = sorted(lessons, key=lambda x: x.get("weight", 0), reverse=True)
+    return lessons_sorted[:max_cap]
+
+def _infer_focus_tags(active_alerts: list[dict]) -> set:
+    """Infer focus tags based on active alerts."""
+    focus_tags = set()
+    for alert in active_alerts:
+        tags = alert.get("domain_tags", [])
+        focus_tags.update(tags)
+    return focus_tags
+
+def _check_exception_ttl(exception_data: dict) -> tuple[bool, str]:
+    """Check if an exception has passed its TTL."""
+    from datetime import datetime
+    resolve_by_str = exception_data.get("resolve_by")
+    if not resolve_by_str:
+        return False, ""
+        
+    resolve_by = datetime.strptime(resolve_by_str, "%Y-%m-%dT%H:%M:%S")
+    if datetime.now() > resolve_by:
+        return True, f"Exception {exception_data.get('id')} expired."
+    return False, ""
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="hub", description="AI 협업 허브 — Protocol v4.1")
-    parser.add_argument("action", choices=["init-session", "end-session", "send", "broadcast", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "ask-all", "ask-coordinator", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint", "peer-quarantine", "peer-recover", "new-topic", "clear-room", "preflight", "context-hash", "context-ack", "report-error", "feedback-add", "feedback-list", "feedback-resolve", "artifact-claim", "artifact-status", "artifact-finalize", "leader-yield", "leader-claim", "elect-leader", "discover", "assign-role", "release-role", "role-status", "health-precheck", "health-sweep", "append-handoff", "task-checkpoint", "task-status", "task-failover", "approval-request", "file-lock", "file-unlock", "lock-status", "profile-validate", "lease-status", "lease-sweep", "model-status", "transient-scan", "directive-add", "directive-list", "directive-clear", "lessons-list", "lessons-propose", "lessons-activate", "lessons-retire", "lesson-broadcast", "lesson-sweep", "lesson-inject", "thread-new", "thread-append", "thread-react", "proposal-add", "proposal-vote", "proposal-list", "update-signatures"])
+    parser.add_argument("action", choices=["init-session", "end-session", "send", "broadcast", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "ask-all", "ask-coordinator", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint", "peer-quarantine", "peer-recover", "new-topic", "clear-room", "preflight", "context-hash", "context-ack", "report-error", "feedback-add", "feedback-list", "feedback-resolve", "artifact-claim", "artifact-status", "artifact-finalize", "leader-yield", "leader-claim", "elect-leader", "discover", "assign-role", "release-role", "role-status", "health-precheck", "health-sweep", "append-handoff", "task-checkpoint", "task-status", "task-failover", "approval-request", "file-lock", "file-unlock", "lock-status", "profile-validate", "lease-status", "lease-sweep", "model-status", "transient-scan", "directive-add", "directive-list", "directive-clear", "lessons-list", "lessons-propose", "lessons-activate", "lessons-retire", "lesson-broadcast", "lesson-sweep", "lesson-inject", "thread-new", "thread-append", "thread-react", "thread-promote", "alert-raise", "proposal-add", "proposal-vote", "proposal-list", "update-signatures"])
     parser.add_argument("--needs")
     parser.add_argument("--effort", default="mid")
     parser.add_argument("--agent")
@@ -4542,6 +4814,7 @@ def main() -> None:
     parser.add_argument("--to", dest="to_")
     parser.add_argument("--msg")
     parser.add_argument("--thread-id")
+    parser.add_argument("--msg-id")
     parser.add_argument("--type", default="MSG")
     parser.add_argument("--priority")
     parser.add_argument("--cc")
@@ -4688,6 +4961,10 @@ def main() -> None:
         if not note:
             print("[HUB] checkpoint requires --msg", file=sys.stderr); sys.exit(1)
         action_checkpoint(ai_root, args.agent or "unknown", note)
+    elif act == "alert-raise":
+        action_alert_raise(ai_root, args.agent or "unknown", args.severity or "P1", args.msg or "")
+    elif act == "thread-promote":
+        action_thread_promote(ai_root, args.msg_id or "", args.thread_id or "general", args.agent or "unknown")
     elif act == "peer-quarantine":
         action_peer_quarantine(ai_root, args.peer or args.target or "", args.reason or "")
     elif act == "peer-recover":

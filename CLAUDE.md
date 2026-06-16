@@ -179,17 +179,18 @@ Created on first run by `setup.py` or `start.bat`:
 | `start.bat "file.exe"` | Open with Windows default handler |
 
 ## Current State
-Last checkpoint: 2026-06-12 — Multi-peer universal collaboration protocol v4.1 complete.
-- `protocol.json` single source of truth (collab_rate, health, consensus, routing)
-- `infra.json` centralizes all bat/config/tool paths
-- 4-peer harness: cc, gc, ag, cx — entry points, health.json, try-finally lifecycle
-- hub.py: health-update/check/peer-status/context-fill/checkpoint + JSONL parsing (cx)
-- Protocol docs: `_sys/docs-v2/` (SSOT v1.1 — 10-invariants → general/* → specific/{peer})
-- Common harness: `_sys/ai/common/agents|skills|mcp|tool-registry.json`
-- Cross-review by gc+ag+cx, 165 unit tests passing
-- hub.py v4.2: lesson-*, thread-*, proposal-* commands added (2026-06-15)
+Last checkpoint: 2026-06-16 10:30 -- See .ai/ blackboard for details
+- **Room ID**: `room-fe18` (Active)
+- **Protocol**: `PROTOCOL.md v4.1` / `protocol.json v1.1` (SSOT)
+- **DIR-003 Active**: Mandatory `test_contracts.py` sync for `hub.py` API changes (triggered by `_lease_cfg` break).
+- **Docs-v2 Migration**: Reached consensus to use `_sys/docs-v2/` as primary SSOT.
+- **Peer Lessons**: LL-008 (API stability) logged.
+- **Health**: ALL GREEN (gc recovered from lease expirations).
+- **Tests**: 198 unit tests passing (cross-reviewed by gc+ag+cx).
 
 ## Next Steps
-- Fresh PC setup validation: Verify install.bat and register.bat in Windows Sandbox (WSB).
-- P2P Mailbox Reliability: Investigate occasional file lock timeouts.
+- **Voting Gap Resolution**: Resolve §14-5 gaps (NEED_MORE_INFO sent to cc).
+- **TAXONOMY_v11**: Execute final governance framework transition.
+- **WSB Validation**: Verify `install.bat` and `register.bat` in Windows Sandbox.
+- **P2P Reliability**: Investigate occasional mailbox file lock timeouts.
 

@@ -48,17 +48,14 @@ fi
 
 # 협업(Collaboration) 정보 + Ratio (Gemini 연동 상태)
 coop_str=""
-_SYS_BASE=$(cd "$(dirname "$0")/../../.." 2>/dev/null && pwd || echo "/p")
-gem_status="${_SYS_BASE}/_sys/gemini/status.json"
-gem_usage="${_SYS_BASE}/_sys/gemini/usage.json"
-gem_config="${_SYS_BASE}/_sys/gemini/config.json"
+gem_status="/p/_sys/gemini/status.json"
+gem_usage="/p/_sys/gemini/usage.json"
+gem_config="/p/_sys/gemini/config.json"
 if [ -f "$gem_status" ] && [ -f "$gem_usage" ]; then
   gem_mode=$(jq -r '.mode // "OFF"' "$gem_status" 2>/dev/null)
   gem_calls=$(jq -r '.axis_calls.calls_today // 0' "$gem_usage" 2>/dev/null)
   gem_ratio=""
-  _proto="${_SYS_BASE}/_sys/ai/protocol.json"
-  [ -f "$_proto" ] && gem_ratio=$(jq -r '.collab_rate.current // empty' "$_proto" 2>/dev/null)
-  [ -z "$gem_ratio" ] && [ -f "$gem_config" ] && gem_ratio=$(jq -r '.ratio // empty' "$gem_config" 2>/dev/null)
+  [ -f "$gem_config" ] && gem_ratio=$(jq -r '.ratio // empty' "$gem_config" 2>/dev/null)
   if [ -n "$gem_ratio" ]; then
     coop_str=" | collab:${gem_mode} ${gem_calls}회 R:${gem_ratio}"
   else

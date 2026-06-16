@@ -22,19 +22,19 @@
     ]
   },
   "context_health": {
-    "status": "STALE",
+    "status": "GREEN",
     "jsonl_mb": 0.0,
     "session_token_count": 0,
     "model_latency_ms": 0,
     "quota_limit_remaining": 100,
     "active_background_tasks_count": 0,
-    "checked_at": "20260612T173250",
+    "checked_at": "20260616T153557",
     "source": "self"
   },
   "session_health": {
     "consecutive_failures": 0,
     "last_failure_reason": null,
-    "last_success_at": "2026-06-12T17:32:50",
+    "last_success_at": "2026-06-16T15:35:57",
     "session_count_today": 40,
     "session_date": "20260612"
   },
@@ -46,6 +46,7 @@
     "last_invocation_exit_code": 0,
     "last_invocation_duration_ms": 132000,
     "rate_limit_state": "ok",
-    "entrypoint_ok": true
+    "entrypoint_ok": true,
+    "quarantined": false
   }
 }

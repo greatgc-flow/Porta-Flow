@@ -1,29 +1,30 @@
 # Zero-Token Symmetric Memory (Gemini Node)
-> Last updated: 2026-06-12
+> Last updated: 2026-06-16
 
 ## Zero-Token Summary
 
 ### 1) Tasks Completed Since Last Save
-- **Protocol v4.1 Universal Renewal**: Composable `_sys/docs/protocol-*.md`, `protocol.json` master config. Layered policy (General/Specific/Connectors/Ambiguity).
-- **5-Peer Harness**: cc, ca, gc, ag (agy), cx (Codex) — entry points, health.json, try-finally lifecycle.
-- **hub.py Extended**: health-update/check/peer-status/context-fill/checkpoint + JSONL parsing for cx + lifecycle_policy.json driven.
-- **infra.json**: Centralizes bat_locations, config_registry, tool_paths, ipc_paths.
-- **Common Harness**: `_sys/ai/common/agents|skills|mcp/` — peer-agnostic prompts and skills.
-- **Cross-Review**: gc+ag+cx cross-reviewed all changes. 198 unit tests passing.
-- **AGY.md**: agy session glue file at `_sys/antigravity/config/AGY.md`.
-- **New policy docs**: lifecycle_policy.json, traceability_map.json, collaboration_protocol.md, workspace-connectivity-map.md.
+- **Root Swap Rollback Recovery**: Recovered from a failed Root Swap rollback. Fixed `virtualizer.py` to handle read-only files during junction migration and corrected junction status detection.
+- **Environment Stabilized**: Re-applied host and project junctions for all peers; verified environment health with 381 passing baseline tests via `venv`.
+- **DIR-003 Established**: Added mandatory `test_contracts.py` sync rule for `hub.py` API changes to prevent silent test failures.
+- **Docs-v2 SSOT Consensus**: All active peers agreed to adopt `_sys/docs-v2/` as the primary Single Source of Truth for protocol documentation.
+- **gc Recovery**: Successfully recovered from multiple lease expiration events; verified health status.
+- **Round 2 Review**: Completed review of debate protocol gaps; initiated clarification on voting states (§14-5).
+- **Lesson LL-008**: Codified stability requirements for core hub API contracts.
 
 ### 2) Technical State
-- **Room ID**: `room-26ab` (ACTIVE)
-- **Protocol**: `PROTOCOL.md v4.1` (composable, `_sys/docs/protocol-*.md`)
-- **Master Config**: `_sys/ai/protocol.json` (collab_rate=10, 5-peer support)
-- **Health**: `_sys/gemini/health.json` (GREEN, 0.5MB)
-- **Infra**: `_sys/ai/infra.json` (all paths config-driven)
-- **All Peers**: ag+cx fully integrated, aliases resolved, JSONL parsed, checkpoint fixed
+- **Room ID**: `room-fe18` (ACTIVE)
+- **Protocol**: `PROTOCOL.md v4.1` / `protocol.json v1.1` (SSOT)
+- **Consensus**: COLLAB_RATE=10 (Full Sync mode).
+- **Members**: cc, gc, cx (Active voters).
+- **Health**: GREEN (All peers synchronized).
+- **Infra**: `infra.json` managing all portable paths correctly.
 
 ### 3) Critical Next Steps
-1. **TAXONOMY_v11.md**: Final governance framework review — implement v11
-2. **Fresh PC setup validation**: Verify `install.bat` and `register.bat` in Windows Sandbox (WSB)
+1. **TAXONOMY_v11.md**: Execute final governance framework transition.
+2. **WSB Validation**: Verify `install.bat` and `register.bat` in Windows Sandbox.
+3. **P2P Reliability**: Debug occasional file lock timeouts in mailbox communication.
+4. **Voting State Gap**: Resolve clarification request for §14-5 voting states.
 
 
 ---

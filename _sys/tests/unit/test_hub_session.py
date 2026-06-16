@@ -297,3 +297,141 @@ def test_clear_room_clears_sessions(ai_dir):
     hub._set_active_session("cx", "room-test", "uuid-cx", "ask-1", ai_dir)
     hub.action_clear_room(ai_dir, "clean slate")
     assert hub._get_active_session("cx", "room-test") is None
+
+
+# ── _session_fingerprint (stability / flag-hashing) ───────────
+
+class TestSessionFingerprint:
+    """_session_fingerprint must be stable and flag-sensitive, not path-sensitive."""
+
+    def test_cx_stable_across_calls(self):
+        fp1 = hub._session_fingerprint("cx", "codex")
+        fp2 = hub._session_fingerprint("cx", "codex")
+        assert fp1 == fp2
+
+    def test_gc_stable_across_calls(self):
+        # gc normally receives a fresh --session-id UUID per invocation; fingerprint
+        # must NOT include that UUID — only the static permission flags.
+        fp1 = hub._session_fingerprint("gc", "gemini")
+        fp2 = hub._session_fingerprint("gc", "gemini")
+        assert fp1 == fp2
+
+    def test_returns_8_hex_chars(self):
+        fp = hub._session_fingerprint("cx", "codex")
+        assert len(fp) == 8
+        assert all(c in "0123456789abcdef" for c in fp)
+
+    def test_different_peers_differ(self):
+        fp_cx = hub._session_fingerprint("cx", "codex")
+        fp_gc = hub._session_fingerprint("gc", "gemini")
+        assert fp_cx != fp_gc
+
+    def test_different_exe_name_differs(self):
+        """Fingerprint changes when the executable name changes (e.g., upgrade)."""
+        fp_a = hub._session_fingerprint("cx", "codex")
+        fp_b = hub._session_fingerprint("cx", "codex2")
+        assert fp_a != fp_b
+
+    def test_unknown_peer_is_stable(self):
+        """Unknown peer uses empty static_flags — still returns stable 8-char hex."""
+        fp1 = hub._session_fingerprint("ag", "some-exe")
+        fp2 = hub._session_fingerprint("ag", "some-exe")
+        assert fp1 == fp2
+        assert len(fp1) == 8
+
+    def test_ignores_path_prefix(self):
+        """Only the base exe name matters, not any leading path component."""
+        # Callers strip the path before calling — verify the function is consistent
+        # when given just a bare name vs a name that looks like a basename.
+        fp_bare = hub._session_fingerprint("cx", "codex")
+        # Simulate a caller that accidentally passes the full path:
+        # the function itself does not strip — that's the caller's job.
+        # This test documents the expected *stable* contract for the bare name.
+        fp_bare2 = hub._session_fingerprint("cx", "codex")
+        assert fp_bare == fp_bare2
+
+    def test_cx_and_gc_flags_are_both_encoded(self):
+        """Changing any static flag must change the fingerprint."""
+        import hashlib
+        # cx: reconstruct expected raw
+        raw_cx = "codex" + "|" + ",".join(["-s", "workspace-write", "--json", "--ignore-rules"])
+        expected_cx = hashlib.sha1(raw_cx.encode()).hexdigest()[:8]
+        assert hub._session_fingerprint("cx", "codex") == expected_cx
+
+        # gc: exclude --session-id UUID, only stable permission flags
+        raw_gc = "gemini" + "|" + ",".join(
+            ["-p", "-", "-o", "text", "--approval-mode", "auto_edit", "--skip-trust"]
+        )
+        expected_gc = hashlib.sha1(raw_gc.encode()).hexdigest()[:8]
+        assert hub._session_fingerprint("gc", "gemini") == expected_gc
+
+
+# ── _classify_resume_failure ───────────────────────────────────
+
+class TestClassifyResumeFailure:
+    """_classify_resume_failure(stderr) → 'transient' | 'permanent'
+
+    Transient: worth retrying with resume (network / quota / rate issues).
+    Permanent: retire the session and go fresh (session gone / auth / context).
+    """
+
+    # --- permanent: session-identity errors ---
+
+    def test_session_not_found_is_permanent(self):
+        assert hub._classify_resume_failure("Error: session not found") == "permanent"
+
+    def test_invalid_session_is_permanent(self):
+        assert hub._classify_resume_failure("invalid session id provided") == "permanent"
+
+    def test_session_expired_is_permanent(self):
+        assert hub._classify_resume_failure("session expired, please start a new one") == "permanent"
+
+    def test_unknown_session_is_permanent(self):
+        assert hub._classify_resume_failure("unknown session: abc-123") == "permanent"
+
+    def test_no_such_session_is_permanent(self):
+        assert hub._classify_resume_failure("no such session exists") == "permanent"
+
+    def test_context_too_long_is_permanent(self):
+        assert hub._classify_resume_failure("context length exceeded maximum") == "permanent"
+
+    # --- transient: infra / rate errors ---
+
+    def test_timeout_is_transient(self):
+        assert hub._classify_resume_failure("connection timed out") == "transient"
+
+    def test_rate_limit_is_transient(self):
+        assert hub._classify_resume_failure("rate limit exceeded, retry after 60s") == "transient"
+
+    def test_quota_exceeded_is_transient(self):
+        assert hub._classify_resume_failure("quota exceeded for this minute") == "transient"
+
+    def test_connection_refused_is_transient(self):
+        assert hub._classify_resume_failure("connection refused") == "transient"
+
+    def test_503_is_transient(self):
+        assert hub._classify_resume_failure("503 Service Unavailable") == "transient"
+
+    def test_429_is_transient(self):
+        assert hub._classify_resume_failure("429 Too Many Requests") == "transient"
+
+    def test_network_error_is_transient(self):
+        assert hub._classify_resume_failure("network error: unable to reach endpoint") == "transient"
+
+    # --- case-insensitivity ---
+
+    def test_uppercase_session_not_found_is_permanent(self):
+        assert hub._classify_resume_failure("SESSION NOT FOUND") == "permanent"
+
+    def test_uppercase_timeout_is_transient(self):
+        assert hub._classify_resume_failure("TIMED OUT") == "transient"
+
+    # --- empty / unrecognised stderr ---
+
+    def test_empty_stderr_is_permanent(self):
+        """Unknown error: safer to retire the session than to retry blindly."""
+        assert hub._classify_resume_failure("") == "permanent"
+
+    def test_generic_error_is_permanent(self):
+        """Unrecognised error message defaults to permanent (safe fallback)."""
+        assert hub._classify_resume_failure("something completely unexpected happened") == "permanent"

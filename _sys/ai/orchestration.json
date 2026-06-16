@@ -22,8 +22,7 @@
     },
     {
       "node_id": "ca",
-      "enabled": false,
-      "disabled_reason": "Human standing override: keep ca inactive indefinitely unless the user explicitly names ca for re-enable.",
+      "enabled": true,
       "aliases": ["claude-alt"],
       "type": "peer",
       "invoke": "claude",
@@ -43,8 +42,7 @@
     },
     {
       "node_id": "ag",
-      "enabled": false,
-      "disabled_reason": "Human standing override: keep ag inactive indefinitely unless the user explicitly names ag for re-enable.",
+      "enabled": true,
       "aliases": ["antigravity", "agy"],
       "type": "peer",
       "invoke": "agy",

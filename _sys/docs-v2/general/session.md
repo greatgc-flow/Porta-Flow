@@ -107,3 +107,83 @@ These reads are **always zero-token** — no COLLAB_RATE gate applies:
 | `_sys/ai/user-directives.md` | Standing rules (observe phase) |
 
 A read is NOT zero-token if it triggers a model call, network request, or side-effect write.
+
+---
+
+## 8. Stable Fingerprint
+
+**Source:** `hub.py:_session_fingerprint(health_peer, exe_name)`
+
+A short 8-char SHA-1 hash that identifies the *static* invocation flags for a peer session.
+It is **stable across calls** and only changes when permission flags change.
+
+### Canonical Input
+
+```
+raw = base_exe + "|" + ",".join(static_flags)
+fingerprint = sha1(raw.encode()).hexdigest()[:8]
+```
+
+- `base_exe = os.path.basename(exe_name)` — filename only, never a full path.
+  This prevents drift when the PATH root changes (e.g., USB drive letter change).
+- `static_flags` per peer (hardcoded in `_build_session_cmd`):
+
+| Peer | Static flags included | Dynamic values excluded |
+|------|-----------------------|------------------------|
+| `cx` | `-s workspace-write --json --ignore-rules` | *(none dynamic)* |
+| `gc` | `-p - -o text --approval-mode auto_edit --skip-trust` | `--session-id <uuid>` |
+| others | *(empty — no session reuse)* | — |
+
+### Drift Detection
+
+On every `hub.py ask` with session reuse:
+1. Compute `current_fp = _session_fingerprint(health_peer, exe_name)`.
+2. Load `existing_session = _get_active_session(health_peer, scope_key)`.
+3. If `stored_fp` exists and `stored_fp != current_fp`:
+   - Log: `[HUB:WARN] {peer} session fingerprint drift ({old} → {new}), retiring for fresh start`
+   - Call `_retire_session(peer, scope_key, "fingerprint_drift")`
+   - Proceed as if no existing session.
+
+### Scope Key
+
+Session state is keyed by `scope_key = explicit_scope ?? room_id ?? "default"`.
+State file: `_sys/{peer_dir}/session_state.json` (gitignored).
+
+---
+
+## 9. Resume Failure Classification
+
+**Source:** `hub.py:_classify_resume_failure(stderr)` → `"transient"` | `"permanent"`
+
+Called when a session-resume attempt exits non-zero (`proc.returncode != 0 and is_resume_attempt`).
+
+### Classification Rules
+
+| Class | Trigger patterns in stderr | Behavior |
+|-------|---------------------------|----------|
+| **Transient** | `timeout`, `timed out`, `rate limit`, `quota`, `503`, `429`, `connection refused`, `network error`, `unable to reach` | Keep session alive. Report error. Exit. Caller retries later. |
+| **Permanent** | Any other content — or empty stderr | Retire session → retry once with fresh session. |
+
+> Empty stderr always maps to **permanent** (default).
+
+### Permanent Failure Flow
+
+```
+proc.returncode != 0 AND is_resume_attempt AND fail_type == "permanent"
+  → _retire_session(peer, scope_key, "resume_failed")
+  → _build_session_cmd(peer, session_id=None, exe)   # fresh
+  → subprocess.Popen(fresh_cmd)
+  → communicate(query)
+  → if success: _set_active_session(new_id, fingerprint=current_fp)
+  → if failure: _record_ask_failure + exit
+```
+
+### Transient Failure Flow
+
+```
+proc.returncode != 0 AND is_resume_attempt AND fail_type == "transient"
+  → session NOT retired (still active in session_state.json)
+  → [HUB:WARN] ... keeping session for retry
+  → _record_ask_failure
+  → exit (no auto-retry — caller decides)
+```

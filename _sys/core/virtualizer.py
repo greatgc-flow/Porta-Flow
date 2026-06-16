@@ -114,6 +114,15 @@ def _ensure_junction(host: Path, portable: Path) -> None:
     except FileNotFoundError:
         pass
 
+    def _on_error(func, path, exc_info):
+        """Error handler for shutil.rmtree to handle read-only files."""
+        import stat
+        if not os.access(path, os.W_OK):
+            os.chmod(path, stat.S_IWUSR)
+            func(path)
+        else:
+            raise
+
     if is_reparse:
         _cmd(f'rmdir "{host}"')
     elif host.exists():
@@ -123,7 +132,11 @@ def _ensure_junction(host: Path, portable: Path) -> None:
                 continue
             dest = portable / item.name
             if dest.exists():
-                shutil.rmtree(str(dest)) if dest.is_dir() else dest.unlink()
+                if dest.is_dir():
+                    shutil.rmtree(str(dest), onerror=_on_error)
+                else:
+                    os.chmod(str(dest), 0o777)
+                    dest.unlink()
             shutil.move(str(item), str(portable))
         host.rmdir()
     _cmd(f'mklink /J "{host}" "{portable}"')
@@ -355,7 +368,12 @@ def _cli_status(sys_dir: Path, base_dir: Path) -> None:
             host_path = Path(os.environ[host_j["host_env"]]) / host_j.get("host_dirname", "")
             portable  = sub / host_j.get("portable_subpath", "config")
             exists    = host_path.exists()
-            is_junc   = host_path.is_symlink() or (exists and host_path.stat().st_file_attributes & 0x400 if hasattr(host_path.stat(), 'st_file_attributes') else False)
+            # Use lstat() to check for reparse point attribute (0x400) without following the link
+            try:
+                st = host_path.lstat()
+                is_junc = (st.st_file_attributes & 0x400) != 0 if hasattr(st, 'st_file_attributes') else False
+            except FileNotFoundError:
+                is_junc = False
             print(f"  {peer_id:6s}  {str(host_path):<45}  {'JUNCTION' if is_junc else 'DIR/MISSING'}  → {portable}")
     print(f"{'─'*60}")
 

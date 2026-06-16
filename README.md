@@ -1,52 +1,38 @@
-# Porta-Flow: Self-Evolving Multi-AI Dev Workspace
+# Porta-Flow: The BIVCA-Powered Multi-AI Dev Workspace
 
 [![Python 3.14+](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/downloads/)
 [![Windows](https://img.shields.io/badge/os-windows-green.svg)](https://microsoft.com/windows)
-[![Tests: 381 Pass](https://img.shields.io/badge/tests-381%20pass-success.svg)](_sys/tests)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Tests: 62 Pass](https://img.shields.io/badge/tests-62%20pass-success.svg)](_sys/tests)
+[![Architecture: BIVCA](https://img.shields.io/badge/architecture-BIVCA_v1.1-purple.svg)](_sys/docs-v2)
 
-A Windows-first portable dev workspace where Claude (`cc`), Gemini (`gc`), Codex (`cx`), and Antigravity (`ag`) collaborate as **equal peers** alongside human developers — fully portable on USB or cloud drive, with a **self-evolving collaboration loop** that learns from every session.
-
----
-
-## 🧠 Self-Evolution System
-
-The unique selling point: lessons extracted from peer interactions automatically propagate to all nodes and harden into runtime rules.
-
-```
-Peer session output
-  → [LESSON_LEARNED:] tag
-  → lesson-extractor agent
-  → hub.py lessons-propose → lessons-activate
-  → lesson-broadcast (all peers via .ai/mailbox.json)
-  → trigger_count ≥ 3 → lesson-sweep
-  → runtime-directives.jsonl (binding on all future sessions)
-```
-
-No human required. No peer repeats another's mistake.
+A Windows-first portable dev workspace where Claude (`cc`), Gemini (`gc`), Codex (`cx`), and Antigravity (`ag`) collaborate as **equal peers** alongside human developers. Built on the **Brain-Inspired Virtuous Cycle Architecture (BIVCA)**, Porta-Flow ensures a MECE-compliant, self-healing, and self-evolving ecosystem without context blowout.
 
 ---
 
-## 🏗 Architecture
+## 🧠 BIVCA: The Brain-Inspired Virtuous Cycle Architecture
 
-```
-Human
-  │
-  ▼
-_sys/cli/msg.bat
-  │
-  ▼
-_sys/core/hub.py ◄──────── _sys/ai/protocol.json  (SSOT: collab_rate, routing, guards)
-  │                         _sys/ai/user-directives.md
-  │                         _sys/ai/runtime-directives.jsonl  (evolved rules)
-  │
-  ├── cc / ca  Claude — architecture, implementation, verification
-  ├── gc       Gemini — large-context analysis, documentation, audit
-  ├── cx       Codex  — code review, refactoring, patch planning
-  └── ag       Antigravity — shell ops, workflow orchestration
-```
+Porta-Flow is designed to mimic human cognitive processes, ensuring zero-token waste and absolute traceability.
 
-Peers share room state through `.ai/`, exchange messages through the hub, record handoff context in rolling markdown, and use `lesson-*`, `thread-*`, and `proposal-*` actions to govern and evolve collaboratively.
+*   **[AMYGDALA] Reactive Alerts**: Fast, TTL-based threat detection (`runtime-alerts.jsonl`). Triggers Tier-0 blocking alerts for severe anomalies.
+*   **[HIPPOCAMPUS] Learning & Forgetting**: Captures **Zero-Token Shorthand** insights (`[LEARN: ...]`). Lessons decay over time (-0.05/day) or get promoted (weight > 0.8) to prevent context flooding.
+*   **[PFC] Attention-Driven Memory**: Selective context injection. The Hub dynamically infers what the peers need based on active alerts and task types.
+*   **[CORTEX] Absolute Truths**: Unanimous invariants (`runtime-rules.jsonl`) that never expire. Hard-capped at 10 items to prevent token blowout.
+*   **[EXOCORTEX] The Second Brain**: A queryable, narrative-based diary. Stores deep architectural context mapped via the PARA method without polluting the working memory.
+
+---
+
+## 🏗 Modular, JSON-Driven, "No Code" Design
+
+Porta-Flow embraces a **Composable, General-Specific MECE Structure**.
+
+*   **Config-Driven**: Hardcoded values (caps, TTLs, weights) are stripped from code and managed entirely via `_sys/ai/bivca_config.json` and other `config/` registries.
+*   **PARA Mapped**: 
+    *   **P**rojects → `handoff.json` (Working Memory)
+    *   **A**reas → `active-lessons.jsonl` (Hippocampus)
+    *   **R**esources → `_sys/docs-v2/` (SSOT / Cortex)
+    *   **A**rchives → `active-lessons.retired.jsonl` (Forgotten)
+*   **Exception Debt**: Any anomaly that breaks the MECE boundary is isolated in `_exceptions/` with a ticking 7-day TTL clock.
+*   **Workspace Scoping**: Easily template new workspaces or isolate context to specific sub-directories.
 
 ---
 
@@ -54,14 +40,12 @@ Peers share room state through `.ai/`, exchange messages through the hub, record
 
 | Feature | Description |
 |---|---|
-| 🤖 **Multi-AI Peers** | `cc`, `gc`, `cx`, `ag` work as equals — no coordinator monopoly (AP-20). |
-| 🧬 **Self-Evolving** | Lessons auto-broadcast; `trigger_count ≥ 3` promotes to runtime directives. |
-| 🛡 **Consensus-Driven** | R:10 unanimous governance gates for high-risk `_sys/` changes. |
-| 🧳 **100% Portable** | Runtimes, tools, CLI wrappers, and AI configs live in `_sys/`. Zero host pollution. |
-| 🔧 **Tool Registry** | 15 shared tools (9 agents + 6 skills) — any peer can invoke any tool. |
-| 🛰 **P2P Mailbox** | File-based IPC — no server, no broker, works offline. |
-| 🔍 **21 Anti-Patterns** | `cross-reviewer` agent detects AP-01~AP-21 (consensus drift, governance violations, etc.). |
-| 📋 **Audit Trail** | Proposals, threads, handoffs, and routing metrics fully traceable. |
+| 🤖 **Egalitarian Multi-AI** | `cc`, `gc`, `cx`, `ag` work as equals — guarded by the AP-20 Coordinator Monopoly rule. |
+| ⚡ **Zero-Token Shorthand** | Peers learn implicitly via `[LEARN: insight]` markers. No costly tool calls required to remember. |
+| 🛡 **Decision Capsules** | Consensus outputs machine-readable `.capsule.json` records to guarantee hallucination-free docs. |
+| 🧳 **100% Portable** | Runtimes, tools, CLI wrappers, and AI configs live in `_sys/`. Zero host OS pollution. |
+| 🛰 **P2P Mailbox & Threads** | File-based IPC. Casual Sync via `thread-promote` and Tier-0 `alert-raise` for blocking issues. |
+| 🔍 **Atomic Reliability** | Write-safeguards using `os.replace` and a robust Recovery Journal. Safe across serverless drives. |
 
 ---
 
@@ -71,81 +55,32 @@ Peers share room state through `.ai/`, exchange messages through the hub, record
 REM 1. Rebuild portable runtimes and tools
 INSTALL.bat
 
-REM 2. Register this folder on the current PC (creates SUBST drive, context menu)
+REM 2. Register this folder on the current PC (creates SUBST drive)
 register.bat
 
-REM 3. Check the live collaboration room
+REM 3. Check the live collaboration room and peer health
 _sys\cli\msg.bat status
+_sys\cli\msg.bat peer-status
 
-REM 4. Validate the multi-agent hub
-_sys\tests\run-tests.bat --all
+REM 4. Validate the multi-agent hub architecture
+_sys\env\venv\Scripts\python.exe -m pytest _sys\tests\unit -q
 ```
 
 ---
 
-## 📂 Project Structure
+## 📂 Architecture Map (The Masterpiece)
 
 ```
 .
-├── README.md / CLAUDE.md / GEMINI.md / AGENTS.md  ← Peer workspace guides
-├── PROTOCOL.md / CONVENTION.md                      ← Constitutional docs
-├── INSTALL.bat / register.bat / unregister.bat / CLEANUP.bat
-├── workspace/          ← Default user workspace
-├── .ai/                ← Runtime collaboration state (hub-managed only)
-├── _archive/           ← Logs, sessions, collab-log
+├── README.md / PROTOCOL.md
+├── workspace/          ← Your code goes here
+├── .ai/                ← Runtime collaboration state (hub-managed)
+│   ├── knowledge/      ← BIVCA Hippocampus & Shorthand Staging
+│   ├── exocortex/      ← Second Brain logs and indexes
+│   └── sessions/       ← Hand-offs, Threads, and Working Memory
 └── _sys/
-    ├── ai/             ← protocol.json (SSOT), peers.json, knowledge/, proposals/
-    │   └── common/     ← tool-registry.json + 9 agents + 6 skills (shared across peers)
-    ├── core/           ← hub.py (IPC hub v4.3), dispatcher.py, setup.py, config.py
-    ├── cli/            ← msg.bat, peer wrappers, peer_console.py
-    ├── checks/         ← Health, policy, portability, risk checks (Axis A-I)
-    ├── docs-v2/        ← SSOT v1.1: invariants, general rules, peer-specific, ops
-    ├── docs/           ← Archive: history/, architecture/, plans/, user/
-    ├── hooks/          ← ctx-save, ctx-end, collab-log, memory-compactor
-    ├── tests/          ← 381 unit tests + integration + WSB sandbox
-    ├── templates/      ← CLAUDE_*.md, GEMINI.md templates
-    ├── claude/         ← Claude config, agents, skills, health
-    ├── gemini/         ← Gemini config, health, session state
-    ├── codex/          ← Codex config, templates
-    └── antigravity/    ← Antigravity config and agentapi bridge
+    ├── config/         ← "No Code" JSON registries (BIVCA, Peers, Infra)
+    ├── core/           ← hub.py (The Brainstem) & virtualizer.py
+    ├── docs-v2/        ← SSOT (General/Specific/Ops/Exceptions)
+    └── tests/          ← Comprehensive MECE TDD suite
 ```
-
----
-
-## ⚙ Configuration & Audit Maps
-
-| File | Purpose |
-|------|---------|
-| `_sys/ai/protocol.json` | Collab policy, routing, guards, action classification |
-| `_sys/ai/peers.json` | Peer registry: invoke commands, env vars, junction metadata |
-| `_sys/ai/common/tool-registry.json` | 15 shared tools across all peers |
-| `_sys/ai/knowledge/general/active-lessons.jsonl` | Live peer learning database |
-| `_sys/ai/runtime-directives.jsonl` | Auto-promoted rules (TTL 48h, from lesson-sweep) |
-| `_sys/ai/proposals/` | Async governance proposals with vote tracking |
-| `_sys/docs-v2/10-invariants.md` | MUST/MUST-NOT rules (INV-01~18, PRO-01~15) |
-| `_sys/docs-v2/ops/anti-patterns.md` | 21 anti-patterns (AP-01~AP-21) |
-| `_sys/ai/traceability_map.json` | Protocol → config → code → test mapping |
-| `_sys/ai/orchestration.json` | Hub node IDs, invoke commands, virtual nodes |
-| `_sys/ai/model_profiles.json` | Per-peer model profiles for declarative routing |
-
----
-
-## ✅ Validation
-
-```bat
-REM Core hub + collaboration suite
-python -m pytest _sys\tests\unit\test_hub.py _sys\tests\unit\test_hub_collaboration.py
-
-REM Full unit suite
-python -m pytest _sys\tests\unit
-```
-
-**Current baseline:** `381 passed, 0 xfailed` — core hub and collaboration: 100% green. Includes 46 contract tests + 7 watchdog + 15 signature + 7 lesson propagation tests.
-
----
-
-## 🔒 Repository Hygiene
-
-- **Tracked:** source (`.py`, `.bat`), config (`.json`), docs (`.md`), tests
-- **Ignored:** `_sys/env/` (large binaries), `.ai/` (runtime state), `_archive/`, `_sys/data/`, `Garbage/`, `tmp/`
-- **Per-PC:** `.claude/settings.local.json` (auto-generated by `register.bat`)
