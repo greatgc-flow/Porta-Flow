@@ -1,4 +1,4 @@
-# test-runner.ps1 — Porta-Flow Full Test Suite Orchestrator
+# test-runner.ps1 — Engram Full Test Suite Orchestrator
 #
 # Runs all test layers and produces a unified report:
 #   Layer 1: host-test.ps1    — host-side (settings, statusline, VS Code, npm)
@@ -48,7 +48,7 @@ function log {
 # ----------------------------------------------------------------
 log ""
 log "=============================================================" "Cyan"
-log "  Porta-Flow Full Test Suite" "Cyan"
+log "  Engram Full Test Suite" "Cyan"
 log "  Run: $Timestamp" "Cyan"
 log "  BaseDir: $BaseDir" "Cyan"
 log "=============================================================" "Cyan"
@@ -145,7 +145,7 @@ if (-not $HostOnly) {
             }
 
             $localTR = Join-Path $ResultsDir "local_$Timestamp"
-            $localTW = Join-Path $env:TEMP "PortaFlowTest_$PID"
+            $localTW = Join-Path $env:TEMP "EngramTest_$PID"
             New-Item -ItemType Directory -Path $localTR -Force | Out-Null
 
             log "  Physical base: $physBase" "Gray"

@@ -284,7 +284,7 @@
       "ag"
     ],
     "inactive_default_note": "Standing human override: ca/ag remain inactive indefinitely unless the user explicitly names ca/ag for re-enable.",
-    "default_proposer": "cc",
+    "default_proposer": "rotating",
     "timeout_minutes": 30,
     "offline_auto_abstain_minutes": 30,
     "tiebreak_rule": "domain_weight_recommend_to_human",
@@ -311,6 +311,8 @@
         "targeted-implementation"
       ],
       "gc": [
+        "architecture",
+        "orchestration",
         "documentation",
         "large-corpus-analysis",
         "axis-d",

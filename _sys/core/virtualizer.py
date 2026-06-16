@@ -114,6 +114,15 @@ def _ensure_junction(host: Path, portable: Path) -> None:
     except FileNotFoundError:
         pass
 
+    def _on_error(func, path, exc_info):
+        """Error handler for shutil.rmtree to handle read-only files."""
+        import stat
+        if not os.access(path, os.W_OK):
+            os.chmod(path, stat.S_IWUSR)
+            func(path)
+        else:
+            raise
+
     if is_reparse:
         _cmd(f'rmdir "{host}"')
     elif host.exists():
@@ -123,7 +132,11 @@ def _ensure_junction(host: Path, portable: Path) -> None:
                 continue
             dest = portable / item.name
             if dest.exists():
-                shutil.rmtree(str(dest)) if dest.is_dir() else dest.unlink()
+                if dest.is_dir():
+                    shutil.rmtree(str(dest), onerror=_on_error)
+                else:
+                    os.chmod(str(dest), 0o777)
+                    dest.unlink()
             shutil.move(str(item), str(portable))
         host.rmdir()
     _cmd(f'mklink /J "{host}" "{portable}"')
@@ -282,3 +295,112 @@ def unmount(ctx: dict) -> None:
             print(f"  [OK] {peer_id}: settings.local.json removed")
 
     print("\n  Unmount complete.")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CLI entry point
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _cli_apply(sys_dir: Path, base_dir: Path, force: bool) -> None:
+    """Re-create all peer junctions.
+
+    Resolution order:
+      1. data/state/pathmap/managed-links.json  (new registry — post-restructure)
+      2. ai/peers.json                           (legacy fallback — pre-restructure)
+    """
+    managed_links = sys_dir / "data" / "state" / "pathmap" / "managed-links.json"
+
+    if managed_links.exists():
+        # Post-restructure: replay managed-links registry
+        try:
+            registry = json.loads(managed_links.read_text(encoding="utf-8"))
+            entries = registry.get("entries", {})
+            print(f"[apply] Using managed-links.json ({len(entries)} entries)")
+            for entry_id, entry in entries.items():
+                link_path_raw = entry.get("relative_link_path", "")
+                target_raw    = entry.get("relative_target_path", "")
+                if link_path_raw.startswith("EXTERNAL:"):
+                    # e.g. EXTERNAL:%USERPROFILE%/.claude
+                    expanded = os.path.expandvars(link_path_raw[len("EXTERNAL:"):])
+                    host_path = Path(expanded)
+                else:
+                    host_path = sys_dir / link_path_raw
+                target_path = sys_dir / target_raw
+                if force:
+                    _remove_junction(host_path)
+                target_path.mkdir(parents=True, exist_ok=True)
+                try:
+                    _ensure_junction(host_path, target_path)
+                    print(f"  [OK] {entry_id}: {host_path.name} → {target_raw}")
+                except Exception as exc:
+                    print(f"  [Fail] {entry_id}: {exc}")
+            return
+        except Exception as exc:
+            print(f"[apply] managed-links.json error: {exc} — falling back to peers.json")
+
+    # Pre-restructure fallback: use peers.json
+    peers = _load_peers(sys_dir)
+    if not peers:
+        print("[apply] No peers found (peers.json empty or missing). Nothing to apply.")
+        return
+    print(f"[apply] Fallback: peers.json ({len(peers)} peers)")
+    for peer_id, peer_cfg in peers.items():
+        sub = sys_dir / peer_cfg.get("sys_subdir", peer_id)
+        if force:
+            # Remove existing host junction before re-creating
+            host_j = peer_cfg.get("host_junction")
+            if host_j and host_j.get("host_env") in os.environ:
+                host_path = Path(os.environ[host_j["host_env"]]) / host_j.get("host_dirname", "")
+                _remove_junction(host_path)
+        _set_peer_junctions(base_dir, peer_id, peer_cfg, sys_dir)
+
+
+def _cli_status(sys_dir: Path, base_dir: Path) -> None:
+    """Show current junction state for all peers."""
+    peers = _load_peers(sys_dir)
+    print(f"{'─'*60}")
+    print(f"  Junction Status  (sys_dir: {sys_dir})")
+    print(f"{'─'*60}")
+    for peer_id, peer_cfg in peers.items():
+        sub = sys_dir / peer_cfg.get("sys_subdir", peer_id)
+        host_j = peer_cfg.get("host_junction")
+        if host_j and host_j.get("host_env") in os.environ:
+            host_path = Path(os.environ[host_j["host_env"]]) / host_j.get("host_dirname", "")
+            portable  = sub / host_j.get("portable_subpath", "config")
+            exists    = host_path.exists()
+            # Use lstat() to check for reparse point attribute (0x400) without following the link
+            try:
+                st = host_path.lstat()
+                is_junc = (st.st_file_attributes & 0x400) != 0 if hasattr(st, 'st_file_attributes') else False
+            except FileNotFoundError:
+                is_junc = False
+            print(f"  {peer_id:6s}  {str(host_path):<45}  {'JUNCTION' if is_junc else 'DIR/MISSING'}  → {portable}")
+    print(f"{'─'*60}")
+
+
+if __name__ == "__main__":
+    import argparse
+
+    _self_sys_dir  = Path(__file__).resolve().parent.parent
+    _self_base_dir = _self_sys_dir.parent
+
+    parser = argparse.ArgumentParser(description="virtualizer.py — junction & SUBST management")
+    sub = parser.add_subparsers(dest="cmd")
+
+    p_apply = sub.add_parser("apply", help="Re-create all peer junctions")
+    p_apply.add_argument("--force", action="store_true", help="Remove existing junctions before re-creating")
+    p_apply.add_argument("--sys-dir", type=Path, default=_self_sys_dir)
+
+    p_status = sub.add_parser("status", help="Show current junction state")
+    p_status.add_argument("--sys-dir", type=Path, default=_self_sys_dir)
+
+    args = parser.parse_args()
+
+    if args.cmd == "apply":
+        sd = args.sys_dir.resolve()
+        _cli_apply(sd, sd.parent, force=args.force)
+    elif args.cmd == "status":
+        sd = args.sys_dir.resolve()
+        _cli_status(sd, sd.parent)
+    else:
+        parser.print_help()

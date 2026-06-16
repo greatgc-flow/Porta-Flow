@@ -34,4 +34,4 @@ Do not override `USERPROFILE`, `APPDATA`, or `LOCALAPPDATA`. Do not write direct
 AI peer behavior is configured outside this contributor guide. Use `PROTOCOL.md` for collaboration rules, `_sys/ai/protocol.json` for machine-readable policy, `_sys/ai/orchestration.json` for node invocation (`cc`, `ca`, `gc`, `ag`, `cx`), and `_sys/docs/workspace-environment.md` for peer configuration, tools, skills, and plugin layout.
 
 ## Current State
-Last checkpoint: 2026-06-15 — Multi-peer parity fixes applied; hub.py v4.3 with ask-all, auto-broadcast, fair review notify
+Last checkpoint: 2026-06-16 08:40 -- See .ai/ blackboard for details

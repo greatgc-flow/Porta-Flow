@@ -1,6 +1,6 @@
 @echo off
 :: ================================================================
-:: run-sandbox-test.bat  -  Launch Porta-Flow Windows Sandbox test
+:: run-sandbox-test.bat  -  Launch Engram Windows Sandbox test
 ::
 :: Generates a path-correct .wsb from the template, then launches
 :: Windows Sandbox. Requires: Windows 11 Pro/Enterprise/Education,

@@ -20,21 +20,21 @@
     ]
   },
   "context_health": {
-    "status": "STALE",
+    "status": "GREEN",
     "jsonl_mb": 0.0,
     "context_window_usage_percent": 0.0,
-    "checked_at": "20260613T032846",
+    "checked_at": "20260616T183801",
     "source": "self",
     "stale_marked_at": "2026-06-14T22:29:44"
   },
   "session_health": {
     "consecutive_failures": 0,
     "last_failure_reason": null,
-    "last_success_at": "2026-06-13T03:28:46",
-    "session_count_today": 1,
-    "session_date": "20260613",
-    "last_failure_detail": "ask timeout after 180s",
-    "last_failure_at": "2026-06-12T21:07:56"
+    "last_success_at": "2026-06-16T18:38:01",
+    "session_count_today": 15,
+    "session_date": "20260616",
+    "last_failure_detail": "Failed to authenticate. API Error: 401 Invalid authentication credentials",
+    "last_failure_at": "2026-06-16T15:58:03"
   },
   "availability": {
     "installed": true,
@@ -43,7 +43,7 @@
     "last_gate_check": null,
     "active_pid": null,
     "last_invocation_exit_code": 0,
-    "last_invocation_duration_ms": 7000,
+    "last_invocation_duration_ms": 109000,
     "rate_limit_state": "ok",
     "quarantined": false,
     "entrypoint_ok": true

@@ -170,5 +170,5 @@ Created on first run by `setup.py` or `start.bat`:
 - **Note:** Directory Junctions ensure auth and memory travel with the portable drive, leaving no trace on the host OS.
 
 ## 9. Current State
-→ See `.ai/sessions/room-26ab/handoff.md` for live session state.
-→ See `_sys/gemini/config/CONTEXT.md` for static topology and Axis map.
+→ See .ai/sessions/room-fe18/handoff.md for live session state.
+→ See _sys/gemini/config/CONTEXT.md for static topology and Axis map.

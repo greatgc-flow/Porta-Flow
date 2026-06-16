@@ -290,7 +290,7 @@ Call Human Gate in case of deadlock → See **PROTOCOL.md §M-3** (Invariant Rul
 ### Default: Windows Sandbox (WSB)
 
 All script and environment tests MUST run in Windows Sandbox when possible.
-Local temp directory simulation (PortaFlowTest_*) is DEPRECATED as primary method.
+Local temp directory simulation (EngramTest_*) is DEPRECATED as primary method.
 
 | Method | Use Case | Command |
 |--------|----------|---------|

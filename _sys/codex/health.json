@@ -24,20 +24,20 @@
     ]
   },
   "context_health": {
-    "status": "GREEN",
+    "status": "YELLOW",
     "jsonl_mb": 0.0,
-    "checked_at": "20260615T154711",
+    "checked_at": "20260616T183547",
     "source": "self",
-    "stale_marked_at": "2026-06-14T23:08:19"
+    "stale_marked_at": "2026-06-16T07:17:51"
   },
   "session_health": {
-    "consecutive_failures": 0,
-    "last_failure_reason": null,
-    "last_success_at": "2026-06-15T15:47:11",
-    "session_count_today": 11,
-    "session_date": "20260615",
-    "last_failure_detail": "ask timeout after 180s",
-    "last_failure_at": "2026-06-14T10:28:57"
+    "consecutive_failures": 4,
+    "last_failure_reason": "nonzero_exit",
+    "last_success_at": "2026-06-16T15:35:57",
+    "session_count_today": 3,
+    "session_date": "20260616",
+    "last_failure_detail": "You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Jun 18th, 2026 10:46 PM.",
+    "last_failure_at": "2026-06-16T18:35:47"
   },
   "availability": {
     "installed": true,
@@ -46,8 +46,8 @@
     "last_gate_check": null,
     "cli_version": "codex-cli 0.139.0",
     "entrypoint_ok": true,
-    "last_invocation_exit_code": 0,
-    "last_invocation_duration_ms": 76000,
+    "last_invocation_exit_code": 1,
+    "last_invocation_duration_ms": 13000,
     "rate_limit_state": "ok",
     "workspace_access": "unknown",
     "active_pid": null,

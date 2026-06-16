@@ -1,17 +1,17 @@
-# Porta-Flow: Universal Multi-Peer Collaboration Manual (v4.1)
+# Engram: Universal Multi-Peer Collaboration Manual (v4.1)
 
-> **Porta-Flow** is a 100% portable, multi-AI collaboration environment for Windows. It allows humans and multiple AI models (Claude, Gemini, Codex, AntiGravity, etc.) to operate as equal nodes within a unified, self-contained workspace. This manual is the definitive guide for setting up, using, and extending the system. It is designed to be a single source of truth for both human directors and AI peer nodes.
+> **Engram** is a 100% portable, multi-AI collaboration environment for Windows. It allows humans and multiple AI models (Claude, Gemini, Codex, AntiGravity, etc.) to operate as equal nodes within a unified, self-contained workspace. This manual is the definitive guide for setting up, using, and extending the system. It is designed to be a single source of truth for both human directors and AI peer nodes.
 
 ---
 
 ## 1. Overview & Philosophy (시스템 개요 및 철학)
 
-Porta-Flow handles AI-to-AI and Human-to-AI interaction through a **Decentralized P2P Hub model**. No single AI "rules" the session; instead, they operate as equal nodes in a shared "Room." This architecture is designed to foster a collaborative environment where specialized models can contribute their unique strengths to a project.
+Engram handles AI-to-AI and Human-to-AI interaction through a **Decentralized P2P Hub model**. No single AI "rules" the session; instead, they operate as equal nodes in a shared "Room." This architecture is designed to foster a collaborative environment where specialized models can contribute their unique strengths to a project.
 
 ### 1-1. Philosophy: Peer-to-Peer (P2P) Equality
-The core philosophy of Porta-Flow is that AI models are more effective when they can critique, verify, and assist each other as peers, rather than acting as isolated silos. By establishing a shared state and a unanimous consensus protocol, Porta-Flow creates a "team" environment where the human acts as the high-level director (Tier 0) while the AI peers handle the technical execution.
+The core philosophy of Engram is that AI models are more effective when they can critique, verify, and assist each other as peers, rather than acting as isolated silos. By establishing a shared state and a unanimous consensus protocol, Engram creates a "team" environment where the human acts as the high-level director (Tier 0) while the AI peers handle the technical execution.
 
-**The Four Pillars of Porta-Flow:**
+**The Four Pillars of Engram:**
 1.  **Equality**: All nodes have a 1/N vote in the consensus process. No node can override another without reaching the human gate. This prevents any single model's biases from dominating the architecture and ensures that every technical decision is cross-verified by at least one other peer.
 2.  **Portability**: The entire environment—including Python, Node.js, Git, and all LLM configuration—lives in a single folder. You can move this folder to a USB drive or cloud storage and continue your work on any Windows machine. This "Sandbox" approach ensures that your development environment is consistent across all hosts and requires zero permanent installation on the host OS, making it ideal for mobile developers or secure environments.
 3.  **Auditability**: Every P2P message, system change, and tool invocation is logged in a transparent, line-delimited `log.jsonl` file. This ensures a complete trail of "who did what and why." This is essential for debugging complex multi-agent interactions and for security auditing. The log can be ingested by analysis tools to generate performance reports or to identify bottlenecks in the collaboration loop.
@@ -66,7 +66,7 @@ This folder contains all ephemeral and persistent session state. It is the "sour
 
 ## 2. Prerequisites and Installation (요구 사양 및 설치 가이드)
 
-Porta-Flow is designed to be truly "Zero-Install" on the host machine, requiring only a few basic Windows features to be enabled. It leaves no trace in the registry or system environment variables outside of the virtual drive mapping.
+Engram is designed to be truly "Zero-Install" on the host machine, requiring only a few basic Windows features to be enabled. It leaves no trace in the registry or system environment variables outside of the virtual drive mapping.
 
 ### 2-1. Prerequisites
 - **Operating System**: Windows 10 or 11. Windows 11 is preferred for its improved Terminal support and support for the latest PowerShell features.
@@ -77,15 +77,15 @@ Porta-Flow is designed to be truly "Zero-Install" on the host machine, requiring
 ### 2-2. Step-by-Step Installation
 
 #### Phase 1: Folder Preparation
-1.  **Extract**: Extract the Porta-Flow archive to your desired location (e.g., `C:\PortaFlow` or `E:\PortaFlow` on a USB drive).
-2.  **Path Hygiene**: Ensure the path contains no spaces or special characters. Some legacy tools used by the portable environment may not handle spaces correctly, so a clean path like `C:\PortaFlow` is safest.
+1.  **Extract**: Extract the Engram archive to your desired location (e.g., `C:\Engram` or `E:\Engram` on a USB drive).
+2.  **Path Hygiene**: Ensure the path contains no spaces or special characters. Some legacy tools used by the portable environment may not handle spaces correctly, so a clean path like `C:\Engram` is safest.
 
 #### Phase 2: Runtime Initialization (`INSTALL.bat`)
 1.  **Run `INSTALL.bat`**: This script downloads all necessary portable software and tools.
 2.  **What it does**:
     - It reads `runtimes.json` to identify the correct versions and URLs of all required software.
     - It downloads a portable Python "embeddable" distribution and installs `pip` for package management.
-    - It creates a dedicated virtual environment (`_sys/env/venv`) to isolate all Porta-Flow Python dependencies from your host machine.
+    - It creates a dedicated virtual environment (`_sys/env/venv`) to isolate all Engram Python dependencies from your host machine.
     - It downloads portable versions of Node.js, Git, and FFmpeg.
     - It installs essential CLI utilities: `ripgrep` (fast searching), `fd` (fast finding), `jq` (JSON processing), `bat` (syntax highlighting), and `delta` (pretty diffs).
 
@@ -93,14 +93,14 @@ Porta-Flow is designed to be truly "Zero-Install" on the host machine, requiring
 1.  **Run `register.bat`**: This integrates the folder with your host OS for a seamless experience.
 2.  **What it does**:
     - **SUBST mapping**: It maps the current folder to a virtual drive letter (default `P:`). This ensures that absolute paths in config files remain consistent regardless of the physical drive letter or location of the folder.
-    - **Context Menu**: It adds an "Open with Porta-Flow" option to the Windows Explorer right-click menu, allowing you to quickly launch a workspace with all environment variables pre-configured.
+    - **Context Menu**: It adds an "Open with Engram" option to the Windows Explorer right-click menu, allowing you to quickly launch a workspace with all environment variables pre-configured.
     - **Git Config**: It sets up a project-local sandbox Git identity to prevent leaking your personal host-level Git credentials and to ensure consistent commit authorship within the sandbox.
 
 ---
 
 ## 3. Daily Workflow: The Collaborative Lifecycle (사용자 워크플로우)
 
-A typical day in Porta-Flow follows a structured pattern to ensure that context is consistently maintained and that no work is lost between session shifts.
+A typical day in Engram follows a structured pattern to ensure that context is consistently maintained and that no work is lost between session shifts.
 
 ### 3-1. Starting the Session
 1.  **Launch**: Use the context menu or run `_sys\cli\launch.bat` to open the terminal environment.
@@ -108,10 +108,10 @@ A typical day in Porta-Flow follows a structured pattern to ensure that context 
     ```bat
     msg init-session --mission "Implement new API endpoint"
     ```
-    This command sets the stage. It clears out any stale mailbox entries, registers the active peers for the new mission, and creates a fresh Room ID. This is the "Morning Stand-up" of the Porta-Flow system.
+    This command sets the stage. It clears out any stale mailbox entries, registers the active peers for the new mission, and creates a fresh Room ID. This is the "Morning Stand-up" of the Engram system.
 
 ### 3-2. The Collaboration Loop
-Porta-Flow encourages a **Research -> Strategy -> Execution -> Verification** loop to maintain high software quality and architectural consistency.
+Engram encourages a **Research -> Strategy -> Execution -> Verification** loop to maintain high software quality and architectural consistency.
 
 1.  **Research (GC)**:
     - Ask Gemini to analyze the codebase and find similar implementations or patterns. Gemini's 2M context window is perfect for scanning the entire project history.
@@ -154,12 +154,12 @@ Always end your session properly to prepare the workspace for the next user or n
 #### `register.bat`
 - **Purpose**: Integrates the portable environment with the Windows host.
 - **Action**: Maps the portable directory to drive `P:` using the `subst` command. It also registers the context menu and sets up the local Git environment within the sandbox.
-- **When to run**: When moving the Porta-Flow folder to a new computer or when you need to re-map the drive letter.
+- **When to run**: When moving the Engram folder to a new computer or when you need to re-map the drive letter.
 
 #### `unregister.bat`
-- **Purpose**: Removes all Porta-Flow traces from the Windows host.
+- **Purpose**: Removes all Engram traces from the Windows host.
 - **Action**: Deletes the virtual drive mapping and removes the context menu registry keys from the Windows system.
-- **When to run**: Before deleting the Porta-Flow folder or moving it permanently to another storage device.
+- **When to run**: Before deleting the Engram folder or moving it permanently to another storage device.
 
 #### `CLEANUP.bat`
 - **Purpose**: Performs workspace maintenance and space optimization.
@@ -207,7 +207,7 @@ Always end your session properly to prepare the workspace for the next user or n
 
 ## 5. Detailed Directory Structure Reference (디렉토리 구조 상세 안내)
 
-Understanding the internal organization of Porta-Flow is essential for developers and advanced users who want to customize or extend the system.
+Understanding the internal organization of Engram is essential for developers and advanced users who want to customize or extend the system.
 
 - **`_sys/`**: The system layer. **Mandatory Peer Review for any changes here.**
   - **`_sys/ai/`**: Governance and protocol configurations. This is where the "laws" of the environment are defined.
@@ -233,7 +233,7 @@ Understanding the internal organization of Porta-Flow is essential for developer
 
 ## 6. The 10-Axis Framework: Measuring Integrity (건전성 평가 체계)
 
-Porta-Flow evaluates its own health and integrity through 10 distinct dimensions, or "Axes." Each axis has a dedicated verification script.
+Engram evaluates its own health and integrity through 10 distinct dimensions, or "Axes." Each axis has a dedicated verification script.
 
 | Axis | Command | Focus | Pillar |
 |:---:|:---|:---|:---|
@@ -301,7 +301,7 @@ The file `P:/_sys/ai/governance_params.json` governs the entire system's risk, b
 ### 8-1. Common Scenarios
 
 **Q: My `P:` drive is gone. What do I do?**
-A: The `subst` mapping is not persistent across reboots. Simply run `register.bat` from the Porta-Flow folder to restore the drive and all system integrations.
+A: The `subst` mapping is not persistent across reboots. Simply run `register.bat` from the Engram folder to restore the drive and all system integrations.
 
 **Q: I keep getting "File Locked" errors in hub.py.**
 A: This is usually caused by two peers trying to write to the state simultaneously. Wait a few seconds and try your command again. If it continues, run `CLEANUP.bat` to clear any orphaned lock files.
@@ -323,7 +323,7 @@ A: You must use the sandbox's pip. Run:
 
 ## 9. Developer Guide: Extending the System (고급 개발자 가이드)
 
-Porta-Flow is designed to be highly extensible for developers who want to add new capabilities or AI nodes.
+Engram is designed to be highly extensible for developers who want to add new capabilities or AI nodes.
 
 ### 9-1. Adding a New Peer Node
 1.  **Define in `orchestration.json`**: Add an entry for your new node (e.g., `gpt-4o`) including its CLI command and invocation arguments.
@@ -387,6 +387,6 @@ For developers and administrators who need to understand the purpose of every cr
 
 ---
 
-> **Porta-Flow v4.1 Technical Manual**
+> **Engram v4.1 Technical Manual**
 > Generated by **gc (Gemini CLI)** on 2026-06-13.
-> Porta-Flow — The portable, peer-to-peer future of collaborative AI development.
+> Engram — The portable, peer-to-peer future of collaborative AI development.

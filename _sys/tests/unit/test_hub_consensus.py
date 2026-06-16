@@ -106,4 +106,23 @@ class TestConsensusAdvanced:
         assert "CONSENSUS_HISTORY" in content
         assert f"{round_id}: History test — FINALIZED" in content
 
+    def test_consensus_emits_decision_capsule(self, ai_dir, capsys):
+        """Finalized consensus must emit a machine-readable decision capsule."""
+        hub.action_consensus_propose(ai_dir, "Capsule test", ["cc", "gc"], "cc")
+        out = capsys.readouterr().out
+        round_id = re.search(r"PROPOSE (r-\w+)", out).group(1)
+        
+        hub.action_consensus_vote(ai_dir, round_id, "cc", "agree", "test")
+        hub.action_consensus_vote(ai_dir, round_id, "gc", "agree", "test")
+        
+        capsule_path = ai_dir / "consensus" / f"{round_id}.capsule.json"
+        assert capsule_path.exists(), "Decision capsule was not created"
+        
+        data = json.loads(capsule_path.read_text("utf-8"))
+        assert data["round_id"] == round_id
+        assert "approved_scope" in data
+        assert "change_summary" in data
+        assert "doc_targets" in data
+        assert data["status"] == "finalized"
+
 import re

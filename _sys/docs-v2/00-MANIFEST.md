@@ -21,14 +21,18 @@ For human onboarding: `user/manual.md` → then `00-MANIFEST.md`
 |------|---------|--------|
 | `10-invariants.md` | MUST/MUST-NOT hard rules (INV-01~18, PRO-01~15) | PROTOCOL_INVARIANTS.md |
 | `20-architecture.md` | Physical/logical dir layout + PathMap design | MECE_Spec + TAXONOMY_v11 |
+| `general/master-plan.md` | Unified Architecture, Recovery Journal, Master Blueprint | End-game Debate (2026-06-16) |
+| `general/bivca-architecture-final.md` | BIVCA, PARA, Exocortex & Zero-Token Logic (Absolute Masterpiece) | Recursive Audit (2026-06-16) |
 | `general/protocol.md` | Collaboration model, COLLAB_RATE, feedback loop | collaboration_protocol.md |
 | `general/consensus.md` | Voting lifecycle, R:10, tiebreak | protocol-consensus.md |
 | `general/health.md` | Health states, routing gate, recovery | protocol-health.md |
 | `general/session.md` | Session decision tree, handoff, startup contract | protocol-session.md |
+| `general/communication.md` | Sync/Async, Formal/Casual, Alerting, Send vs Thread | MECE Audit (2026-06-16) |
 | `general/permissions.md` | Minimum permission model (all peers) | protocol-permissions.md |
 | `general/routing.md` | Leader election, role assignment | protocol-routing.md |
 | `general/directives.md` | Runtime + user directives, injection, TTL | protocol-directives.md |
 | `general/knowledge.md` | Lesson propagation, pack delivery | knowledge-propagation-spec.md |
+| `general/self-evolution.md` | Autonomous maintenance, auto-fixes, and refactoring | Autonomous Debate |
 | `specific/cc.md` | Claude Code: dirs, gate, delta flags | PEER_MANAGEMENT §2-1 |
 | `specific/gc.md` | Gemini CLI: dirs, gate, delta flags | PEER_MANAGEMENT §2-2 |
 | `specific/cx.md` | Codex: dirs, entry point, delta flags | PEER_MANAGEMENT §2-3 |
