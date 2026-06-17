@@ -47,13 +47,13 @@ CITATION_RE = re.compile(r"<!--\s*capsule:r-[0-9a-f]+\s*-->")
 # ---------------------------------------------------------------------------
 
 def _repo_root() -> Path:
-    """Walk up from this file to find the repo root (contains _sys_new/)."""
+    """Walk up from this file to find the repo root (contains _sys/)."""
     here = Path(__file__).resolve()
     for parent in [here, *here.parents]:
-        if (parent / "_sys_new").is_dir():
+        if (parent / "_sys").is_dir():
             return parent
-    # Fallback: assume script lives at _sys_new/runtime/ops/sync-docs.py
-    return here.parents[3]
+    # Fallback: assume script lives at _sys/checks/sync-docs.py
+    return here.parents[2]
 
 
 def _resolve_paths(

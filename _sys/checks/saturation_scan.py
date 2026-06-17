@@ -240,9 +240,9 @@ def _write_report(findings: list[Finding], sys_root: Path) -> None:
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 def main() -> None:
-    p = argparse.ArgumentParser(description="Saturation scan for _sys_new")
+    p = argparse.ArgumentParser(description="Saturation scan for _sys")
     p.add_argument("--sys-root", default=str(Path(__file__).parent.parent.parent),
-                   help="Path to _sys_new root")
+                   help="Path to _sys root")
     p.add_argument("--force", action="store_true",
                    help="Run even when commit_count %% 10 != 0")
     p.add_argument("--checks", nargs="+",
