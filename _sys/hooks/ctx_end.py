@@ -300,6 +300,15 @@ def main() -> None:
         python_exe=py2,
     )
 
+    # Self-care pipeline (event-based, non-blocking)
+    import subprocess as _sp
+    _self_care = _SYS_DIR / "checks" / "self_care.py"
+    if _self_care.exists():
+        _sp.Popen(
+            [py2, str(_self_care), "--trigger", "session_end"],
+            stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+        )
+
 
 if __name__ == "__main__":
     main()

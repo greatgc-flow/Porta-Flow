@@ -54,7 +54,10 @@
       "cleanup": {
         "peer_paths": [],
         "peer_globs": [],
-        "config_paths": ["daemon.log", "plugins/cache/"]
+        "config_paths": [
+          "daemon.log",
+          "plugins/cache/"
+        ]
       },
       "relocate": {
         "patch": [
@@ -66,6 +69,11 @@
           "config/daemon.lock",
           "config/.claude.json"
         ]
+      },
+      "model_profiles": {
+        "standard": "claude-haiku-4-5-20251001",
+        "effort": "claude-sonnet-4-6",
+        "deepthink": "claude-opus-4-8"
       }
     },
     "gemini": {
@@ -99,9 +107,23 @@
       "local_settings": [],
       "host_app": null,
       "cleanup": {
-        "peer_paths": ["usage.json", "session-map.json", "session.lock", "session-id.txt"],
-        "peer_globs": ["cq-*.txt"],
-        "config_paths": ["tmp/"]
+        "peer_paths": [
+          "usage.json",
+          "session-map.json",
+          "session.lock",
+          "session-id.txt"
+        ],
+        "peer_globs": [
+          "cq-*.txt"
+        ],
+        "config_paths": [
+          "tmp/"
+        ]
+      },
+      "model_profiles": {
+        "standard": "gemini-2.0-flash",
+        "effort": "gemini-2.5-pro",
+        "deepthink": "gemini-2.5-pro"
       }
     },
     "codex": {
@@ -126,6 +148,11 @@
         "peer_paths": [],
         "peer_globs": [],
         "config_paths": []
+      },
+      "model_profiles": {
+        "standard": "codex-mini-latest",
+        "effort": "o4-mini",
+        "deepthink": "o3"
       }
     },
     "antigravity": {
@@ -164,6 +191,11 @@
         "peer_paths": [],
         "peer_globs": [],
         "config_paths": []
+      },
+      "model_profiles": {
+        "standard": "default",
+        "effort": "default",
+        "deepthink": "default"
       }
     }
   }

@@ -109,7 +109,9 @@
           "EXPECTED_OUTPUT"
         ]
       }
-    }
+    },
+    "reelect_per_task": false,
+    "reelect_per_task_note": "If true, hub.py triggers elect-leader before every ask. Default false (session-scoped)."
   },
   "collab_rate": {
     "current": 10,
@@ -350,43 +352,71 @@
     "routing_rules": [
       {
         "task_type": "doc",
-        "preferred": ["gc", "cc", "cx"],
+        "preferred": [
+          "gc",
+          "cc",
+          "cx"
+        ],
         "fallback": "first_healthy",
         "_note": "gc: large-context drafting; cc/cx: structured doc generation"
       },
       {
         "task_type": "script",
-        "preferred": ["cc", "gc", "cx"],
+        "preferred": [
+          "cc",
+          "gc",
+          "cx"
+        ],
         "fallback": "first_healthy",
         "_note": "All active peers support script generation"
       },
       {
         "task_type": "verify",
-        "preferred": ["gc", "cc", "cx"],
+        "preferred": [
+          "gc",
+          "cc",
+          "cx"
+        ],
         "fallback": "first_healthy",
         "_note": "gc: large-corpus verification; cc/cx: contract and test verification"
       },
       {
         "task_type": "code",
-        "preferred": ["cx", "cc", "gc"],
+        "preferred": [
+          "cx",
+          "cc",
+          "gc"
+        ],
         "fallback": "first_healthy",
         "_note": "cx: patch-first; cc: architecture-aware; gc: zero-shot generation"
       },
       {
         "task_type": "code-review",
-        "preferred": ["cx", "gc", "cc"],
+        "preferred": [
+          "cx",
+          "gc",
+          "cc"
+        ],
         "fallback": "first_healthy",
         "_note": "cx: diff-level review; gc: cross-file consistency; cc: invariant checks"
       },
       {
         "task_type": "large-corpus",
-        "preferred": ["gc", "cc", "cx"],
+        "preferred": [
+          "gc",
+          "cc",
+          "cx"
+        ],
         "fallback": "first_healthy",
         "_note": "gc: 1M-token context; cc/cx: supplemental deep-dive"
       },
       {
         "task_type": "shell-ops",
-        "preferred": ["cc", "cx", "gc"],
+        "preferred": [
+          "cc",
+          "cx",
+          "gc"
+        ],
         "fallback": "first_healthy",
         "_note": "cc: Bash+PowerShell toolset; cx: workspace-scoped; gc: plan-mode shell"
       }
