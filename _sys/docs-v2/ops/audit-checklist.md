@@ -97,6 +97,34 @@
 
 ---
 
+## H. Perspective-Based Audit (From <X> Perspective)
+
+> Requirement: E3 from docs-v2/user/requirements.md
+
+Run these perspective checks at milestone boundaries (before release, after large refactors).
+
+| ID | Perspective | Key Question |
+|----|------------|-------------|
+| H-01 | **Portability** | Does this work on a fresh drive with a different letter? No hardcoded paths? |
+| H-02 | **Token-Zero** | Are all IPC queries in English? Are health checks local-only (no model calls)? |
+| H-03 | **MECE** | Is every item in exactly one category? Are there overlaps or gaps? |
+| H-04 | **5-Whys** | Was every error traced to root cause? Was it fixed at root (not symptom)? |
+| H-05 | **Closed Feedback Loop** | Does every process output feed back into improvement? Is the loop documented? |
+| H-06 | **Peer Equality** | Does any peer have special privileges? Are all votes counted equally? |
+| H-07 | **Minimum Permission** | Can any peer exceed its defined scope? Are scope boundaries enforced by code? |
+| H-08 | **General-Specific** | Is all common logic in general/? Are specific/ files delta-only? |
+| H-09 | **Autonomy Boundary** | Can the system propose without executing? Is human approval required for Tier-2? |
+| H-10 | **Brain Anatomy** | Do Amygdala checks fire before execution? Is Neocortex (docs-v2) consensus-only? |
+
+### When to Run Perspective Audit
+
+- Before any protocol.json change
+- Before any hub.py API change
+- After completing each Step of the 8-step refactoring
+- On consecutive_failures > 5
+
+---
+
 ## Checklist Summary by Change Type
 
 | Change | Domains to Check |

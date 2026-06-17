@@ -115,6 +115,79 @@ Each successful claim appends to `handoff.md[ACTIVE_THREADS]`:
 
 ---
 
+## 6. Model-Level Routing (Within Peer)
+
+> Requirement: B6 from docs-v2/user/requirements.md
+
+Each peer may use multiple underlying models based on task characteristics. Model selection lives in **per-peer config** (`_sys/ai/peers.json` → per-peer `model_profiles`); hub.py is a generic dispatcher and does NOT select models.
+
+### Selection Matrix
+
+| Mode | When to use | Examples |
+|------|------------|---------|
+| **Standard** | Routine tasks, low complexity | Health checks, file reads, simple edits |
+| **Effort** | Medium complexity, needs reasoning | Multi-file refactor, architecture decisions |
+| **DeepThink** | High complexity, ambiguous trade-offs | Protocol redesign, security review, 5-Whys root cause |
+
+### Decision Criteria
+
+```
+complexity = LOW  → Standard
+complexity = MED  → Effort
+complexity = HIGH → DeepThink
+token_budget LOW  → Standard (forced)
+health = YELLOW   → Standard (forced, preserve context)
+```
+
+### peers.json Shape (per-peer)
+
+```json
+"gc": {
+  "model_profiles": {
+    "standard": "gemini-2.0-flash",
+    "effort":   "gemini-2.5-pro",
+    "deepthink": "gemini-2.5-pro-deep-research"
+  }
+}
+```
+
+Model selection is NOT hub.py's responsibility — each peer CLI handles it internally based on its profile.
+
+---
+
+## 7. Coordinator Graceful Handoff
+
+> Requirement: B1 from docs-v2/user/requirements.md (coordinator switch, not just failover)
+
+**Graceful handoff** (voluntary) differs from **failover** (RED peer recovery).
+
+### Handoff Trigger Conditions
+
+| Condition | Action |
+|-----------|--------|
+| Context saturation (> 85%) | Current coordinator initiates voluntary yield |
+| Task domain shift | Coordinator yields to peer with better capability match |
+| End of session | Coordinator passes state to next session coordinator |
+| User request | Explicit handoff on user instruction |
+
+### Handoff Procedure
+
+```
+1. Coordinator writes final handoff.md state
+2. hub.py leader-yield --agent <current> --reason <reason>
+3. hub.py elect-leader --needs <new_domain> --effort <level>
+4. New coordinator reads handoff.md → announces to room
+5. User notification: "[<old>→<new>] Coordinator handed off: <reason>"
+```
+
+### Invariants
+
+- Human-interface peer stays FIXED during handoff (user sees same peer)
+- If new coordinator = different peer from human-interface peer: auto-forwarding enabled
+- Handoff is logged in coordinator_history (AP-20 tracking)
+
+---
+
 ## 6. AP-20: Coordinator Monopoly Guard
 
 **Source:** `hub.py:action_leader_claim` — checked on every `leader-claim` call.

@@ -28,6 +28,7 @@ For human onboarding: `user/manual.md` → then `00-MANIFEST.md`
 | `general/health.md` | Health states, routing gate, recovery | protocol-health.md |
 | `general/session.md` | Session decision tree, handoff, startup contract | protocol-session.md |
 | `general/communication.md` | Sync/Async, Formal/Casual, Alerting, Send vs Thread | MECE Audit (2026-06-16) |
+| `general/tradeoffs.md` | System Trade-off parameter registry (COLLAB_RATE, EFFORT, etc.) | End-game Debate |
 | `general/permissions.md` | Minimum permission model (all peers) | protocol-permissions.md |
 | `general/routing.md` | Leader election, role assignment | protocol-routing.md |
 | `general/directives.md` | Runtime + user directives, injection, TTL | protocol-directives.md |
@@ -38,10 +39,12 @@ For human onboarding: `user/manual.md` → then `00-MANIFEST.md`
 | `specific/cx.md` | Codex: dirs, entry point, delta flags | PEER_MANAGEMENT §2-3 |
 | `specific/ag.md` | AntiGravity: INACTIVE state + PRO-15 path | PEER_MANAGEMENT §2-4 |
 | `ops/debate.md` | Exhaustive work session rules (끝장 작업) | DEBATE_PROTOCOL v0.10 |
+| `ops/governance.md` | Operational governance (Garbage/, Retention, Audit triggers) | — |
 | `ops/templates.md` | Goal frame, closure manifest, round templates | — |
 | `ops/anti-patterns.md` | 21 peer failure modes (adversarial review) | — |
 | `ops/audit-checklist.md` | MECE audit items — bootstrap, SUBST, cleanup, collab, docs | session-verified (2026-06-16) |
 | `user/manual.md` | Human onboarding + daily workflow | USER_MANUAL.md |
+| `user/requirements.md` | MECE requirements from MemoryDump (cc+gc consensus, 2026-06-18) | MemoryDump.md debate |
 | `_exceptions/` | Non-MECE items pending reclassification | — |
 
 ## General-Specific Inheritance

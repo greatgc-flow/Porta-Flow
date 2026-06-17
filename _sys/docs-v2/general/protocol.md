@@ -106,7 +106,72 @@ Policy schema must cover: versioning · authority · precedence · lifecycle · 
 
 ---
 
-## 7. Ambiguity Contract
+## 7. Plan-Do-See Cycle
+
+> Requirement: E4 from docs-v2/user/requirements.md
+
+Every substantive task follows this 3-phase loop. Repeats until task is complete.
+
+```
+┌─ PLAN ──────────────────────────────────────────────────────────┐
+│  1. Scan available resources (health.json, handoff.md, docs)    │
+│  2. Estimate token budget; chunk if task exceeds single session │
+│  3. Get user approval on plan before execution                  │
+└─────────────────────────────────────────────────────────────────┘
+         ↓
+┌─ DO ────────────────────────────────────────────────────────────┐
+│  4. Execute one chunk                                           │
+│  5. Report any delta (new info, blockers found mid-execution)   │
+└─────────────────────────────────────────────────────────────────┘
+         ↓
+┌─ SEE ───────────────────────────────────────────────────────────┐
+│  6. Checkpoint: cross-verify output against plan               │
+│  7. If gaps found → loop back to PLAN                          │
+│  8. If complete → record in handoff.md + report to user        │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Exception path**: on any failure → `[HALT: <reason>]` → propose workaround → human approval required before retry.
+
+---
+
+## 8. Zero-Token IPC Protocol
+
+> Requirement: B8 from docs-v2/user/requirements.md
+
+### Echo-Back (복명복창)
+
+After receiving any instruction, peer MUST echo back its understanding before executing:
+```
+"Understood: [task summary in 1 line]. Proceeding."
+```
+No silent execution. Lossless transcription: no information added, removed, or transformed during relay.
+
+### Coordinator Signal Pattern
+
+Coordinator does NOT relay full conversation to target peer. Instead:
+
+```
+1. Coordinator writes shared state to IPC file (query file or handoff.md section)
+2. Coordinator sends 1-line signal: hub.py ask --to <peer> --query "SEE: <file_path>"
+3. Target peer reads file directly
+4. Target peer echo-backs and proceeds
+```
+
+This eliminates middle-man token cost — coordinator's token budget is NOT consumed by relay.
+
+### Query File Lifecycle
+
+```
+Write → hub.py ask (file read + auto-deleted) → peer processes → response logged
+```
+
+IPC query files are consumed (deleted) on first read by hub.py. Never re-use the same file path.
+Naming: `{peer_id}-{YYYYMMDDHHMMSS}-{RAND4}.txt`
+
+---
+
+## 9. Ambiguity Contract
 
 Every ambiguity entry records: uncertainty · candidate interpretations · confidence · ask_threshold · escalation_vector · owner · status · resolution_reference.
 

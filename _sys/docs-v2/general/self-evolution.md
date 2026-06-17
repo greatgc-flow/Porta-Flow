@@ -37,8 +37,42 @@ Monitors structural health and prevents architectural bloat.
 ## 3. Protocol.json Integration (Proposed)
 A new `"autonomous_maintenance"` section will be added to `protocol.json` to define thresholds, voters, and triggers for these subsystems.
 
-## 4. Implementation Roadmap
-- **Phase 1:** Update `protocol.json` with the new section (Requires R:10).
-- **Phase 2:** Implement `saturation-scan.py` (Read-only, Low risk).
-- **Phase 3:** Implement `sync-docs.py` and hook into `consensus_finalize` (Requires R:8).
+## 4. Self-Care Cycle (Event-Based)
+
+> Requirement: C4 from docs-v2/user/requirements.md
+
+Self-care is **event-driven** (not time-based). Time-based cycles waste tokens when there is nothing to do.
+
+### Trigger Events
+
+| Event | Trigger Condition | Subsystem |
+|-------|-----------------|-----------|
+| `session_end` | User runs ctx-end or ctx-save | SelfHealer + DocsSyncer |
+| `error_threshold` | `consecutive_failures > 5` for any peer | SelfHealer (immediate) |
+| `commit_interval` | Every 10 git commits | SaturationDetector |
+| `manual` | User runs saturation_scan.py directly | All subsystems |
+
+### Self-Care Procedure (on trigger)
+
+```
+1. [Observe]  Read health.json, runtime-directives.jsonl, active-lessons.jsonl
+2. [Validate] Check junctions (virtualizer.py status), stale paths, invariant completeness
+3. [Cleanup]  Remove expired directives (TTL expired), compact old logs
+4. [Scan]     saturation_scan.py — check file saturation, git churn, coupling
+5. [Propose]  If saturation detected: auto-generate proposal-add (never auto-execute)
+6. [Sync]     DocsSyncer: apply any finalized capsules via sync_docs.py
+7. [Record]   Write self-care summary to _archive/self-care-log.jsonl
+```
+
+### System Cannot Self-Apply
+
+- Self-evolution proposals require human approval before execution
+- SaturationDetector findings → `proposal-add` only (read-only trigger)
+- Tier-2 (protocol/config) changes → full R:10 consensus required
+
+## 5. Implementation Roadmap
+- **Phase 1:** Update `protocol.json` with `autonomous_maintenance` section (Requires R:10).
+- **Phase 2:** Implement `saturation-scan.py` — Read-only, Tier-0. ✅ (rescued from _sys_new)
+- **Phase 3:** Implement `sync-docs.py` and hook into `consensus_finalize` (Requires R:8). ✅ (rescued from _sys_new)
 - **Phase 4:** Add SelfHealer actions to `hub.py` and sync contracts (Requires R:10).
+- **Phase 5:** Wire event triggers to hub.py commands (session_end → self-care pipeline).

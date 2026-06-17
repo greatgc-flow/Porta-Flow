@@ -130,7 +130,41 @@ AI Peers: cc (Claude) · gc (Gemini) · cx (Codex) · ag (AntiGravity, inactive)
 
 ---
 
-## 7. Key Design Decisions (from v2.6 debates)
+## 7. Brain-Inspired Cognitive Layers
+
+> Requirement: C1 from docs-v2/user/requirements.md
+
+Engram's runtime maps to four brain regions. This is NOT metaphorical — each maps to a concrete system component.
+
+| Brain Layer | System Component | Responsibility |
+|------------|-----------------|----------------|
+| **Amygdala** | `check_risk.py` / safety module | Immediate risk/safety response: error detection, security threats, contradiction resolution. Fires BEFORE execution. |
+| **Prefrontal Cortex** | `hub.py` / active coordinator peer | Orchestration, planning, Plan-Do-See cycle, consensus coordination. |
+| **Hippocampus** | `_archive/` + `handoff.md` | Short-term memory (session context, handoff.md) + long-term memory (archive/, session logs, lessons). |
+| **Neocortex** | `docs-v2/` | Semantic knowledge store — structured, versioned, normative SSOT. Slowest to change; most durable. |
+
+### Information Flow
+
+```
+Input →  [Amygdala: risk check]
+      →  [Prefrontal Cortex: plan]
+      →  [Hippocampus: recall relevant context]
+      →  [Neocortex: apply normative rules]
+      →  Execute
+      →  [Hippocampus: record to archive/lessons]
+      →  [Neocortex: update if structural change]
+```
+
+### Invariants
+
+- Amygdala fires on EVERY operation (never bypassed)
+- Neocortex (docs-v2) is written to only via consensus (never solo edit)
+- Hippocampus short-term (handoff.md) is volatile; long-term (_archive/) is append-only
+- Prefrontal Cortex role rotates per AP-20 (no coordinator monopoly)
+
+---
+
+## 8. Key Design Decisions (from v2.6 debates)
 
 - **Path_Map.json bootstrap**: stored at KNOWN fixed path, not dynamically discovered → avoids bootstrap paradox
 - **Ghost junction guard**: pathmap status detects and reports `broken_link` state (N-09)
