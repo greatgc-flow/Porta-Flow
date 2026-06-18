@@ -1,9 +1,9 @@
-"""self_care.py — Event-based self-care pipeline (7 steps).
+"""self_care.py — Event-based self-care pipeline (8 steps + lesson graduation).
 
 Usage:
     python self_care.py [--trigger session_end|error_threshold|commit_interval|manual]
 
-Steps: Observe → Validate → Cleanup → Scan → Propose → Sync → Record
+Steps: Observe → Validate → Cleanup → DocsMECE → Scan → Propose → LessonGrad → Sync → Record
 Step failures are non-blocking: errors logged, remaining steps continue.
 """
 import argparse
@@ -11,12 +11,32 @@ import json
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
 _CHECKS_DIR = Path(__file__).parent
 _SYS_DIR    = _CHECKS_DIR.parent
+
+
+def _parse_ts(ts: str) -> datetime:
+    """Parse lesson source_ref timestamp (YYYYMMDDTHHMMSS or ISO8601) → UTC datetime."""
+    ts = ts.strip()
+    if not ts:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    # compact form: 20260614T000000
+    if len(ts) == 15 and ts[8] == "T":
+        try:
+            return datetime.strptime(ts, "%Y%m%dT%H%M%S").replace(tzinfo=timezone.utc)
+        except ValueError:
+            pass
+    # ISO8601
+    for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(ts[:len(fmt)], fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return datetime.min.replace(tzinfo=timezone.utc)
 
 
 class SelfCare:
@@ -128,7 +148,86 @@ class SelfCare:
             )
         self.state["steps_completed"].append("propose")
 
-    # ── Step 6: Sync ──────────────────────────────────────────────────────────
+    # ── Step 6: Lesson Graduation (Phase 6 / EDGE-05) ────────────────────────
+
+    def lesson_graduation(self) -> None:
+        """Promote recurring lessons to docs-v2/10-invariants.md via proposal-add.
+
+        Algorithm (impl-plan.md §9):
+          1. Load governance_params.json for threshold + window
+          2. Scan active-lessons.jsonl for lessons with source_refs count >= threshold
+             OR lessons cited across >= threshold unique debate sessions within window_days
+          3. For each candidate: hub.py proposal-add with content block
+          4. Log result to state
+        """
+        gov_path = self.sys_dir / "ai" / "governance_params.json"
+        gov: dict = {}
+        if gov_path.exists():
+            try:
+                gov = json.loads(gov_path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+
+        threshold = int(gov.get("lesson_graduation_threshold", 3))
+        window_days = int(gov.get("lesson_graduation_window_days", 7))
+        target_doc = gov.get("lesson_graduation_target_doc", "_sys/docs-v2/10-invariants.md")
+        auto_propose = bool(gov.get("lesson_graduation_auto_propose", True))
+
+        lessons_path = self.sys_dir / "ai" / "knowledge" / "general" / "active-lessons.jsonl"
+        if not lessons_path.exists():
+            self.state["steps_completed"].append("lesson_graduation")
+            return
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=window_days)
+        candidates: list[dict] = []
+
+        for line in lessons_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                lesson = json.loads(line)
+            except Exception:
+                continue
+            if lesson.get("status") != "active":
+                continue
+
+            refs = lesson.get("source_refs", [])
+            recent_refs = [
+                r for r in refs
+                if _parse_ts(r.get("ts", "")) >= cutoff
+            ]
+            unique_debates = {r.get("id") for r in recent_refs if r.get("type") in ("debate", "parity-audit")}
+
+            if len(refs) >= threshold or len(unique_debates) >= threshold:
+                candidates.append(lesson)
+
+        self.state["graduation_candidates"] = [l.get("id") for l in candidates]
+
+        if not candidates or not auto_propose:
+            self.state["steps_completed"].append("lesson_graduation")
+            return
+
+        hub = self.sys_dir / "core" / "hub.py"
+        for lesson in candidates:
+            lid = lesson.get("id", "?")
+            title = lesson.get("title", "untitled")
+            rule = lesson.get("compact_rule", "")
+            rationale = (
+                f"Lesson {lid} ({title}) has been observed >= {threshold} times. "
+                f"Candidate for graduation to {target_doc}.\n"
+                f"Rule: {rule[:300]}"
+            )
+            subprocess.run(
+                [sys.executable, str(hub), "proposal-add",
+                 "--title", f"Lesson graduation: {lid} → {target_doc}",
+                 "--rationale", rationale[:500]],
+                capture_output=True, text=True,
+            )
+
+        self.state["steps_completed"].append("lesson_graduation")
+
+    # ── Step 7: Sync ──────────────────────────────────────────────────────────
 
     def sync(self) -> None:
         sync_script = _CHECKS_DIR / "sync_docs.py"
@@ -157,13 +256,14 @@ class SelfCare:
 
     def run(self, trigger: str = "manual") -> None:
         steps = [
-            ("observe",    self.observe),
-            ("validate",   self.validate),
-            ("cleanup",    self.cleanup),
-            ("docs_mece",  self.docs_mece),
-            ("scan",       self.scan),
-            ("propose",    self.propose),
-            ("sync",       self.sync),
+            ("observe",            self.observe),
+            ("validate",           self.validate),
+            ("cleanup",            self.cleanup),
+            ("docs_mece",          self.docs_mece),
+            ("scan",               self.scan),
+            ("propose",            self.propose),
+            ("lesson_graduation",  self.lesson_graduation),
+            ("sync",               self.sync),
         ]
         for name, fn in steps:
             try:

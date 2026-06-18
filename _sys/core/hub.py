@@ -27,6 +27,13 @@ try:
 except ImportError:
     psutil = None  # type: ignore[assignment]
 
+try:
+    from hub_error import HubError as _HubError
+    _HUB_ERROR_AVAILABLE = True
+except ImportError:
+    _HubError = None  # type: ignore[assignment]
+    _HUB_ERROR_AVAILABLE = False
+
 # Windows 콘솔 UTF-8 강제
 if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -3004,6 +3011,12 @@ def action_report_error(ai_root: Path, peer: str, pattern: str, detail: str = ""
     threshold = int(_operational_guard_cfg().get("error_memory", {}).get("quarantine_after", 3) or 3)
     if event["peer"] != "unknown" and threshold > 0 and count >= threshold:
         action_peer_quarantine(ai_root, event["peer"], f"operational_error:{event['pattern']}")
+    # Taxonomy-driven display (hub_error.py Phase 6)
+    if _HUB_ERROR_AVAILABLE and severity in ("error", "fatal"):
+        try:
+            _HubError.report_from_legacy(peer or "unknown", pattern or "unknown", detail, severity)
+        except Exception:
+            pass
     print(f"[HUB] operational-error recorded peer={event['peer']} pattern={event['pattern']} count={count}")
 
 
