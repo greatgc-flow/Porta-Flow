@@ -1691,7 +1691,11 @@ def _build_session_cmd(health_peer: str, session_id: str | None, exe: str) -> tu
     return [], False, None
 
 
-def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None) -> None:
+def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0) -> None:
+    if _depth > 2:
+        print(f"[ERROR] action_ask: maximum failover depth reached for {to}", file=sys.stderr)
+        sys.exit(1)
+    
     saved_query_file_path = query_file
     if query_file:
         qf = Path(query_file)
@@ -1705,11 +1709,14 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         for entry in _load_orchestration().get("hub_nodes", [])
         if entry.get("enabled") is False and entry.get("node_id")
     }
+    # Resolve aliases
+    original_to = to
     if to not in nodes:
         for nid, ncfg in nodes.items():
             if to in ncfg.get("aliases", []):
                 to = nid
                 break
+    
     if to in disabled_nodes:
         print(f"[ERROR] ask target disabled by default: {to}", file=sys.stderr)
         sys.exit(1)
@@ -1741,7 +1748,6 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
     if _CONTEXT_GATE_AVAILABLE and _ContextGate is not None:
         try:
             profile_id = _resolve_profile_id(to)
-            reg = _read_json(Path(__file__).parent.parent / "ai" / "model-registry.json").get("models", {})
             profile_data = _load_model_profiles().get("profiles", {}).get(profile_id, {})
             model_id = profile_data.get("model_id") or health_peer
 
@@ -1749,9 +1755,14 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             action = gate_result.get("action", "pass") 
             if action == "failover":
                 failover_model = gate_result.get("failover_model", "gc")
-                print(f"[ContextGate] context {gate_result.get('ratio', 0):.0%} full → failover to {failover_model}", file=sys.stderr)
-                # Recursive failover call
-                return action_ask(failover_model, query, None, timeout_sec, ai_root, quiet, output_file, include_context=False, session_policy=session_policy, explicit_scope=explicit_scope)
+                # Prevent immediate loop if failover_model is same as current (via ID or alias)
+                if failover_model == to or failover_model == original_to:
+                    # If we already tried to failover and it's the same, don't try again
+                    pass
+                else:
+                    print(f"[ContextGate] context {gate_result.get('ratio', 0):.0%} full → failover to {failover_model}", file=sys.stderr)
+                    # Recursive failover call with increased depth and disabled context inclusion
+                    return action_ask(failover_model, query, None, timeout_sec, ai_root, quiet, output_file, include_context=False, session_policy=session_policy, explicit_scope=explicit_scope, _depth=_depth + 1)
             elif action == "reject":
                 msg = gate_result.get("message", "context limit exceeded")
                 if _HUB_ERROR_AVAILABLE and _HubError is not None:
