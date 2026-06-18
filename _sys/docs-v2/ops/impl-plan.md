@@ -581,28 +581,28 @@ Config in governance_params.json (add these keys):
 4. Create `logging-config.json` (from §8 above)
 5. Update traceability_map.json with new entries (§7 above)
 
-### Phase 3: Check Automation (P3 — new Python)
-1. Implement `check_docs_mece.py` (spec in §5 above)
-2. Implement `hub_logging.py` (7 types, rolling policy)
-3. Implement `hub_context.py` (ContextGate v1.0, spec in §4.3)
-4. Wire check_docs_mece.py into self_care.py Phase 3
+### Phase 3: Check Automation (P3 — new Python) ✅ DONE (2026-06-18)
+1. ✅ `_sys/checks/check_docs_mece.py` — CHK-01~07, config-driven, exit 0 verified
+2. ✅ `_sys/core/hub_logging.py` — 7-type JSONL + rolling gzip
+3. ✅ `_sys/core/hub_context.py` — ContextGate v1.0 (CJK-aware, failover chain)
+4. ✅ self_care.py wired: docs_mece → Step 3 (CHK-01,02 in --json mode)
 
-### Phase 4: Hub Decomposition (P4 — refactor)
-1. Extract `hub_peer.py` — universal peer interface + adapters
-2. Extract `hub_health.py` — health state machine
-3. Add adapter_class field to orchestration.json hub_nodes
-4. Wire hub_context.py ContextGate into action_ask()
+### Phase 4: Hub Decomposition (P4 — refactor) ✅ DONE (2026-06-18)
+1. ✅ `_sys/core/hub_peer.py` — PeerAdapter Protocol + 4 concrete adapters
+2. ✅ `_sys/core/hub_health.py` — read-only health state reader (HealthReader, PeerHealthState)
+3. ⏳ adapter_class field in orchestration.json hub_nodes (not yet; auto-detect works)
+4. ⏳ Wire hub_context.py ContextGate into action_ask() (Phase 7 — requires R:10)
 
-### Phase 5: Self-Evolution Closure (P5 — Python)
-1. Implement self_care.py Phase 6 (lesson graduation, spec in §9)
-2. Implement protocol.json autonomous_maintenance section (Phase 1 of self-evolution.md)
-3. Add protocol.json Phase 1 data and update health thresholds to use it
+### Phase 5: Self-Evolution Closure (P5) ✅ DONE (2026-06-18)
+1. ✅ self_care.py lesson_graduation step — EDGE-05 closed
+2. ⏳ protocol.json autonomous_maintenance section — pending R:10
+3. ⏳ health thresholds: currently in lifecycle_policy.json, not protocol.json
 
-### Phase 6: Error Visibility (P6 — cross-cutting)
-1. Replace all silent `except Exception: return {}` with error tier routing
-2. Add user console error display (Korean, formatted per §6)
-3. Wire error-taxonomy.json into hub.py error handling
-4. Add error_show_stacktrace to governance_params.json
+### Phase 6: Error Visibility (P6) ✅ DONE (2026-06-18)
+1. ✅ `_sys/core/hub_error.py` — taxonomy-driven Korean console display
+2. ✅ T1+: Korean console display (peer/action/cause/fix/5Whys + stacktrace)
+3. ✅ hub.py action_report_error: calls HubError.report_from_legacy() for severity=error/fatal
+4. ✅ error_show_stacktrace, error_5whys_auto_log in governance_params.json
 
 ---
 

@@ -149,6 +149,34 @@
       "config": ["_sys/ai/governance_params.json#docs_mece_exempt_paths"],
       "runtime": ["_sys/checks/check_docs_mece.py#CHK-02"],
       "tests": []
+    },
+    {
+      "id": "peer-adapter-interface",
+      "docs": ["_sys/docs-v2/ops/impl-plan.md#4-hub-decomposition"],
+      "config": ["_sys/ai/orchestration.json#/hub_nodes"],
+      "runtime": ["_sys/core/hub_peer.py#PeerAdapter", "_sys/core/hub_peer.py#get_adapter"],
+      "tests": []
+    },
+    {
+      "id": "peer-health-reader",
+      "docs": ["_sys/docs-v2/general/health.md", "_sys/docs-v2/10-invariants.md#inv-15"],
+      "config": ["_sys/ai/lifecycle_policy.json#/identity/node_to_peer"],
+      "runtime": ["_sys/core/hub_health.py#HealthReader", "_sys/core/hub_health.py#PeerHealthState"],
+      "tests": []
+    },
+    {
+      "id": "lesson-graduation-algorithm",
+      "docs": ["_sys/docs-v2/general/self-evolution.md#phase-6", "_sys/docs-v2/_exceptions/README.md#edge-05"],
+      "config": ["_sys/ai/governance_params.json#lesson_graduation_threshold"],
+      "runtime": ["_sys/checks/self_care.py#SelfCare.lesson_graduation"],
+      "tests": []
+    },
+    {
+      "id": "error-taxonomy-display",
+      "docs": ["_sys/docs-v2/ops/impl-plan.md#6-error-visibility-design"],
+      "config": ["_sys/ai/error-taxonomy.json", "_sys/ai/governance_params.json#error_show_stacktrace"],
+      "runtime": ["_sys/core/hub_error.py#HubError", "_sys/core/hub.py#action_report_error"],
+      "tests": []
     }
   ],
   "known_external_limits": [
