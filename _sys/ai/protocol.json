@@ -1,8 +1,8 @@
 {
-  "_version": "1.1",
-  "_protocol_version": "4.1",
+  "_version": "1.2",
+  "_protocol_version": "4.2",
   "_help": "Universal multi-peer collaboration protocol config. Single source of truth. All peers read this. No hardcoding.",
-  "_updated": "2026-06-15",
+  "_updated": "2026-06-18",
   "_docs_root": "_sys/docs-v2",
   "_docs_history": "_sys/docs/history",
   "_peers_voted": [
@@ -882,6 +882,34 @@
         "1": "failed"
       },
       "note": "Performs transition to finalized state and commits to handoff.md"
+    }
+  },
+  "autonomous_maintenance": {
+    "_doc": "Phase 1 of self-evolution.md: declarative schedule for self_care.py and lifecycle scripts.",
+    "enabled": true,
+    "trigger": "session_start",
+    "schedule": {
+      "on_session_start": [
+        {"step": "health_check", "script": "_sys/checks/self_care.py", "args": ["observe"], "abort_on_fail": false},
+        {"step": "docs_mece_fast", "script": "_sys/checks/check_docs_mece.py", "args": ["--checks", "CHK-01,CHK-02", "--json"], "abort_on_fail": false}
+      ],
+      "on_session_end": [
+        {"step": "self_care_full", "script": "_sys/checks/self_care.py", "args": [], "abort_on_fail": false},
+        {"step": "lesson_graduation", "script": "_sys/checks/self_care.py", "args": ["--lesson-grad-only"], "abort_on_fail": false}
+      ],
+      "periodic_minutes": 0
+    },
+    "health_thresholds": {
+      "jsonl_warn_mb": 80,
+      "jsonl_fail_mb": 150,
+      "consecutive_failure_warn": 3,
+      "consecutive_failure_halt": 5,
+      "context_stale_hours": 2
+    },
+    "escalation": {
+      "on_health_red": "log_and_notify_user",
+      "on_check_fail": "log_only",
+      "on_graduation_fail": "log_only"
     }
   }
 }

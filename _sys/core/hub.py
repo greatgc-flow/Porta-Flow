@@ -34,6 +34,13 @@ except ImportError:
     _HubError = None  # type: ignore[assignment]
     _HUB_ERROR_AVAILABLE = False
 
+try:
+    from hub_context import ContextGate as _ContextGate
+    _CONTEXT_GATE_AVAILABLE = True
+except ImportError:
+    _ContextGate = None  # type: ignore[assignment]
+    _CONTEXT_GATE_AVAILABLE = False
+
 # Windows 콘솔 UTF-8 강제
 if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -1694,6 +1701,25 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
     _ask_health_precheck(health_peer, ai_root)
     if include_context:
         query = _build_ask_query_with_context(ai_root, query, to_peer=to)
+
+    # ── ContextGate check ──────────────────────────────────────
+    if _CONTEXT_GATE_AVAILABLE and _ContextGate is not None:
+        try:
+            profile = _load_model_profiles().get(f"{health_peer}.default") or {}
+            model_id = profile.get("model_id", health_peer)
+            gate_result = _ContextGate().check(query, model_id)
+            action = gate_result.get("action", "pass")
+            if action == "failover":
+                failover_model = gate_result.get("failover_model", "")
+                print(f"[ContextGate] context {gate_result.get('ratio', 0):.0%} full → failover to {failover_model}", file=sys.stderr)
+            elif action == "reject":
+                if _HUB_ERROR_AVAILABLE and _HubError is not None:
+                    _HubError.report("CONTEXT_GATE_REJECT", peer=health_peer, message=gate_result.get("message", "context limit exceeded"))
+                else:
+                    print(f"[ERROR] ContextGate reject: {gate_result.get('message', 'context limit exceeded')}", file=sys.stderr)
+                sys.exit(1)
+        except Exception:
+            pass  # ContextGate failure is non-fatal; proceed with query
 
     # ── Session reuse ──────────────────────────────────────────
     session_mode = node.get("session_mode", "none")
