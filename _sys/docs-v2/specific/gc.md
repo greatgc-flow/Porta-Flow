@@ -61,8 +61,8 @@ Future: migrate bat scripts to read `health.json["availability"]["gate_open"]` d
 
 ## Gate & Entry
 
-- Gate script: `_sys/gemini/gemini-gate.bat`
-- Status check: `gemini-status.bat`
+- Gate: `hub.py peer-quarantine --peer gc` / `hub.py peer-recover --peer gc`
+- Status check: `gemini-status.bat` (`_sys/gemini/gemini-status.bat`)
 - Hub command: `hub.py ask --to gc --query-file <file>`
 
 ---

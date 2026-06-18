@@ -47,12 +47,15 @@ def _peer_dirs() -> dict[str, Path]:
         candidate = _SYS_DIR / peer_id
         if candidate.is_dir():
             result[peer_id] = candidate
-    # Fallback: scan _sys/ for known peer dirs
-    for peer_id in ("claude", "gemini", "codex", "antigravity"):
-        if peer_id not in result:
-            p = _SYS_DIR / peer_id
+    # Fallback: read peer list from peers.json (data-driven, no hardcoding)
+    peers_path = _AI_DIR / "peers.json"
+    peers_data = _load_json(peers_path)
+    for peer_name, peer_cfg in peers_data.get("peers", {}).items():
+        if peer_name not in result:
+            subdir = peer_cfg.get("sys_subdir", peer_name)
+            p = _SYS_DIR / subdir
             if p.is_dir():
-                result[peer_id] = p
+                result[peer_name] = p
     return result
 
 
