@@ -28,20 +28,21 @@ _AI_DIR = _SYS_DIR / "ai"
 _GOVERNANCE_PATH = _AI_DIR / "governance_params.json"
 _MODEL_REGISTRY_PATH = _AI_DIR / "model-registry.json"
 
+def _load_failover_chain(registry_path: Path) -> dict[str, str]:
+    """Load failover model mappings from model-registry.json."""
+    try:
+        data = json.loads(registry_path.read_text(encoding="utf-8"))
+        return {
+            mid: cfg["failover_to"]
+            for mid, cfg in data.get("models", {}).items()
+            if cfg.get("failover_to") is not None
+        }
+    except Exception:
+        return {}  # graceful fallback: no failover
+
+
 # Fallback model chains when primary context is exceeded
-_FAILOVER_CHAIN: dict[str, str] = {
-    "claude-opus-4-8":        "claude-haiku-4-5-20251001",
-    "claude-sonnet-4-6":      "claude-haiku-4-5-20251001",
-    "claude-fable-5":         "claude-haiku-4-5-20251001",
-    "claude-opus-4-7":        "claude-haiku-4-5-20251001",
-    "gemini-3-pro":           "gemini-3-flash",
-    "gemini-3.1-pro":         "gemini-3-flash",
-    "gemini-2.5-pro":         "gemini-3-flash",
-    "gpt-5.5":                "gpt-5.4-mini",
-    "gpt-5.4":                "gpt-5.4-mini",
-    "o3-pro":                 "gpt-5.4-mini",
-    "o3":                     "gpt-5.4-mini",
-}
+_FAILOVER_CHAIN: dict[str, str] = _load_failover_chain(_MODEL_REGISTRY_PATH)
 
 
 def _cjk_ratio(text: str) -> float:

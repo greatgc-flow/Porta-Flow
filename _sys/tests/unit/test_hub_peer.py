@@ -220,20 +220,19 @@ class TestGetAdapterForPeer:
             adapter = get_adapter_for_peer("gemini")
         assert isinstance(adapter, GeminiAdapter)
 
-    def test_fallback_map_cc(self):
+    def test_fallback_returns_base_when_no_orch(self):
+        # G1 fix: hardcoded fallback_map removed; empty orchestration → BaseAdapter
         with self._mock_orch([]):
-            adapter = get_adapter_for_peer("cc")
+            assert isinstance(get_adapter_for_peer("cc"), BaseAdapter)
+            assert isinstance(get_adapter_for_peer("gc"), BaseAdapter)
+            assert isinstance(get_adapter_for_peer("cx"), BaseAdapter)
+
+    def test_fallback_by_invoke_name(self):
+        # G1: invoke-name fallback resolves via orchestration.json, not hardcoded map
+        nodes = [{"node_id": "cc", "adapter_class": "ClaudeAdapter", "invoke": "claude"}]
+        with self._mock_orch(nodes):
+            adapter = get_adapter_for_peer("claude")  # match by invoke name
         assert isinstance(adapter, ClaudeAdapter)
-
-    def test_fallback_map_gc(self):
-        with self._mock_orch([]):
-            adapter = get_adapter_for_peer("gc")
-        assert isinstance(adapter, GeminiAdapter)
-
-    def test_fallback_map_cx(self):
-        with self._mock_orch([]):
-            adapter = get_adapter_for_peer("cx")
-        assert isinstance(adapter, CodexAdapter)
 
 
 # ── Session state ─────────────────────────────────────────────────────────────

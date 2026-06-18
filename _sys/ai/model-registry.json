@@ -23,6 +23,7 @@
         "cache_hit_per_1m": 0.30
       },
       "status": "GA",
+      "failover_to": "claude-haiku-4-5-20251001",
       "confidence": "documented",
       "validated_at": "2026-06-18"
     },
@@ -44,6 +45,7 @@
         "cache_hit_per_1m": 1.50
       },
       "status": "GA",
+      "failover_to": "claude-haiku-4-5-20251001",
       "confidence": "documented",
       "validated_at": "2026-06-18"
     },
@@ -61,6 +63,7 @@
         "output_per_1m": 4.00
       },
       "status": "GA",
+      "failover_to": null,
       "confidence": "documented",
       "validated_at": "2026-06-18"
     },
@@ -80,6 +83,7 @@
         "output_per_1m": null
       },
       "status": "GA",
+      "failover_to": "claude-haiku-4-5-20251001",
       "confidence": "inferred",
       "validated_at": "2026-06-18"
     },
@@ -100,6 +104,7 @@
         "output_per_1m": 10.00
       },
       "status": "GA",
+      "failover_to": "gemini-3-flash",
       "confidence": "documented",
       "validated_at": "2026-06-18"
     },
@@ -120,6 +125,7 @@
         "output_per_1m": null
       },
       "status": "GA",
+      "failover_to": null,
       "confidence": "inferred",
       "validated_at": "2026-06-18"
     },
@@ -140,6 +146,7 @@
         "output_per_1m": null
       },
       "status": "GA",
+      "failover_to": "gemini-3-flash",
       "confidence": "inferred",
       "validated_at": "2026-06-18"
     },
@@ -159,6 +166,7 @@
         "output_per_1m": null
       },
       "status": "GA",
+      "failover_to": "gpt-5.4",
       "confidence": "observed",
       "validated_at": "2026-06-18"
     },
@@ -178,6 +186,7 @@
         "output_per_1m": null
       },
       "status": "GA",
+      "failover_to": "gpt-5.4",
       "confidence": "documented",
       "validated_at": "2026-06-18"
     },
@@ -197,6 +206,7 @@
         "output_per_1m": null
       },
       "status": "GA",
+      "failover_to": null,
       "confidence": "inferred",
       "validated_at": "2026-06-18"
     }

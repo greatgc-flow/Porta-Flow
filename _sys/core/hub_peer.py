@@ -256,10 +256,11 @@ def get_adapter_for_peer(peer_id: str) -> BaseAdapter:
     for node in orch.get("hub_nodes", []):
         if node.get("node_id") == peer_id or peer_id in node.get("aliases", []):
             return get_adapter(node)
-    # fallback by peer_id name
-    fallback_map = {"cc": ClaudeAdapter, "gc": GeminiAdapter, "cx": CodexAdapter}
-    cls = fallback_map.get(peer_id, BaseAdapter)
-    return cls()
+    # Fallback: try matching by invoke name (covers renamed/aliased peers)
+    for node in orch.get("hub_nodes", []):
+        if node.get("invoke", "") == peer_id:
+            return get_adapter(node)
+    return BaseAdapter()
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────

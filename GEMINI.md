@@ -46,7 +46,7 @@ Full annotated tree: `README.md`
 ### 3-2. Cross-Node Query Protocol
 - **Write queries in English.** Korean tokenizes at 2–3x cost → wastes quota fast.
 - **Query file is deleted before the API call.** Always generate a fresh unique file per request. Never reuse.
-- **IPC file naming:** `_sys/gemini/gc-{YYYYMMDDHHMMSS}-{RAND4}.txt` (unique per call, English only).
+- **IPC file naming:** `_sys/ai/ipc/gc-{YYYYMMDDHHMMSS}-{RAND4}.txt` (unique per call, English only).
 - **Context fill depth:** `fill_depth_multiplier = 3` — gc reads 3× more context-fill sections than other peers (configured in hub.py `_build_gc_ask_cmd`). See `_sys/docs-v2/specific/gc.md` §Session Reuse.
 
 ### 3-3. Zero-Token Symmetric Memory
