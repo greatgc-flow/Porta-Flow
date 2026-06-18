@@ -27,21 +27,16 @@
 | `_sys/ai/common/` | ✅ | Cross-peer agents, skills, MCP, tool-registry |
 
 ### What Is Missing (Plan targets)
-| ID | Missing Item | Docs Reference | Priority |
-|----|-------------|---------------|---------|
-| EDGE-01a | `_sys/ai/model-registry.json` | ops/schemas.md §3 | P2 |
-| EDGE-01b | `_sys/ai/routing-config.json` | ops/schemas.md §4 + resource-governance.md §10 | P3 |
-| EDGE-04 | `_sys/checks/check_docs_mece.py` | ops/governance.md §6.2 | P3 |
-| EDGE-05 | Lesson→docs-v2 graduation in self_care.py | self-evolution.md §5 Phase 6 | P4 |
-| NEW-01 | workspace-config.json (schema — per-workspace, not global) | this doc §3 | P1 |
-| NEW-02 | `_sys/ai/error-taxonomy.json` | this doc §6 | P2 |
-| NEW-03 | ContextGate v1.0 in hub.py | resource-governance.md §3 | P3 |
-| NEW-04 | hub.py modular extraction | this doc §4 | P4 |
-| NEW-05 | workspace_base template completion | this doc §3 | P1 |
-| NEW-06 | Shared cross-workspace space definition | this doc §2 | P1 |
-| NEW-07 | traceability_map.json → docs-v2 paths | this doc §7 | P2 |
-| NEW-08 | infra.json DOCS_DIR → docs-v2 | this doc §7 | P1 |
-| NEW-09 | 7-type logging implementation | ops/logging.md | P3 |
+| ID | Missing Item | Status |
+|----|-------------|--------|
+| EDGE-01a | `model-registry.json` | ✅ DONE |
+| EDGE-01b | `routing-config.json` | ✅ DONE |
+| EDGE-04 | `check_docs_mece.py` | ✅ DONE |
+| NEW-01 | workspace-config.json | ✅ DONE |
+| NEW-02 | `error-taxonomy.json` | ✅ DONE |
+| NEW-03 | ContextGate v1.0 | ✅ DONE |
+| NEW-04 | hub.py modularization | ✅ DONE |
+| NEW-09 | 7-type logging | ✅ DONE |
 
 ---
 

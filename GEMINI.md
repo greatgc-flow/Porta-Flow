@@ -1,5 +1,5 @@
 # Gemini CLI — Project Instructions
-> Last updated: 2026-06-05
+> Last updated: 2026-06-18 | Collaboration Protocol v4.2 (`_sys/ai/protocol.json`)
 
 > **IMPORTANT:**
 > Your personal memory and global preferences belong in `%USERPROFILE%\.gemini\GEMINI.md` (which via Directory Junction equals `_sys\gemini\config\GEMINI.md` — portable across PCs).

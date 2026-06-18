@@ -18,15 +18,52 @@ Four AI peers share a single workspace, coordinate through a lightweight hub, an
 
 ---
 
-## Why It's Different
+## 🔥 Key Features (v4.2 Stabilization)
 
-| Typical AI Tool | Engram |
-|----------------|--------|
-| One AI, one chat | Four equal AI peers, parallel execution |
-| Human writes all prompts | Peers debate, draft, and review each other |
-| Forgets between sessions | Brain-inspired memory: short-term → long-term → semantic |
-| Breaks on new machines | Portable: runs from USB, drive-letter-agnostic |
-| You manage complexity | Self-care pipeline runs automatically on session close |
+| Feature | Description | Benefit |
+|---------|-------------|---------|
+| **ContextGate v1.0** | CJK-aware token estimation + auto-pruning | Never hit "Context Full" errors again. |
+| **Smart Failover** | Transparent task rerouting (e.g., cc → gc) | Quality drops to Gemini 1M if Claude 200k overflows. |
+| **7-Type Logging** | IPC, Cost, Error, Reasoning, Drift, Self-Care, Console | Total traceability for every token spent. |
+| **Taxonomy Error Console** | Korean 5-Whys root cause analysis | Fix environment issues in seconds, not hours. |
+| **Portable Hub 4.2** | Adapter-based peer decomposition | Easily add new LLM providers without touching core code. |
+
+---
+
+## 🚀 Quick Start (3 Minutes)
+
+**Prerequisites:** Windows 10/11 (with Git).
+
+```bat
+git clone https://github.com/your-org/engram.git
+cd engram
+INSTALL.bat      :: 📦 Bootstraps Python, Node, all AI CLIs
+REGISTER.bat     :: 🛠️ Sets up Virtual Drive P: (leaves zero host trace)
+P:\start.bat     :: 🌟 Launch your multi-peer environment
+```
+
+---
+
+## 📖 Real-World Example: "The TDD Loop"
+
+Engram shines when you let peers collaborate on complex tasks. Here's how you use it:
+
+1.  **Exploration**: Ask Gemini to scan a new repo.
+    ```bash
+    gemini "Scan the /src folder and explain the MECE gaps in the parser."
+    ```
+2.  **Implementation**: Let Claude implement the fix with TDD.
+    ```bash
+    claude "Based on Gemini's report, write a failing test in pytest then fix it."
+    ```
+3.  **Cross-Review**: Use Codex to audit the security and performance.
+    ```bash
+    codex "Review Claude's latest commit. Any O(n^2) risks or safety leaks?"
+    ```
+4.  **Consensus**: Finalize the change into the Neocortex (`docs-v2/`).
+    ```bash
+    hub consensus-propose --subject "Parser fix v1.1" --voters "cc,gc,cx"
+    ```
 
 ---
 

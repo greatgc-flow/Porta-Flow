@@ -48,8 +48,8 @@ class PeerAdapter(Protocol):
 
     node_id: str
 
-    def build_cmd(self, node: dict[str, Any], query: str) -> list[str]:
-        """Build the subprocess command list for this peer."""
+    def build_cmd(self, node: dict[str, Any], query: str, session_id: str | None = None) -> tuple[list[str], bool]:
+        """Build the subprocess command list and return (cmd, use_stdin)."""
         ...
 
     def parse_output(self, stdout: str, node: dict[str, Any]) -> str:
@@ -98,6 +98,22 @@ class BaseAdapter:
         """Replace {query} placeholder in invoke_args with actual query."""
         return [a.replace("{query}", query) for a in raw_args]
 
+    def build_cmd(self, node: dict[str, Any], query: str, session_id: str | None = None) -> tuple[list[str], bool]:
+        invoke = node.get("invoke", "claude")
+        raw_args = node.get("invoke_args", ["-p", "{query}"])
+        use_stdin = False
+        cmd_args = []
+        for a in raw_args:
+            if "{query}" in a:
+                if node.get("requires_pty"):
+                    cmd_args.append(a.replace("{query}", query))
+                else:
+                    cmd_args.append(a.replace("{query}", "-"))
+                    use_stdin = True
+            else:
+                cmd_args.append(a)
+        return [invoke] + cmd_args, use_stdin
+
     def parse_output(self, stdout: str, node: dict[str, Any]) -> str:
         return stdout.strip()
 
@@ -109,10 +125,12 @@ class ClaudeAdapter(BaseAdapter):
 
     node_id = "cc"
 
-    def build_cmd(self, node: dict[str, Any], query: str) -> list[str]:
+    def build_cmd(self, node: dict[str, Any], query: str, session_id: str | None = None) -> tuple[list[str], bool]:
         invoke = node.get("invoke", "claude")
         raw_args = node.get("invoke_args", ["-p", "{query}"])
-        return [invoke] + self._substitute_args(raw_args, query)
+        # Claude Code currently doesn't use session_id for resume via CLI flags in the same way cx/gc do.
+        # It relies on local state files.
+        return [invoke] + self._substitute_args(raw_args, query), False
 
     def parse_output(self, stdout: str, node: dict[str, Any]) -> str:
         return stdout.strip()
@@ -123,10 +141,16 @@ class GeminiAdapter(BaseAdapter):
 
     node_id = "gc"
 
-    def build_cmd(self, node: dict[str, Any], query: str) -> list[str]:
+    def build_cmd(self, node: dict[str, Any], query: str, session_id: str | None = None) -> tuple[list[str], bool]:
         invoke = node.get("invoke", "gemini")
-        raw_args = node.get("invoke_args", ["-p", "{query}", "-o", "text", "-y"])
-        return [invoke] + self._substitute_args(raw_args, query)
+        # Legacy hub.py logic for gc:
+        if session_id:
+            return [invoke, "--resume", session_id, "-p", "-", "-o", "text", "--approval-mode", "auto_edit", "--skip-trust"], True
+        
+        # Fresh session: we can't generate the UUID here easily without side effects if we want to be pure, 
+        # but for now we'll match legacy hub.py behavior.
+        # Note: hub.py handles generating the new UUID if session_id is None.
+        return [invoke, "-p", "-", "-o", "text", "--approval-mode", "auto_edit", "--skip-trust"], True
 
     def parse_output(self, stdout: str, node: dict[str, Any]) -> str:
         # Strip Gemini CLI session header lines (start with ✦ or ●)
@@ -140,10 +164,12 @@ class CodexAdapter(BaseAdapter):
 
     node_id = "cx"
 
-    def build_cmd(self, node: dict[str, Any], query: str) -> list[str]:
+    def build_cmd(self, node: dict[str, Any], query: str, session_id: str | None = None) -> tuple[list[str], bool]:
         invoke = node.get("invoke", "codex")
-        raw_args = node.get("invoke_args", ["exec", "{query}", "--json", "--ephemeral"])
-        return [invoke] + self._substitute_args(raw_args, query)
+        base = ["-s", "workspace-write", "--json", "--ignore-rules"]
+        if session_id:
+            return [invoke, "exec", "resume", session_id, "-"] + base, True
+        return [invoke, "exec", "-"] + base, True
 
     def parse_output(self, stdout: str, node: dict[str, Any]) -> str:
         # Codex --json mode: extract assistant content from JSON response
@@ -175,10 +201,9 @@ class VirtualAdapter(BaseAdapter):
 
     node_id = "virtual"
 
-    def build_cmd(self, node: dict[str, Any], query: str) -> list[str]:
-        invoke = node.get("invoke", "claude")
-        raw_args = node.get("invoke_args", ["-p", "{query}"])
-        return [invoke] + self._substitute_args(raw_args, query)
+    def build_cmd(self, node: dict[str, Any], query: str, session_id: str | None = None) -> tuple[list[str], bool]:
+        # Virtual nodes Typically inherit their base peer's behavior but with different flags
+        return super().build_cmd(node, query, session_id)
 
 
 # ── Adapter registry + factory ────────────────────────────────────────────────

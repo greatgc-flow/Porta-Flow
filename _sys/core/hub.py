@@ -35,11 +35,36 @@ except ImportError:
     _HUB_ERROR_AVAILABLE = False
 
 try:
+    from hub_logging import HubLogger as _HubLogger
+    _HUB_LOGGING_AVAILABLE = True
+except ImportError:
+    _HubLogger = None  # type: ignore[assignment]
+    _HUB_LOGGING_AVAILABLE = False
+
+try:
     from hub_context import ContextGate as _ContextGate
     _CONTEXT_GATE_AVAILABLE = True
 except ImportError:
     _ContextGate = None  # type: ignore[assignment]
     _CONTEXT_GATE_AVAILABLE = False
+
+try:
+    import hub_peer
+    _HUB_PEER_AVAILABLE = True
+except ImportError:
+    _HUB_PEER_AVAILABLE = False
+
+# Global Logger instance (lazy initialized)
+_logger: _HubLogger | None = None
+
+def _get_logger() -> _HubLogger | None:
+    global _logger
+    if _logger is None and _HUB_LOGGING_AVAILABLE and _HubLogger is not None:
+        try:
+            _logger = _HubLogger()
+        except Exception:
+            pass
+    return _logger
 
 # Windows 콘솔 UTF-8 강제
 if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
@@ -1077,6 +1102,15 @@ def _record_ask_failure(
     if reason in critical_reasons:
         availability["gate_open"] = False
     _write_peer_health(peer_id, data, ai_root, health_dir)
+
+    # ── Error Visibility Integration ──────────────────────────
+    severity = "error" if ctx["status"] == "RED" else "warn"
+    action_report_error(ai_root, peer_id, reason, detail, severity)
+
+    logger = _get_logger()
+    if logger:
+        logger.log_error(error_type=reason, tier=severity.upper(), peer=peer_id, message=detail)
+
     # Auto-promote runtime directive after 2+ consecutive same-reason failures
     if failures >= 2 and prev_failure_reason == reason and ai_root:
         _auto_promote_runtime_directive(peer_id, reason, detail, ai_root)
@@ -1683,10 +1717,11 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
     if not node:
         print(f"[ERROR] unknown ask target: {to}", file=sys.stderr)
         sys.exit(1)
-    exe_name = node.get("invoke", to)
-    raw_args = node.get("invoke_args", ["-p", "{query}"])
-    requires_pty = node.get("requires_pty", False)
+
     health_peer = node.get("peer") or to
+    adapter = hub_peer.get_adapter(node) if _HUB_PEER_AVAILABLE else None
+    requires_pty = node.get("requires_pty", False)
+    exe_name = node.get("invoke", to)
 
     if not timeout_sec or timeout_sec <= 0:
         try:
@@ -1705,22 +1740,27 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
     # ── ContextGate check ──────────────────────────────────────
     if _CONTEXT_GATE_AVAILABLE and _ContextGate is not None:
         try:
-            profile = _load_model_profiles().get(f"{health_peer}.default") or {}
-            model_id = profile.get("model_id", health_peer)
+            profile_id = _resolve_profile_id(to)
+            reg = _read_json(Path(__file__).parent.parent / "ai" / "model-registry.json").get("models", {})
+            profile_data = _load_model_profiles().get("profiles", {}).get(profile_id, {})
+            model_id = profile_data.get("model_id") or health_peer
+
             gate_result = _ContextGate().check(query, model_id)
-            action = gate_result.get("action", "pass")
+            action = gate_result.get("action", "pass") 
             if action == "failover":
-                failover_model = gate_result.get("failover_model", "")
+                failover_model = gate_result.get("failover_model", "gc")
                 print(f"[ContextGate] context {gate_result.get('ratio', 0):.0%} full → failover to {failover_model}", file=sys.stderr)
+                # Recursive failover call
+                return action_ask(failover_model, query, None, timeout_sec, ai_root, quiet, output_file, include_context=False, session_policy=session_policy, explicit_scope=explicit_scope)
             elif action == "reject":
+                msg = gate_result.get("message", "context limit exceeded")
                 if _HUB_ERROR_AVAILABLE and _HubError is not None:
-                    _HubError.report("CONTEXT_GATE_REJECT", peer=health_peer, message=gate_result.get("message", "context limit exceeded"))
+                    _HubError.report("CONTEXT_GATE_REJECT", peer=health_peer, message=msg)
                 else:
-                    print(f"[ERROR] ContextGate reject: {gate_result.get('message', 'context limit exceeded')}", file=sys.stderr)
+                    print(f"[ERROR] ContextGate reject: {msg}", file=sys.stderr)
                 sys.exit(1)
         except Exception:
             pass  # ContextGate failure is non-fatal; proceed with query
-
     # ── Session reuse ──────────────────────────────────────────
     session_mode = node.get("session_mode", "none")
     # session_policy arg overrides node config; "auto" means use node config
@@ -1742,33 +1782,30 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                 _retire_session(health_peer, scope_key, "fingerprint_drift", ai_root)
                 existing_session = None
 
-    # ── Command construction ───────────────────────────────────
-    cmd_args: list[str] = []
-    use_stdin = False
+    # ── Command construction (Adapter-based) ───────────────────
+    session_id = None
+    gc_new_session_id = None
+    if use_session and existing_session:
+        session_id = existing_session.get("session_id")
 
-    if use_session:
-        session_id = existing_session["session_id"] if existing_session else None
-        cmd_args, use_stdin, gc_new_session_id = _build_session_cmd(health_peer, session_id, exe_name)
-        is_resume_attempt = session_id is not None
+    if adapter:
+        cmd, use_stdin = adapter.build_cmd(node, query, session_id)
+        # gc special case: legacy hub.py manages session UUIDs for gc
+        if health_peer == "gc" and not session_id:
+            gc_new_session_id = str(uuid.uuid4())
+            cmd = [cmd[0], "--session-id", gc_new_session_id] + cmd[1:]
     else:
-        is_resume_attempt = False
-        for arg in raw_args:
-            if "{query}" in arg:
-                if requires_pty:
-                    cmd_args.append(arg.replace("{query}", query))
-                else:
-                    cmd_args.append(arg.replace("{query}", "-"))
-                    use_stdin = True
-            else:
-                cmd_args.append(arg)
+        # Legacy fallback
+        from hub_peer import BaseAdapter as _BaseAdapter
+        cmd, use_stdin = _BaseAdapter().build_cmd(node, query, session_id)
 
-    exe = shutil.which(exe_name)
+    is_resume_attempt = session_id is not None
+    exe = shutil.which(cmd[0])
     if not exe:
-        print(f"[ERROR] {exe_name} CLI not found in PATH", file=sys.stderr)
-        _record_ask_failure(health_peer, "cli_not_found", f"{exe_name} CLI not found in PATH", None, ai_root)
+        print(f"[ERROR] {cmd[0]} CLI not found in PATH", file=sys.stderr)
+        _record_ask_failure(health_peer, "cli_not_found", f"{cmd[0]} CLI not found in PATH", None, ai_root)
         sys.exit(1)
-
-    cmd = [exe] + cmd_args
+    cmd[0] = exe
 
     # ── Environment Variable Injection ─────────────────────────
     process_env = {**os.environ, "PYTHONUTF8": "1"}
@@ -1834,6 +1871,10 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
     # ai_root is typically .ai/ inside the project root; go one level up.
     proc_cwd = str(ai_root.parent) if ai_root else None
 
+    logger = _get_logger()
+    if logger:
+        logger.log_ipc(peer_id=to, direction="send", query_file=saved_query_file_path, query_preview=query)
+
     try:
         proc = subprocess.Popen(
             cmd,
@@ -1881,9 +1922,17 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         lease_status = "closed"
         raw_text = _strip_ansi(_decode_output(raw_out))
 
-        # JSONL 처리: session-aware cx OR 원래 --json 노드
-        uses_json = use_session and health_peer == "cx" or (node.get("invoke_args") and "--json" in node.get("invoke_args", []))
-        output = _extract_jsonl_text(raw_text, to, ai_root) if uses_json else raw_text
+        if logger:
+            logger.log_ipc(peer_id=to, direction="receive", response_preview=raw_text, elapsed_sec=float(elapsed))
+            profile_id = _resolve_profile_id(to)
+            logger.log_cost(peer_id=to, model_id=node.get("invoke", to), profile_id=profile_id, latency_sec=float(elapsed))
+
+        # ── Output Parsing (Adapter-based) ────────────────────────
+        if adapter:
+            output = adapter.parse_output(raw_text, node)
+        else:
+            uses_json = use_session and health_peer == "cx" or (node.get("invoke_args") and "--json" in node.get("invoke_args", []))
+            output = _extract_jsonl_text(raw_text, to, ai_root) if uses_json else raw_text
 
         # ── Session resume failure → fallback to fresh ─────────
         if proc.returncode != 0 and is_resume_attempt and scope_key:
@@ -1928,6 +1977,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                     _record_ask_failure(health_peer, reason, clean_err or output, elapsed, ai_root, extra)
                     _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, False, reason)
                     print(f"[HUB:ERROR] {to} exited {proc.returncode}\n{clean_err}", file=sys.stderr)
+                    sys.exit(proc.returncode)
             else:
                 # Transient failure: do not retire session, just report error and exit
                 print(f"[HUB:WARN] {to} session resume failed (transient: {fail_type}), keeping session for retry", file=sys.stderr)
