@@ -119,7 +119,7 @@
       "id": "context-gate",
       "docs": ["_sys/docs-v2/general/resource-governance.md#contextgate-v10"],
       "config": ["_sys/ai/governance_params.json#context_gate_warn_pct", "_sys/ai/model-registry.json"],
-      "runtime": ["_sys/core/hub_context.py#ContextGate"],
+      "runtime": ["_sys/core/hub_context.py#ContextGate", "_sys/core/hub.py#action_ask"],
       "tests": ["_sys/tests/unit/test_hub_context.py"]
     },
     {
@@ -155,14 +155,14 @@
       "docs": ["_sys/docs-v2/ops/impl-plan.md#4-hub-decomposition"],
       "config": ["_sys/ai/orchestration.json#/hub_nodes"],
       "runtime": ["_sys/core/hub_peer.py#PeerAdapter", "_sys/core/hub_peer.py#get_adapter"],
-      "tests": []
+      "tests": ["_sys/tests/unit/test_hub_peer.py"]
     },
     {
       "id": "peer-health-reader",
       "docs": ["_sys/docs-v2/general/health.md", "_sys/docs-v2/10-invariants.md#inv-15"],
       "config": ["_sys/ai/lifecycle_policy.json#/identity/node_to_peer"],
       "runtime": ["_sys/core/hub_health.py#HealthReader", "_sys/core/hub_health.py#PeerHealthState"],
-      "tests": []
+      "tests": ["_sys/tests/unit/test_hub_health.py"]
     },
     {
       "id": "lesson-graduation-algorithm",
