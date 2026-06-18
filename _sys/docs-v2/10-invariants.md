@@ -47,6 +47,7 @@
 |----|------|
 | INV-17 | All communication within a room is shared with all participating nodes (no private channels). |
 | INV-18 | Active runtime directives injected into every peer ask. Peers MUST treat as standing operational context. |
+| INV-19 | All internal content (IPC queries, docs-v2 documents, source code, commit messages, proposals) MUST be written in English. Exception: console output delivered directly to the human user MAY be in Korean. Rationale: CJK tokens cost 2–7× more than ASCII — internal English reduces per-session token spend by ~40%. |
 
 ---
 
@@ -81,6 +82,11 @@
 | PRO-12 | NEVER modify `CLAUDE.md`, `PROTOCOL.md`, or `hub.py` without N-way consensus. |
 | PRO-13 | NEVER access Security/Auth files (`auth`, USERPROFILE area) from any AI peer. |
 | PRO-14 | NEVER let a stale coordinator keep task ownership without a checkpoint. |
+
+### Language & Communication
+| ID | Rule |
+|----|------|
+| PRO-16 | NEVER write IPC query files, proposals, or peer-to-peer messages in Korean. Always English. (INV-19 enforcement) |
 
 ### ag-Specific (Temporary)
 | ID | Rule |

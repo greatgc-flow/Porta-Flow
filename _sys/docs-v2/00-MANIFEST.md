@@ -1,5 +1,6 @@
 # docs-v2 MANIFEST
-> Version: 1.2 | Date: 2026-06-18 | Purpose: Workspace redesign SSOT (Active)
+> Version: 1.3 | Date: 2026-06-18 | Purpose: Workspace redesign SSOT (Active)
+> Language: All docs in English (INV-19). Console output to user: Korean only.
 > Synthesized from _sys/docs/ originals (archived). Principles: MECE · General-Specific · Lazy (token-zero).
 > Status: **ACTIVE SSOT** — _sys/docs/ is archived to _sys/docs/history/ (Legal Code reference only).
 
@@ -41,6 +42,7 @@ For human onboarding: `user/manual.md` → then `00-MANIFEST.md`
 | `specific/ag.md` | AntiGravity: INACTIVE state + PRO-15 path | PEER_MANAGEMENT §2-4 |
 | `ops/debate.md` | Exhaustive work session rules (끝장 작업) | DEBATE_PROTOCOL v0.10 |
 | `ops/governance.md` | Operational governance (Garbage/, Retention, Audit triggers) | — |
+| `ops/logging.md` | Full logging architecture: IPC history · console capture · per-node detail · rolling policy · 5-Whys integration | cc+gc debate 2026-06-18 |
 | `ops/templates.md` | Goal frame, closure manifest, round templates | — |
 | `ops/anti-patterns.md` | 21 peer failure modes (adversarial review) | — |
 | `ops/audit-checklist.md` | MECE audit items — bootstrap, SUBST, cleanup, collab, docs | session-verified (2026-06-16) |
