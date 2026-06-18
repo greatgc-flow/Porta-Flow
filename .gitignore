@@ -133,6 +133,7 @@ _sys/gemini/config/policies/auto-saved.toml
 _sys/ai/runtime-directives.jsonl
 _sys/ai/snapshots/
 _sys/ai/knowledge/logs/*.jsonl
+_sys/ai/ipc/
 
 # Session plans and dynamic documentation (not tracked)
 /plans/

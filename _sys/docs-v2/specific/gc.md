@@ -38,7 +38,7 @@ FORBIDDEN: `--approval-mode yolo`, `--approval-mode full-auto`.
 - Resume: `gemini --resume <uuid> -p - -o text --approval-mode auto_edit --skip-trust`
 - State: `_sys/gemini/session_state.json`
 - `fill_depth_multiplier = 3` (gc reads 3× more context-fill sections than other peers)
-- IPC query files: `_sys/gemini/gc-{YYYYMMDDHHMMSS}-{RAND4}.txt` (English only — Korean costs 2-3× tokens)
+- IPC query files: `_sys/ai/ipc/gc-{YYYYMMDDHHMMSS}-{RAND4}.txt` (English only — Korean costs 2-3× tokens)
 
 ---
 

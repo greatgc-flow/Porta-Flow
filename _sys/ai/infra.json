@@ -111,7 +111,7 @@
         "mailbox": ".ai/mailbox.json",
         "consensus_dir": ".ai/consensus",
         "out_dir": ".ai/out",
-        "query_dir": "_sys/gemini"
+        "query_dir": "_sys/ai/ipc"
     },
 
     "path_entries": {

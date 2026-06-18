@@ -1,9 +1,12 @@
 ---
 name: gemini
-description: "Gemini CLI integration manager — status check, usage monitoring (zero token), collab log view, ON/OFF toggle, Axis execution, collab_rate adjustment. Use for: gemini status, gemini usage, gemini on/off, axis run, gemini monitoring, usage check, collab-log view, collab rate, collab_rate change, 제미나이 상태, 사용량, 협업 로그, 협업 비율."
+description: "Gemini-specific monitoring — usage stats (zero token), collab log view, Axis execution. For STATUS/TOGGLE/RATIO (common to all peers) use /peer skill. Use for: gemini usage, axis run, collab-log view, gemini status, 제미나이 상태, 사용량, 협업 로그, axis 실행."
 ---
 
-# Gemini Integration Management Skill
+# Gemini Integration Skill
+
+Gemini-specific actions: STATUS (CLI gate check), USAGE, COLLAB, AXIS.
+For common peer management (TOGGLE, RATIO across all peers) → use `/peer` skill.
 
 ## Trigger Mapping
 
@@ -12,15 +15,16 @@ description: "Gemini CLI integration manager — status check, usage monitoring 
 | "gemini status", "is gemini on", "gemini 상태" | → STATUS |
 | "gemini usage", "how many today", "axis count", "gemini 사용량" | → USAGE |
 | "collab log", "today's axis history", "협업 로그" | → COLLAB |
-| "gemini on/off", "enable/disable gemini", "gemini 켜기/끄기" | → TOGGLE |
+| "gemini on/off", "enable/disable gemini", "gemini 켜기/끄기" | → TOGGLE (delegates to /peer) |
 | "run axis A", "axis-H", "axis 실행" | → AXIS |
-| "gemini rate", "collab rate", "collab_rate N", "rate N", "비율 변경" | → RATIO |
+
+> **RATIO** (`collab_rate` 변경) → `/peer` skill로 이동. `collab_rate`는 모든 피어에 공통.
 
 ---
 
 ## ACTION: STATUS
 
-Check current Gemini status.
+Check current Gemini CLI gate (install + auth check).
 
 1. PowerShell: `cmd /c "P:\_sys\gemini\gemini-status.bat"`
 2. Read `_sys\gemini\status.json`
@@ -30,6 +34,8 @@ Check current Gemini status.
      - `not_installed` → Gemini CLI not installed (`npm i -g @google/gemini-cli`)
      - `not_authenticated` → Auth required (`gemini auth`)
      - `api_error` / `manual_override` → Manual or API error
+
+For full peer health (all peers): use `/peer status`.
 
 ---
 
@@ -66,23 +72,13 @@ View today's collaboration log.
 
 ## ACTION: TOGGLE
 
-### OFF (`NO_GEMINI=1`)
+Delegates to `/peer` skill for hub.py gate control.
 
-**Current session only**: Run `set NO_GEMINI=1` in terminal, then re-run `gemini-status.bat`.
+Quick reference:
+- **OFF**: `python P:\_sys\core\hub.py peer-quarantine --peer gc --reason "manual"`
+- **ON**: `python P:\_sys\core\hub.py peer-recover --peer gc`
 
-**Permanent** (add to `local.config.bat`):
-```bat
-set "NO_GEMINI=1"
-```
-Location: `_sys\local.config.bat` (not git-tracked, PC-specific)
-
-### ON (enable)
-
-Remove `NO_GEMINI` line from `local.config.bat` or:
-```bat
-set "NO_GEMINI=0"
-```
-Re-run then verify with `gemini-status.bat`.
+Verify after: run STATUS to confirm gate state.
 
 ---
 
@@ -107,39 +103,3 @@ Re-run then verify with `gemini-status.bat`.
 **Axis-A daily limit exceeded**: "Axis-A already used 3 times today. Recommend running tomorrow."
 
 After execution, `collab-log.bat` automatically records to `_archive\collab-log\{date}.md`.
-
----
-
-## ACTION: RATIO
-
-Query or change collab_rate. (Source: `_sys\ai\protocol.json` → `collab_rate.current`)
-
-**No arg** (`/gemini ratio`): Show current ratio and level description.
-**With arg** (`/gemini ratio 7`): Change ratio to N (0~10).
-
-### Query (no arg)
-1. Read `_sys\gemini\config.json`
-2. Output current ratio value and level description based on table below.
-
-### Change (arg = N)
-1. PowerShell (timeout 10000):
-   ```
-   cmd /c "P:\_sys\cli\set-collab-rate.bat {N}"
-   ```
-2. Report change result.
-
-### Ratio Level Table
-
-| ratio | Gemini Call Trigger |
-|-------|---------------------|
-| 0 | OFF — no auto calls |
-| 1 | Explicit Axis execution only |
-| 2 | Architecture/structure-level design changes |
-| 3 | Multi-file simultaneous modification |
-| 4 | Single file major change (refactor/bugfix) |
-| 5 | All code edits (before Edit/Write) |
-| 6 | Code edits + before Bash commands |
-| 7 | Code edits + Bash + before file reads (analysis) |
-| 8 | Before all substantive responses involving code/analysis |
-| 9 | Before all responses except short one-liners |
-| 10 | **All chat** — Gemini consulted before every message |

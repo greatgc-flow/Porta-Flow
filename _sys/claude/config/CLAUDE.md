@@ -91,7 +91,7 @@ Use unique filenames: `{peer_id}-{YYYYMMDDHHMMSS}-{RAND4}.txt` (see `protocol.js
 > **Queries MUST be in English.** Korean costs 2-3x tokens.
 
 Step 1 — Write unique query file (Write tool):
-  Path: `P:\_sys\gemini\{peer_id}-{YYYYMMDDHHMMSS}-{RAND4}.txt`
+  Path: `P:\_sys\ai\ipc\{peer_id}-{YYYYMMDDHHMMSS}-{RAND4}.txt`
   Content: TASK/CONTEXT/QUESTION format in **English**
 
 Step 2 — Invoke peer (timeout 180000):
