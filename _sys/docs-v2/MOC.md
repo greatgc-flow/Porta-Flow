@@ -41,9 +41,12 @@ Peer: search this table first. Load only the file(s) relevant to your current ta
 | Domain | File | Keywords / When to Load |
 |--------|------|------------------------|
 | AI resource governance | `general/resource-governance.md` | model inventory, node arch, ContextGate, QUALITY_MODE, routing layers, feedback loop |
+| **Token & model specs** | **`general/token-management.md`** | **per-peer model inventory, context limits, output limits, Extended Thinking API, ContextGate v1.0 design** |
 
 > **Note:** resource-governance.md is large (739 lines). Load specific sections by keyword:
 > §1=model specs, §3=ContextGate, §6=node matrix, §7=role mapping, §8=routing arch, §9=cost tracking, §10=QUALITY_MODE, §11=model updates
+>
+> **token-management.md** is the corrected per-peer spec source (cc/gc/cx). resource-governance.md provides architecture; token-management.md provides exact numbers.
 
 ### Per-Peer Specifics
 
