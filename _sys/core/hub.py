@@ -285,8 +285,10 @@ def _write_json_atomic(path: Path, data: dict) -> None:
                 time.sleep(delay)
     except Exception as e:
         if temp_path.exists():
-            try: temp_path.unlink()
-            except: pass
+            try:
+                temp_path.unlink()
+            except (FileNotFoundError, OSError):
+                pass
         raise e
 
 
@@ -5003,13 +5005,13 @@ def main() -> None:
     if args.action == "ask":
         ai_root_opt = None
         try: ai_root_opt = find_ai_root()
-        except: pass
+        except (RuntimeError, OSError): pass
         action_ask(args.to_, args.query, args.query_file, args.timeout, ai_root_opt, quiet=args.quiet, output_file=args.output_file, session_policy=args.session_policy, explicit_scope=args.scope)
         return
     if args.action == "ask-all":
         ai_root_opt = None
         try: ai_root_opt = find_ai_root()
-        except: pass
+        except (RuntimeError, OSError): pass
         exclude_list = [x.strip() for x in args.peers.split(",") if x.strip()] if getattr(args, "peers", None) else []
         action_ask_all(args.query, args.query_file, args.timeout, ai_root_opt, exclude=exclude_list or None, quiet=args.quiet)
         return

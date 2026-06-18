@@ -27,6 +27,7 @@ _sys/data/temp/
 _sys/data/setup-files/
 _sys/data/logs/
 _sys/data/state/
+_sys/data/*.jsonl
 
 # =================================================================
 # 4. Local Configurations & Device-Specific State
@@ -130,6 +131,7 @@ _sys/gemini/config/tmp/
 _sys/gemini/config/policies/auto-saved.toml
 
 # AI runtime state (changes every session — not tracked)
+_sys/data/operational_errors.jsonl
 _sys/ai/runtime-directives.jsonl
 _sys/ai/snapshots/
 _sys/ai/knowledge/logs/*.jsonl

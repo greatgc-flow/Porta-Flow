@@ -29,10 +29,16 @@ updated: 2026-06-18
 |:-----|:----|:--------:|
 | `hub_error.py` | T4 exit + health write ordering not tested | HIGH |
 | `_record_ask_failure` | T4 sys.exit timing relative to health.json write | HIGH |
+| `dispatcher.py` | Zero unit tests — routes all IPC; blast radius = all peer communication | HIGH |
+| `provisioner.py` | Zero unit tests — runs at install; path edge cases untested | HIGH |
+| `registrar.py` | Zero unit tests — registry setup; cross-OS path bugs possible | HIGH |
 | `hub_peer.py` | `use_stdin=True` path (query via stdin) not integration-tested | MEDIUM |
+| `launcher.py` | Zero unit tests — CLI launch logic | MEDIUM |
+| `relocator.py` | Zero unit tests — only used on folder move | MEDIUM |
 | `self_care.py` | lesson_graduation algorithm only unit-tested | MEDIUM |
 | `check_docs_mece.py` | CHK-06 with real proposals dir | LOW |
 | `hub.py` | `peer-recover` exit code correctness | LOW |
+| `scrubber.py` / `virtualizer.py` | Zero unit tests — cleanup/junction utilities | LOW |
 
 ## 3. Missing Features
 

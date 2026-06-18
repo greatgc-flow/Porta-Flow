@@ -24,7 +24,7 @@ _SYS_DIR = _CHECKS_DIR.parent
 _TESTS_DIR = _SYS_DIR / "tests" / "unit"
 _CONTRACT_TEST = _TESTS_DIR / "test_contracts.py"
 
-# 이 파일들 중 하나라도 변경되면 contract 검사를 강제 실행
+# Run contract check whenever any of these files change
 _CORE_PATHS = {
     _SYS_DIR / "core" / "hub.py",
     _SYS_DIR / "ai" / "protocol.json",
@@ -43,11 +43,11 @@ def _python() -> str:
 def is_core_file(changed: str | None) -> bool:
     """Return True if the changed file is a core contract file."""
     if changed is None:
-        return True  # 파일 미지정 시 항상 검사
+        return True  # always check when no file specified
     p = Path(changed).resolve()
     if p in _CORE_PATHS:
         return True
-    # _sys/ 하위 .py 파일이면 검사
+    # any .py file under _sys/ triggers check
     if p.suffix == ".py" and p.is_relative_to(_SYS_DIR):
         return True
     return False
@@ -81,9 +81,9 @@ def _file_from_hook_stdin() -> str | None:
     """Read Claude Code PreToolUse JSON from stdin and extract file path."""
     import select
     import platform
-    # stdin이 비어있으면 None 반환
+    # Return None if stdin is empty
     if platform.system() == "Windows":
-        # Windows에서는 select()가 파이프에만 동작
+        # On Windows, select() only works on sockets/pipes
         if sys.stdin.isatty():
             return None
     else:
@@ -96,7 +96,7 @@ def _file_from_hook_stdin() -> str | None:
             return None
         data = json.loads(raw)
         tool_input = data.get("tool_input", {})
-        # Write 툴: file_path, Edit 툴: file_path, MultiEdit: file_path
+        # Write/Edit/MultiEdit all use file_path in tool_input
         return tool_input.get("file_path") or tool_input.get("path")
     except Exception:
         return None
@@ -125,16 +125,16 @@ def main() -> None:
     rc, output = run_contracts()
 
     if rc == 0:
-        # 마지막 줄만 출력 (passed N)
+        # print only last summary line (e.g. "N passed")
         last = [ln for ln in output.splitlines() if ln.strip()]
         print(f"[check_contracts] PASS — {last[-1] if last else 'ok'}")
         sys.exit(0)
     elif rc == 2:
-        # 내부 오류 — fail-open (쓰기 허용하되 경고)
+        # internal error — fail-open (allow write, log warning)
         print(f"[check_contracts] WARN (fail-open): {output.strip()}")
         sys.exit(0)
     else:
-        # 계약 위반 — NACK
+        # contract violation — NACK
         print("[check_contracts] FAIL — contract violation(s):")
         print(output)
         print()
