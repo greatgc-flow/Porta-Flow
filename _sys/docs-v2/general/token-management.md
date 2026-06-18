@@ -16,7 +16,7 @@ Change level: Model inventory updates → R:3; ContextGate thresholds → R:5; a
 | claude-sonnet-4-6 | 1,000,000 | 128,000 | adaptive (low/medium/high/max) | GA |
 | claude-fable-5 | 1,000,000 | 128,000 | adaptive (low/medium/high/max) | GA |
 | claude-haiku-4-5-20251001 | 200,000 | 128,000 | none | GA |
-| claude-opus-4-7 | 200,000 | 128,000 | adaptive (low/medium/high/max) | GA |
+| claude-opus-4-7 | 1,000,000 | 128,000 | adaptive (low/medium/high/xhigh/max) | GA |
 | claude-mythos-5 | 1,000,000 | 128,000 | adaptive | limited access |
 
 **Extended Thinking (Adaptive API):**
@@ -58,7 +58,7 @@ Change level: Model inventory updates → R:3; ContextGate thresholds → R:5; a
 | gemini-3.1-flash-lite | 1,000,000 | 65,536 | none | Preview |
 | gemini-2.5-pro | 1,000,000 | 24,576 | 0 – 24,576 | GA |
 | gemini-2.0-flash | EOL 2026-06-01 | — | — | **EOL** |
-| gemini-3.1-pro | 1,000,000 | 65,536 | 0 – 24,576 | GA |
+| gemini-3.1-pro | 1,000,000 | 128,000 | 0 – 24,576 | GA |
 
 > Note: Google advertises "2M context" for some models — this refers to maximum single-call payload accepted, not the effective context window. Practical limit is **1M** tokens.
 
@@ -88,7 +88,7 @@ Change level: Model inventory updates → R:3; ContextGate thresholds → R:5; a
 |-------|---------|------------|-----------|--------|
 | gpt-5.5 | 1,000,000 | 128,000 | reasoning_effort (none/low/medium/high/xhigh) | GA |
 | gpt-5.4 | 1,000,000 | 128,000 | reasoning_effort (none/low/medium/high/xhigh) | GA |
-| gpt-5.4-mini | 400,000 | 128,000 | reasoning_effort | GA |
+| gpt-5.4-mini | 400,000 | 128,000 | reasoning_effort (none/low/medium/high/xhigh) | GA |
 | o3-pro | 200,000 | 100,000 | reasoning_effort (low/medium/high) | GA (2026-06-10) |
 | o3 | 200,000 | 100,000 | reasoning_effort (low/medium/high) | GA |
 | o4-mini | — | — | effort | **Deprecated (ChatGPT 2026-02-13; API 2026-10)** |
@@ -100,7 +100,7 @@ Change level: Model inventory updates → R:3; ContextGate thresholds → R:5; a
 |-------|------|-----|--------|------|-------|
 | gpt-5.5 | ✓ | ✓ | ✓ | ✓ | ✓ |
 | gpt-5.4 | ✓ | ✓ | ✓ | ✓ | ✓ |
-| gpt-5.4-mini | ✓ | ✓ | ✓ | — | — |
+| gpt-5.4-mini | ✓ | ✓ | ✓ | ✓ | ✓ |
 | o3-pro | — | ✓ | ✓ | ✓ | — |
 | o3 | — | ✓ | ✓ | ✓ | — |
 
@@ -197,11 +197,12 @@ Traceability: `traceability_map.json` entry `context-gate`
 | Priority | Item | File | Status |
 |----------|------|------|--------|
 | P0 | Update model_profiles.json F-01, F-02 | model_profiles.json | **DONE** (2026-06-18) |
-| P0 | Replace o4-mini with gpt-5.5 in orchestration.json | orchestration.json | **DONE** (2026-06-18) |
+| P0 | Replace o4-mini with gpt-5.5 in cx.default profile | model_profiles.json | **DONE** (2026-06-18) |
+| P0 | Add 6 missing models to model-registry.json | model-registry.json | **DONE** (2026-06-18) |
 | P1 | Implement hub_context.py ContextGate | _sys/core/hub_context.py | **DONE** (v1.0, tested) |
 | P1 | Add CJK-aware token estimator | hub_context.py | **DONE** |
-| P2 | Calibrate against cx usage.output_tokens_details | hub_logging.py | OPEN |
-| P3 | Auto-prune context blocks by priority | hub_context.py | OPEN |
+| P2 | Calibrate cx reasoning tokens against usage.output_tokens_details | hub_logging.py | **OPEN** |
+| P3 | Auto-prune context blocks by priority score | hub_context.py | **OPEN** |
 
 ---
 
@@ -209,8 +210,8 @@ Traceability: `traceability_map.json` entry `context-gate`
 
 | ID | Item | Owner | Blocker |
 |----|------|-------|---------|
-| TM-01 | Confirm claude-mythos-5 availability / access path | cc | Unconfirmed access |
-| TM-02 | Validate gemini-3.1-flash-lite context limit (Preview) | gc | Preview status |
-| TM-03 | Confirm gpt-5.4-mini reasoning_effort range | cx | Not yet tested |
-| TM-04 | Measure actual CJK token ratio for Korean queries | all | Needs sampling run |
-| TM-05 | model_profiles.json F-01/F-02 fix — schedule with R:5 | cc | impl-plan.md priority |
+| TM-01 | claude-mythos-5 access path / API key tier | cc | Limited-access tier (Project Glasswing); confirm via Anthropic console |
+| TM-02 | gemini-3.1-flash-lite output_limit verification (Preview) | gc | Preview — measure when GA |
+| TM-03 | gpt-5.4-mini effort high/xhigh local test | cx | gc: documented; pending local observation |
+| TM-04 | Measure actual CJK token ratio for Korean queries | all | Needs sampling run against cx usage |
+| ~~TM-05~~ | ~~model_profiles F-01/F-02~~ | — | **DONE** |

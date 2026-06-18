@@ -1,9 +1,8 @@
 {
-  "_version": "1.0",
+  "_version": "1.1",
   "_updated": "2026-06-18",
   "_help": "Ground-truth measured/documented model specs. This is the SSOT for what models CAN do. model_profiles.json is derived from this (routing decisions). Change level: R:8. See ops/schemas.md §3.",
   "_source_policy": "All values must be 'observed' (measured) or 'documented' (vendor docs). 'inferred' allowed temporarily but must be validated within 30 days.",
-
   "models": {
     "claude-sonnet-4-6": {
       "provider": "anthropic",
@@ -11,16 +10,21 @@
       "output_limit": 128000,
       "reasoning_type": "adaptive",
       "reasoning_params": {
-        "effort": ["low", "medium", "high", "max"]
+        "effort": [
+          "low",
+          "medium",
+          "high",
+          "max"
+        ]
       },
       "temperature_supported": true,
       "vision": true,
       "tool_use": true,
       "pricing": {
-        "input_per_1m": 3.00,
-        "output_per_1m": 15.00,
+        "input_per_1m": 3.0,
+        "output_per_1m": 15.0,
         "cache_write_per_1m": 3.75,
-        "cache_hit_per_1m": 0.30
+        "cache_hit_per_1m": 0.3
       },
       "status": "GA",
       "failover_to": "claude-haiku-4-5-20251001",
@@ -33,16 +37,21 @@
       "output_limit": 128000,
       "reasoning_type": "adaptive",
       "reasoning_params": {
-        "effort": ["low", "medium", "high", "max"]
+        "effort": [
+          "low",
+          "medium",
+          "high",
+          "max"
+        ]
       },
       "temperature_supported": false,
       "vision": true,
       "tool_use": true,
       "pricing": {
-        "input_per_1m": 15.00,
-        "output_per_1m": 75.00,
+        "input_per_1m": 15.0,
+        "output_per_1m": 75.0,
         "cache_write_per_1m": 18.75,
-        "cache_hit_per_1m": 1.50
+        "cache_hit_per_1m": 1.5
       },
       "status": "GA",
       "failover_to": "claude-haiku-4-5-20251001",
@@ -59,8 +68,8 @@
       "vision": true,
       "tool_use": true,
       "pricing": {
-        "input_per_1m": 0.80,
-        "output_per_1m": 4.00
+        "input_per_1m": 0.8,
+        "output_per_1m": 4.0
       },
       "status": "GA",
       "failover_to": null,
@@ -73,7 +82,12 @@
       "output_limit": 128000,
       "reasoning_type": "adaptive",
       "reasoning_params": {
-        "effort": ["low", "medium", "high", "max"]
+        "effort": [
+          "low",
+          "medium",
+          "high",
+          "max"
+        ]
       },
       "temperature_supported": true,
       "vision": true,
@@ -93,7 +107,10 @@
       "output_limit": 24576,
       "reasoning_type": "thinking_budget",
       "reasoning_params": {
-        "budget_range": [0, 24576]
+        "budget_range": [
+          0,
+          24576
+        ]
       },
       "temperature_supported": true,
       "temperature_max": 1.0,
@@ -101,7 +118,7 @@
       "tool_use": true,
       "pricing": {
         "input_per_1m": 1.25,
-        "output_per_1m": 10.00
+        "output_per_1m": 10.0
       },
       "status": "GA",
       "failover_to": "gemini-3-flash",
@@ -114,7 +131,10 @@
       "output_limit": 65536,
       "reasoning_type": "thinking_budget",
       "reasoning_params": {
-        "budget_range": [0, 24576]
+        "budget_range": [
+          0,
+          24576
+        ]
       },
       "temperature_supported": true,
       "temperature_max": 1.0,
@@ -135,7 +155,10 @@
       "output_limit": 65536,
       "reasoning_type": "thinking_budget",
       "reasoning_params": {
-        "budget_range": [0, 24576]
+        "budget_range": [
+          0,
+          24576
+        ]
       },
       "temperature_supported": true,
       "temperature_max": 1.0,
@@ -156,7 +179,13 @@
       "output_limit": 128000,
       "reasoning_type": "reasoning_effort",
       "reasoning_params": {
-        "effort_levels": ["none", "low", "medium", "high", "xhigh"]
+        "effort_levels": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
       },
       "temperature_supported": true,
       "vision": true,
@@ -176,7 +205,11 @@
       "output_limit": 100000,
       "reasoning_type": "reasoning_effort",
       "reasoning_params": {
-        "effort_levels": ["low", "medium", "high"]
+        "effort_levels": [
+          "low",
+          "medium",
+          "high"
+        ]
       },
       "temperature_supported": false,
       "vision": true,
@@ -196,7 +229,13 @@
       "output_limit": 128000,
       "reasoning_type": "reasoning_effort",
       "reasoning_params": {
-        "effort_levels": ["none", "low", "medium", "high", "xhigh"]
+        "effort_levels": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
       },
       "temperature_supported": true,
       "vision": true,
@@ -208,6 +247,156 @@
       "status": "GA",
       "failover_to": null,
       "confidence": "inferred",
+      "validated_at": "2026-06-18"
+    },
+    "gpt-5.4-mini": {
+      "provider": "openai",
+      "context_limit": 400000,
+      "output_limit": 128000,
+      "reasoning_type": "reasoning_effort",
+      "reasoning_params": {
+        "effort_levels": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      },
+      "temperature_supported": true,
+      "vision": true,
+      "tool_use": true,
+      "pricing": {
+        "input_per_1m": null,
+        "output_per_1m": null
+      },
+      "status": "GA",
+      "failover_to": null,
+      "confidence": "inferred",
+      "validated_at": "2026-06-18",
+      "_note": "gc: confirmed 5 effort levels incl. high/xhigh; confidence inferred pending local test"
+    },
+    "claude-opus-4-7": {
+      "provider": "anthropic",
+      "context_limit": 1000000,
+      "output_limit": 128000,
+      "reasoning_type": "adaptive",
+      "reasoning_params": {
+        "effort": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      },
+      "temperature_supported": false,
+      "vision": true,
+      "tool_use": true,
+      "pricing": {
+        "input_per_1m": null,
+        "output_per_1m": null
+      },
+      "status": "GA",
+      "failover_to": "claude-haiku-4-5-20251001",
+      "confidence": "documented",
+      "validated_at": "2026-06-18",
+      "_note": "gc: 1M context confirmed; xhigh effort introduced in this model"
+    },
+    "claude-mythos-5": {
+      "provider": "anthropic",
+      "context_limit": 1000000,
+      "output_limit": 128000,
+      "reasoning_type": "adaptive",
+      "reasoning_params": {
+        "effort": [
+          "low",
+          "medium",
+          "high",
+          "max"
+        ],
+        "always_on": true
+      },
+      "temperature_supported": false,
+      "vision": true,
+      "tool_use": true,
+      "pricing": {
+        "input_per_1m": null,
+        "output_per_1m": null
+      },
+      "status": "limited-access",
+      "failover_to": "claude-opus-4-8",
+      "confidence": "documented",
+      "validated_at": "2026-06-18",
+      "_note": "gc: confirmed real model (Project Glasswing, released 2026-06-09); adaptive thinking always-on; limited/tiered access"
+    },
+    "gemini-3.1-flash-lite": {
+      "provider": "google",
+      "context_limit": 1000000,
+      "output_limit": 65536,
+      "reasoning_type": "none",
+      "reasoning_params": {},
+      "temperature_supported": true,
+      "temperature_max": 1.0,
+      "vision": true,
+      "tool_use": true,
+      "pricing": {
+        "input_per_1m": null,
+        "output_per_1m": null
+      },
+      "status": "Preview",
+      "failover_to": null,
+      "confidence": "inferred",
+      "validated_at": "2026-06-18",
+      "_note": "gc: Preview tier, specs inferred from 3.1 series pattern; no thinking budget"
+    },
+    "gemini-3.1-pro": {
+      "provider": "google",
+      "context_limit": 1000000,
+      "output_limit": 128000,
+      "reasoning_type": "thinking_budget",
+      "reasoning_params": {
+        "budget_range": [
+          0,
+          24576
+        ]
+      },
+      "temperature_supported": true,
+      "temperature_max": 1.0,
+      "vision": true,
+      "tool_use": true,
+      "pricing": {
+        "input_per_1m": null,
+        "output_per_1m": null
+      },
+      "status": "GA",
+      "failover_to": "gemini-3-flash",
+      "confidence": "inferred",
+      "validated_at": "2026-06-18",
+      "_note": "gc: output_limit 128k (corrected from 65k; 65k was 3.0-era holdover)"
+    },
+    "o3": {
+      "provider": "openai",
+      "context_limit": 200000,
+      "output_limit": 100000,
+      "reasoning_type": "reasoning_effort",
+      "reasoning_params": {
+        "effort_levels": [
+          "low",
+          "medium",
+          "high"
+        ]
+      },
+      "temperature_supported": false,
+      "vision": true,
+      "tool_use": true,
+      "pricing": {
+        "input_per_1m": null,
+        "output_per_1m": null
+      },
+      "status": "GA",
+      "failover_to": "gpt-5.4",
+      "confidence": "documented",
       "validated_at": "2026-06-18"
     }
   }
