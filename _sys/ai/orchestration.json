@@ -48,12 +48,13 @@
       "enabled": true,
       "aliases": ["antigravity", "agy"],
       "type": "peer",
-      "adapter_class": "GeminiAdapter",
+      "adapter_class": "AgyAdapter",
       "invoke": "agy",
-      "invoke_args": ["--allowedTools", "Edit Write Read Glob Grep Bash MultiEdit", "--permission-mode", "acceptEdits", "-p", "{query}"],
+      "invoke_args": ["--dangerously-skip-permissions", "-p", "{query}"],
       "requires_pty": true,
-      "memory": "session",
-      "timeout": 0
+      "memory": "ephemeral",
+      "timeout": 300,
+      "_note": "Antigravity CLI (agy v1.0.9) — Gemini Code Assist successor. Activated 2026-06-19 to replace gc. requires_pty=true: Windows console API bypasses subprocess.PIPE."
     },
     {
       "node_id": "cx",
@@ -93,20 +94,20 @@
     }
   ],
   "consensus": {
-    "default_voters": ["cc", "gc", "cx"],
-    "inactive_default_voters": ["ca", "ag"],
-    "inactive_default_note": "Standing human override: ca/ag remain inactive indefinitely unless explicitly named for re-enable.",
+    "default_voters": ["cc", "ag", "cx"],
+    "inactive_default_voters": ["ca", "gc"],
+    "inactive_default_note": "gc: tier_suspended (IneligibleTierError, 2026-06-19). ca: never activated. ag promoted to active voter replacing gc.",
     "default_proposer": "rotating",
-    "_proposer_note": "Proposer rotates among active peers (cc → gc → cx → cc). First peer to receive a task may propose. No single peer monopolizes proposer role."
+    "_proposer_note": "Proposer rotates among active peers (cc → ag → cx → cc). gc replaced by ag as of 2026-06-19."
   },
   "check_gate": {
-    "default_agent": "gc"
+    "default_agent": "ag"
   },
   "roles_registry": {
-    "architect": ["cc", "gc", "cx"],
-    "reviewer": ["cc", "gc", "cx"],
-    "coder": ["cx", "cc", "gc"],
-    "researcher": ["gc", "cc"],
-    "_parity_note": "All active peers eligible for all roles. Task routing picks by capability_registry match, not hardcoded assignment."
+    "architect": ["cc", "ag", "cx"],
+    "reviewer": ["cc", "ag", "cx"],
+    "coder": ["cx", "cc", "ag"],
+    "researcher": ["ag", "cc"],
+    "_parity_note": "All active peers eligible for all roles. ag replaces gc as of 2026-06-19 (Gemini successor)."
   }
 }

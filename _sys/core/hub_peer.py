@@ -216,6 +216,21 @@ class CodexAdapter(BaseAdapter):
         return stdout.strip()
 
 
+class AgyAdapter(BaseAdapter):
+    """Adapter for ag (Antigravity / agy CLI — Gemini successor)."""
+
+    node_id = "ag"
+
+    def build_cmd(self, node: dict[str, Any], query: str, session_id: str | None = None) -> tuple[list[str], bool]:
+        invoke = node.get("invoke", "agy")
+        raw_args = node.get("invoke_args", ["--dangerously-skip-permissions", "-p", "{query}"])
+        # agy -p takes the prompt inline (not via stdin); use _substitute_args to keep query in args
+        return [invoke] + self._substitute_args(raw_args, query), False
+
+    def parse_output(self, stdout: str, node: dict[str, Any]) -> str:
+        return stdout.strip()
+
+
 class VirtualAdapter(BaseAdapter):
     """Adapter for virtual nodes (profile-specific variants like cc-deep)."""
 
@@ -231,6 +246,7 @@ class VirtualAdapter(BaseAdapter):
 _ADAPTER_REGISTRY: dict[str, type[BaseAdapter]] = {
     "ClaudeAdapter": ClaudeAdapter,
     "GeminiAdapter": GeminiAdapter,
+    "AgyAdapter": AgyAdapter,
     "CodexAdapter": CodexAdapter,
     "VirtualAdapter": VirtualAdapter,
 }
@@ -238,6 +254,7 @@ _ADAPTER_REGISTRY: dict[str, type[BaseAdapter]] = {
 _INVOKE_TO_ADAPTER: dict[str, type[BaseAdapter]] = {
     "claude": ClaudeAdapter,
     "gemini": GeminiAdapter,
+    "agy": AgyAdapter,
     "codex": CodexAdapter,
 }
 

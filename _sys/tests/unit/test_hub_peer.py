@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "core"))
 
 import hub_peer
 from hub_peer import (
-    PeerAdapter, BaseAdapter, ClaudeAdapter, GeminiAdapter, CodexAdapter, VirtualAdapter,
+    PeerAdapter, BaseAdapter, ClaudeAdapter, GeminiAdapter, AgyAdapter, CodexAdapter, VirtualAdapter,
     get_adapter, get_adapter_for_peer,
     _ADAPTER_REGISTRY, _INVOKE_TO_ADAPTER,
 )
@@ -186,6 +186,60 @@ class TestBaseAdapterExtractUsage:
 
 
 # ── VirtualAdapter ────────────────────────────────────────────────────────────
+
+class TestAgyAdapter:
+    def setup_method(self):
+        self.adapter = AgyAdapter()
+        self.node = {
+            "node_id": "ag", "invoke": "agy",
+            "invoke_args": ["--dangerously-skip-permissions", "-p", "{query}"],
+            "requires_pty": False,
+        }
+
+    def test_build_cmd_substitutes_query_inline(self):
+        cmd, use_stdin = self.adapter.build_cmd(self.node, "hello ag")
+        assert cmd[0] == "agy"
+        assert "--dangerously-skip-permissions" in cmd
+        assert "-p" in cmd
+        # Query must be inline (not stdin) — AgyAdapter does not use stdin
+        assert use_stdin is False
+        assert "hello ag" in cmd
+
+    def test_build_cmd_does_not_use_stdin(self):
+        _, use_stdin = self.adapter.build_cmd(self.node, "test")
+        assert use_stdin is False
+
+    def test_parse_output_strips_whitespace(self):
+        result = self.adapter.parse_output("  ANTIGRAVITY  \n", self.node)
+        assert result == "ANTIGRAVITY"
+
+    def test_parse_output_empty(self):
+        assert self.adapter.parse_output("", self.node) == ""
+
+    def test_parse_output_multiline(self):
+        raw = "Line one\nLine two\nLine three"
+        result = self.adapter.parse_output(raw, self.node)
+        assert "Line one" in result
+        assert "Line three" in result
+
+    def test_extract_usage_returns_empty(self):
+        assert self.adapter.extract_usage("any output", self.node) == {}
+
+    def test_registry_contains_agy_adapter(self):
+        from hub_peer import _ADAPTER_REGISTRY, _INVOKE_TO_ADAPTER
+        assert "AgyAdapter" in _ADAPTER_REGISTRY
+        assert "agy" in _INVOKE_TO_ADAPTER
+
+    def test_get_adapter_by_adapter_class(self):
+        node = {"adapter_class": "AgyAdapter", "invoke": "agy", "node_id": "ag"}
+        adapter = get_adapter(node)
+        assert isinstance(adapter, AgyAdapter)
+
+    def test_get_adapter_by_invoke_agy(self):
+        node = {"invoke": "agy", "node_id": "ag"}
+        adapter = get_adapter(node)
+        assert isinstance(adapter, AgyAdapter)
+
 
 class TestVirtualAdapter:
     def test_build_cmd_uses_invoke_field(self):
