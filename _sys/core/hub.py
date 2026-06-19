@@ -175,6 +175,29 @@ def _load_peers() -> dict:
         return {}
 
 
+def is_routable(node_id: str, *, orch: dict | None = None) -> bool:
+    """Return True only if node_id is an enabled node in orchestration.json.
+
+    Checks both explicit enabled:false and virtual-node parent disablement.
+    Use this as the single authoritative gate before any peer dispatch.
+    """
+    if orch is None:
+        orch = _load_orchestration()
+    nodes = {n["node_id"]: n for n in orch.get("hub_nodes", []) if "node_id" in n}
+    node = nodes.get(node_id)
+    if node is None:
+        return False
+    if node.get("enabled") is False:
+        return False
+    # Virtual nodes may use either 'parent_node' or 'peer' to reference their parent
+    parent_id = node.get("parent_node") or (node.get("peer") if node.get("type") == "virtual" else None)
+    if parent_id:
+        parent = nodes.get(parent_id)
+        if parent is None or parent.get("enabled") is False:
+            return False
+    return True
+
+
 def _default_nodes() -> dict:
     """orchestration.json hub_nodes 배열에서 기본 노드 목록을 읽어 반환."""
     orch = _load_orchestration()

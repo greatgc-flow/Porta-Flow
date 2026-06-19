@@ -287,15 +287,22 @@ def get_adapter(node: dict[str, Any]) -> BaseAdapter:
     return BaseAdapter()
 
 
-def get_adapter_for_peer(peer_id: str) -> BaseAdapter:
-    """Convenience: get adapter by peer_id, loading node config from orchestration.json."""
+def get_adapter_for_peer(peer_id: str, *, skip_disabled: bool = True) -> BaseAdapter:
+    """Convenience: get adapter by peer_id, loading node config from orchestration.json.
+
+    Raises ValueError if peer is disabled (enabled:false) unless skip_disabled=False.
+    """
     orch = _load_orchestration()
     for node in orch.get("hub_nodes", []):
         if node.get("node_id") == peer_id or peer_id in node.get("aliases", []):
+            if skip_disabled and node.get("enabled") is False:
+                raise ValueError(f"peer {peer_id!r} is disabled (enabled:false)")
             return get_adapter(node)
     # Fallback: try matching by invoke name (covers renamed/aliased peers)
     for node in orch.get("hub_nodes", []):
         if node.get("invoke", "") == peer_id:
+            if skip_disabled and node.get("enabled") is False:
+                raise ValueError(f"peer {peer_id!r} is disabled (enabled:false)")
             return get_adapter(node)
     return BaseAdapter()
 
