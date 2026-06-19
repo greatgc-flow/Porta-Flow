@@ -275,9 +275,9 @@ def test_session_fingerprint_drift_retires_session(ai_dir):
 def test_ask_uses_project_root_as_cwd(ai_dir):
     """action_ask sets Popen cwd to ai_root.parent (project root), not caller's cwd."""
     ok_proc = _make_mock_proc(stdout=b"response", returncode=0)
-    with patch("shutil.which", return_value="/usr/bin/gemini"), \
+    with patch("shutil.which", return_value="/usr/bin/codex"), \
          patch("subprocess.Popen", return_value=ok_proc) as mock_popen:
-        hub.action_ask("gc", "test", None, 120, ai_dir, session_policy="none")
+        hub.action_ask("cx", "test", None, 120, ai_dir, session_policy="none")
 
     call_kwargs = mock_popen.call_args.kwargs
     assert call_kwargs.get("cwd") == str(ai_dir.parent)

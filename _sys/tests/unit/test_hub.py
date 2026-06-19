@@ -155,14 +155,14 @@ class TestEndSession:
 # ─── ask (동기 subprocess) ───────────────────────────────────
 class TestAsk:
     # subprocess는 bytes 캡처 (capture_output=True, text 없음) → mock.stdout = bytes
-    def test_ask_gc_calls_subprocess(self, tmp_path):
-        mock_proc = _make_mock_proc(stdout=b"Gemini raw response")
-        with patch("shutil.which", return_value="/usr/bin/gemini"), \
+    def test_ask_cx_calls_subprocess(self, tmp_path):
+        mock_proc = _make_mock_proc(stdout=b"Codex raw response")
+        with patch("shutil.which", return_value="/usr/bin/codex"), \
              patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
-            hub.action_ask("gc", "test query", None, 120, None)
+            hub.action_ask("cx", "test query", None, 120, None)
             call_args = mock_popen.call_args[0][0]
-            assert "gemini" in call_args[0]
-            assert "-p" in call_args
+            assert "codex" in call_args[0]
+            assert "exec" in call_args
 
     def test_ask_cc_calls_subprocess(self, tmp_path):
         mock_proc = _make_mock_proc(stdout=b"Claude raw response")
@@ -175,9 +175,9 @@ class TestAsk:
 
     def test_ask_strips_ansi(self, capsys):
         mock_proc = _make_mock_proc(stdout=b"\x1b[32mcolored response\x1b[0m")
-        with patch("shutil.which", return_value="/usr/bin/gemini"), \
+        with patch("shutil.which", return_value="/usr/bin/codex"), \
              patch("subprocess.Popen", return_value=mock_proc):
-            hub.action_ask("gc", "test", None, 120, None)
+            hub.action_ask("cx", "test", None, 120, None)
         out = capsys.readouterr().out
         assert "\x1b" not in out
         assert "colored response" in out
@@ -203,32 +203,32 @@ class TestAsk:
         qf = tmp_path / "query.txt"
         qf.write_text("file query content", encoding="utf-8")
         mock_proc = _make_mock_proc(stdout=b"response")
-        with patch("shutil.which", return_value="/usr/bin/gemini"), \
+        with patch("shutil.which", return_value="/usr/bin/codex"), \
              patch("subprocess.Popen", return_value=mock_proc):
-            hub.action_ask("gc", "", str(qf), 120, None)
+            hub.action_ask("cx", "", str(qf), 120, None)
         assert not qf.exists()
 
     def test_ask_nonzero_exit_propagates(self, capsys):
         mock_proc = _make_mock_proc(stdout=b"partial response", stderr=b"some error", returncode=1)
-        with patch("shutil.which", return_value="/usr/bin/gemini"), \
+        with patch("shutil.which", return_value="/usr/bin/codex"), \
              patch("subprocess.Popen", return_value=mock_proc), \
              pytest.raises(SystemExit) as exc_info:
-            hub.action_ask("gc", "test", None, 120, None)
+            hub.action_ask("cx", "test", None, 120, None)
         assert exc_info.value.code == 1
         _, err = capsys.readouterr()
-        assert "[HUB:ERROR] gc exited 1" in err
+        assert "[HUB:ERROR] cx exited 1" in err
 
     def test_ask_prepends_room_context_and_records_success(self, ai_dir, tmp_path, monkeypatch):
-        peer_dir = tmp_path / "gemini"
+        peer_dir = tmp_path / "codex"
         monkeypatch.setattr(hub, "_peer_sys_dir", lambda peer_id: peer_dir)
-        hub.action_init_session(ai_dir, "gc", "room-test")
+        hub.action_init_session(ai_dir, "cx", "room-test")
         session_dir = ai_dir / "sessions" / "room-test"
         (session_dir / "handoff.md").write_text("## [GOAL]\n- keep context\n", encoding="utf-8")
 
         mock_proc = _make_mock_proc(stdout=b"ok")
-        with patch("shutil.which", return_value="/usr/bin/gemini"), \
+        with patch("shutil.which", return_value="/usr/bin/codex"), \
              patch("subprocess.Popen", return_value=mock_proc):
-            hub.action_ask("gc", "hello", None, 120, ai_dir)
+            hub.action_ask("cx", "hello", None, 120, ai_dir)
 
         sent = mock_proc.communicate.call_args.kwargs["input"].decode("utf-8")
         assert "Room ID: room-test" in sent
@@ -241,32 +241,32 @@ class TestAsk:
         assert health["availability"]["last_invocation_exit_code"] == 0
 
     def test_ask_success_recovers_yellow_peer(self, ai_dir, tmp_path, monkeypatch):
-        peer_dir = tmp_path / "gemini"
+        peer_dir = tmp_path / "codex"
         peer_dir.mkdir()
         monkeypatch.setattr(hub, "_peer_sys_dir", lambda peer_id: peer_dir)
         (peer_dir / "health.json").write_text(json.dumps({
-            "peer_id": "gc",
+            "peer_id": "cx",
             "context_health": {"status": "YELLOW"},
             "session_health": {"consecutive_failures": 3, "last_failure_reason": "timeout"},
             "availability": {"gate_open": True, "workspace_not_trusted": True},
         }), encoding="utf-8")
         mock_proc = _make_mock_proc(stdout=b"ok")
-        with patch("shutil.which", return_value="/usr/bin/gemini"), \
+        with patch("shutil.which", return_value="/usr/bin/codex"), \
              patch("subprocess.Popen", return_value=mock_proc):
-            hub.action_ask("gc", "hello", None, 120, ai_dir)
+            hub.action_ask("cx", "hello", None, 120, ai_dir)
         health = json.loads((peer_dir / "health.json").read_text("utf-8"))
         assert health["context_health"]["status"] == "GREEN"
         assert health["session_health"]["consecutive_failures"] == 0
         assert "workspace_not_trusted" not in health["availability"]
 
     def test_ask_eperm_marks_peer_red_and_blocks_next_call(self, ai_dir, tmp_path, monkeypatch):
-        peer_dir = tmp_path / "gemini"
+        peer_dir = tmp_path / "codex"
         monkeypatch.setattr(hub, "_peer_sys_dir", lambda peer_id: peer_dir)
         mock_proc = _make_mock_proc(stderr=b"Fatal error\nError: spawn EPERM", returncode=1)
-        with patch("shutil.which", return_value="/usr/bin/gemini"), \
+        with patch("shutil.which", return_value="/usr/bin/codex"), \
              patch("subprocess.Popen", return_value=mock_proc), \
              pytest.raises(SystemExit) as exc_first:
-            hub.action_ask("gc", "hello", None, 120, ai_dir)
+            hub.action_ask("cx", "hello", None, 120, ai_dir)
         assert exc_first.value.code in (1, 4)  # T4 fatal exit or legacy T1
 
         health = json.loads((peer_dir / "health.json").read_text("utf-8"))
@@ -275,32 +275,32 @@ class TestAsk:
         assert health["availability"]["gate_open"] is False
         assert health["availability"]["sandbox_blocked"] is True
 
-        with patch("shutil.which", return_value="/usr/bin/gemini"), \
+        with patch("shutil.which", return_value="/usr/bin/codex"), \
              patch("subprocess.Popen") as mock_popen:
             with pytest.raises(SystemExit) as exc:
-                hub.action_ask("gc", "again", None, 120, ai_dir)
+                hub.action_ask("cx", "again", None, 120, ai_dir)
             assert exc.value.code == 2
             mock_popen.assert_not_called()
 
     def test_ask_supports_literal_peer_env_vars(self, ai_dir, tmp_path, monkeypatch):
-        peer_dir = tmp_path / "gemini"
+        peer_dir = tmp_path / "codex"
         monkeypatch.setattr(hub, "_peer_sys_dir", lambda peer_id: peer_dir)
         monkeypatch.setattr(hub, "_load_lifecycle_policy", lambda: {
-            "identity": {"node_to_peer": {"gc": "gemini"}}
+            "identity": {"node_to_peer": {"cx": "codex"}}
         })
         monkeypatch.setattr(hub, "_load_peers", lambda: {
-            "gemini": {
-                "sys_subdir": "gemini",
+            "codex": {
+                "sys_subdir": "codex",
                 "env_vars": {
-                    "GEMINI_CLI_TRUST_WORKSPACE": True,
+                    "CODEX_TRUST_WORKSPACE": True,
                     "SOME_FALSE_FLAG": "false",
                 },
             }
         })
         mock_proc = _make_mock_proc(stdout=b"ok")
-        with patch("shutil.which", return_value="/usr/bin/gemini"), \
+        with patch("shutil.which", return_value="/usr/bin/codex"), \
              patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
-            hub.action_ask("gc", "hello", None, 120, ai_dir)
+            hub.action_ask("cx", "hello", None, 120, ai_dir)
 
         env = mock_popen.call_args.kwargs["env"]
         assert env["GEMINI_CLI_TRUST_WORKSPACE"] == "true"
@@ -888,19 +888,19 @@ class TestOperationalGuard:
 class TestEnhancedCollaboration:
     def test_ask_quiet_output_file_writes_response(self, ai_dir, tmp_path, monkeypatch, capsys):
         monkeypatch.setattr(hub, "_runtime_cfg", lambda: {"ask_default_timeout_sec": 7})
-        peer_dir = tmp_path / "_sys" / "gemini"
+        peer_dir = tmp_path / "_sys" / "codex"
         peer_dir.mkdir(parents=True)
         (peer_dir / "health.json").write_text(json.dumps({
-            "peer_id": "gc",
+            "peer_id": "cx",
             "context_health": {"status": "GREEN", "checked_at": "29990101T000000"},
             "availability": {"gate_open": True},
         }), encoding="utf-8")
         monkeypatch.setattr(hub, "_peer_sys_dir", lambda peer_id: peer_dir)
         mock_proc = _make_mock_proc(stdout=b"model response")
         out = tmp_path / "reply.md"
-        with patch("shutil.which", return_value="/usr/bin/gemini"), \
+        with patch("shutil.which", return_value="/usr/bin/codex"), \
              patch("subprocess.Popen", return_value=mock_proc):
-            hub.action_ask("gc", "hello", None, 0, ai_dir, quiet=True, output_file=str(out))
+            hub.action_ask("cx", "hello", None, 0, ai_dir, quiet=True, output_file=str(out))
         assert out.read_text("utf-8") == "model response"
         assert capsys.readouterr().out == ""
         # timeout_sec=0 means unlimited; communicate gets heartbeat_sec (30s) for process-death polling

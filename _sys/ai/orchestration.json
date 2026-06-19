@@ -23,7 +23,7 @@
     },
     {
       "node_id": "ca",
-      "enabled": true,
+      "enabled": false,
       "aliases": ["claude-alt"],
       "type": "peer",
       "adapter_class": "ClaudeAdapter",
@@ -34,6 +34,7 @@
     },
     {
       "node_id": "gc",
+      "enabled": false,
       "aliases": ["gemini", "google"],
       "type": "peer",
       "adapter_class": "GeminiAdapter",

@@ -77,7 +77,7 @@
       }
     },
     "gemini": {
-      "enabled": true,
+      "enabled": false,
       "description": "Google Gemini CLI",
       "gate": {
         "status_file": "gemini/status.json",
