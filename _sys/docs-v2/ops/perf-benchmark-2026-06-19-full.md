@@ -63,26 +63,27 @@ task-failover, task-status, thread-react, transient-scan
 
 ## Benchmark G — Routing Decision Matrix
 
-**Routes:** 12 (R01–R12) | **Quality mode:** 5 (Code Partner)
+**Routes:** 12 (R01–R12) | **Quality mode:** 5 (Code Partner)  
+**Updated 2026-06-19:** ag replaces gc as primary for R02/R04/R06. R01/R08-R11 fallback updated to ag.
 
 | Route | Label | Primary | Effort | Fallback |
 |-------|-------|---------|--------|---------|
-| R01 | Router/Triage | cc::haiku | standard | gc::gemini-3-flash |
-| R02 | Consensus Framer | gc::gemini-2.5-pro | budget=24576 | cc::sonnet-4-6 medium |
+| R01 | Router/Triage | cc::haiku | standard | ag::default |
+| R02 | Consensus Framer | ag::default | none | cc::sonnet-4-6 medium |
 | R03 | Planner/Architect | cc::sonnet-4-6 | medium | cx::gpt-5.5 medium |
-| R04 | Large Corpus Analyst | gc::gemini-3-pro | budget=24576 | cc::opus-4-8 high |
+| R04 | Large Corpus Analyst | ag::default | none | cc::opus-4-8 high |
 | R05 | Deep Reasoner | cc::opus-4-8 | max | cx::o3-pro high |
-| R06 | Large Corpus Research | gc::gemini-3-pro | budget=24576 | cc::opus-4-8 high |
+| R06 | Large Corpus Research | ag::default | none | cc::opus-4-8 high |
 | R07 | Code Mutator | cx::gpt-5.5 | high | cc::sonnet-4-6 medium |
-| R08 | Test Author | cc::sonnet-4-6 | low | gc::gemini-3-flash |
-| R09 | Verifier | cc::sonnet-4-6 | medium | gc::gemini-2.5-pro |
-| R10 | Health Monitor | cc::haiku | standard | gc::gemini-3-flash |
-| R11 | Knowledge Synthesizer | cc::sonnet-4-6 | medium | gc::gemini-2.5-pro |
+| R08 | Test Author | cc::sonnet-4-6 | low | ag::default |
+| R09 | Verifier | cc::sonnet-4-6 | medium | ag::default |
+| R10 | Health Monitor | cc::haiku | standard | ag::default |
+| R11 | Knowledge Synthesizer | cc::sonnet-4-6 | medium | ag::default |
 | R12 | Fast QA | cc::haiku | standard | cx::gpt-5.5 none |
 
-**Primary distribution:** cc=67% (8/12), gc=25% (3/12), cx=8% (1/12)
+**Primary distribution (current):** cc=67% (8/12), ag=25% (3/12), cx=8% (1/12)
 
-**⚠️ Impact of gc suspension:** gc is primary for R02, R04, R06 (3 routes). With `tier_suspended`, all 3 fall back to cc (opus-4-8 / sonnet-4-6). This increases cc load but does not break routing.
+**gc suspension resolved:** R02/R04/R06 now route to ag (Antigravity) as primary. gc removed from all active routing paths.
 
 **Models in routing vs registry:** 8/16 models are actively routed. Unrouted models: claude-fable-5, claude-mythos-5, claude-opus-4-7, gemini-3.1-flash-lite, gemini-3.1-pro, gpt-5.4, gpt-5.4-mini, o3 — these are backup/specialist models not in current routing table.
 
