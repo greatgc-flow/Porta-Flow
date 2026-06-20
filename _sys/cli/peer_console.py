@@ -140,7 +140,7 @@ def peer_default_args(peer_id: str, args: list[str]) -> list[str]:
             "--ask-for-approval",
             "-a",
         }):
-            current = _append_missing(current, ["-s", "workspace-write", "--ignore-rules"])
+            current = _append_missing(current, ["-s", "workspace-write"])
         return _append_profile_defaults(current, "cx")
 
     if peer_id == "ag":

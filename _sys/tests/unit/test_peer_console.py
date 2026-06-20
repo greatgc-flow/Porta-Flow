@@ -46,7 +46,7 @@ def test_gemini_does_not_modify_management_command():
 def test_codex_defaults_to_workspace_write():
     args = peer_default_args("cx", [])
     assert args == [
-        "-s", "workspace-write", "--ignore-rules",
+        "-s", "workspace-write",
         "--model", "gpt-5.4-mini",
         "-c", 'model_reasoning_effort="low"',
     ]

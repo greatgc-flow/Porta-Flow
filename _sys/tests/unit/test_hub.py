@@ -325,7 +325,7 @@ class TestAsk:
             hub.action_ask("cx", "hello", None, 120, ai_dir)
 
         env = mock_popen.call_args.kwargs["env"]
-        assert env["GEMINI_CLI_TRUST_WORKSPACE"] == "true"
+        assert env["CODEX_TRUST_WORKSPACE"] == "true"
         assert env["SOME_FALSE_FLAG"] == "false"
 
     def _ag_node(self):
