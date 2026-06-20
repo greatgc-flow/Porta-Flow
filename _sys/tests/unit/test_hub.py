@@ -726,8 +726,10 @@ class TestNodeManagement:
         hub.action_list_nodes(ai_dir)
         out = capsys.readouterr().out
         assert "cc" in out
-        assert "gc" in out
-        assert "ca" in out
+        assert "ag" in out
+        assert "cx" in out
+        assert "gc:" not in out
+        assert "ca:" not in out
 
     def test_register_new_node(self, ai_dir, capsys):
         hub.action_register_node(ai_dir, "n1", 4, "sensor",
@@ -1003,6 +1005,56 @@ class TestEnhancedCollaboration:
             assert len(hub._get_active_runtime_directives(rd_path)) == 1
             hub._record_ask_success("gc", 10, ai_dir, health_dir=health_dir)
             assert hub._get_active_runtime_directives(rd_path) == []
+
+    def test_success_recovers_stale_health(self, ai_dir, tmp_path):
+        health_dir = tmp_path / "cc_health"
+        health_dir.mkdir()
+        (health_dir / "health.json").write_text(
+            json.dumps({
+                "context_health": {"status": "STALE"},
+                "session_health": {"last_failure_reason": None},
+                "availability": {"gate_open": True},
+            }),
+            encoding="utf-8",
+        )
+
+        hub._record_ask_success("cc", 1, ai_dir, health_dir=health_dir)
+
+        health = json.loads(
+            (health_dir / "health.json").read_text(encoding="utf-8")
+        )
+        assert health["context_health"]["status"] == "GREEN"
+
+    def test_success_clears_obsolete_stale_handoff_issue(self, ai_dir, tmp_path):
+        health_dir = tmp_path / "cx_health"
+        health_dir.mkdir()
+        (health_dir / "health.json").write_text(
+            json.dumps({
+                "context_health": {"status": "STALE"},
+                "session_health": {"last_failure_reason": None},
+                "availability": {"gate_open": True},
+            }),
+            encoding="utf-8",
+        )
+        state = json.loads((ai_dir / "state.json").read_text(encoding="utf-8"))
+        state["room_id"] = "room-health"
+        (ai_dir / "state.json").write_text(json.dumps(state), encoding="utf-8")
+        session_dir = ai_dir / "sessions" / "room-health"
+        session_dir.mkdir()
+        hub._write_handoff(
+            session_dir,
+            {
+                "PENDING_ISSUES": [
+                    "2026-06-20 cx: health marked STALE by health-sweep",
+                    "keep this issue",
+                ]
+            },
+        )
+
+        hub._record_ask_success("cx", 1, ai_dir, health_dir=health_dir)
+
+        handoff = hub._read_handoff(session_dir)
+        assert handoff["PENDING_ISSUES"] == ["keep this issue"]
 
     def test_target_peers_filters_directive_injection(self, ai_dir, tmp_path):
         """target_peers 필드: cc-only directive는 gc ask에 주입되지 않음."""

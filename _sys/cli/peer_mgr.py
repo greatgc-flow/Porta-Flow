@@ -5,7 +5,7 @@ Reduces the 11-file blast radius to a single command. All JSON edits are
 atomic (write-to-temp then rename) and idempotent.
 
 Usage:
-  peer_mgr.py add <peer_id> --invoke <cmd> [--model <model_id>] [--dry-run]
+  peer_mgr.py add <peer_id> --invoke <cmd> [--provider <id>] [--model <model_id>] [--dry-run]
   peer_mgr.py suspend <peer_id> [--reason <text>] [--dry-run]
   peer_mgr.py resume <peer_id> [--dry-run]
   peer_mgr.py remove <peer_id> [--dry-run]
@@ -14,16 +14,16 @@ Usage:
 
   peer_id  : logical node ID (e.g. cx, ag, cc)
   --invoke : executable name (e.g. codex, agy)
-  --model  : default model ID (optional; added to model_profiles.json)
+  --provider: existing installation/provider key; inferred when unambiguous
+  --model  : model ID used to seed the three nested profiles
   --dry-run: print changes without writing
   --strict : treat warnings as errors in validate
 
 Files modified:
   _sys/ai/orchestration.json       — hub_nodes add/enable/disable
   _sys/ai/peers.json               — peers registry enabled flag
-  _sys/ai/model_profiles.json      — routing_state eligible/blocked
   _sys/ai/protocol.json            — default_voters / r10_voters lists
-  _sys/ai/status_checks.json       — peer status eligible/blocked
+  _sys/ai/status_checks.json       — probe definitions (not lifecycle state)
 """
 from __future__ import annotations
 
@@ -38,9 +38,9 @@ from typing import Any
 _SYS = Path(__file__).parent.parent
 _ORCH = _SYS / "ai" / "orchestration.json"
 _PEERS = _SYS / "ai" / "peers.json"
-_PROFILES = _SYS / "ai" / "model_profiles.json"
 _PROTOCOL = _SYS / "ai" / "protocol.json"
 _STATUS = _SYS / "ai" / "status_checks.json"
+_SPECIFIC = _SYS / "docs-v2" / "specific"
 
 
 def _load(path: Path) -> Any:
@@ -94,6 +94,84 @@ def _find_voter_lists(obj: Any, path: str = "") -> list[tuple[str, list, Any, st
     return result
 
 
+def _set_list_membership(values: list, peer_id: str, present: bool) -> None:
+    values[:] = [value for value in values if value != peer_id]
+    if present:
+        values.append(peer_id)
+
+
+def _set_governance_membership(config: dict, peer_id: str, active: bool) -> None:
+    """Keep voter, inactive-voter, and role registries lifecycle-consistent."""
+    consensus = config.get("consensus", {})
+    for key in ("default_voters", "r10_voters"):
+        values = consensus.get(key)
+        if isinstance(values, list):
+            _set_list_membership(values, peer_id, active)
+    inactive = consensus.get("inactive_default_voters")
+    if isinstance(inactive, list):
+        _set_list_membership(inactive, peer_id, not active)
+    for key, values in config.get("roles_registry", {}).items():
+        if not key.startswith("_") and isinstance(values, list):
+            _set_list_membership(values, peer_id, active)
+
+
+def _remove_governance_membership(config: dict, peer_id: str) -> None:
+    consensus = config.get("consensus", {})
+    for key in ("default_voters", "r10_voters", "inactive_default_voters"):
+        values = consensus.get(key)
+        if isinstance(values, list):
+            _set_list_membership(values, peer_id, False)
+    for key, values in config.get("roles_registry", {}).items():
+        if not key.startswith("_") and isinstance(values, list):
+            _set_list_membership(values, peer_id, False)
+
+
+def _resolve_provider(
+    peers_data: dict, nodes: list[dict], invoke: str, requested: str | None
+) -> str | None:
+    providers = peers_data.get("peers", {})
+    if requested:
+        return requested if requested in providers else None
+    node_map = {node.get("node_id"): node for node in nodes}
+    candidates = []
+    for provider_id, provider in providers.items():
+        native = provider.get("native_binary", {})
+        matching_node = any(
+            node_map.get(node_id, {}).get("invoke") == invoke
+            for node_id in provider.get("node_ids", [])
+        )
+        if provider_id == invoke or native.get("bin_name") == invoke or matching_node:
+            candidates.append(provider_id)
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _write_specific_doc(
+    peer_id: str, provider_id: str, invoke: str, dry_run: bool
+) -> None:
+    path = _SPECIFIC / f"{peer_id}.md"
+    if path.exists():
+        return
+    content = (
+        f"# Specific — {peer_id}\n"
+        f"> Delta from general/*. Status: ACTIVE.\n\n"
+        "## Permission Flags\n\n"
+        f"Adapter-specific invocation is declared in `orchestration.json` (`{invoke}`).\n\n"
+        "## Runtime Profiles\n\n"
+        f"`{peer_id}.standard`, `{peer_id}.effort`, and `{peer_id}.deepthink` "
+        "are generated from the nested profile map.\n\n"
+        "## Context and Collaboration\n\n"
+        "This peer uses the common versioned room references, promotion/ACK "
+        "boundary, equal governance, and role protocol.\n\n"
+        f"Installation provider: `{provider_id}`.\n"
+    )
+    if dry_run:
+        print(f"  [DRY-RUN] would write {path.relative_to(_SYS)}")
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    print(f"  wrote {path.relative_to(_SYS)}")
+
+
 # ─── Commands ─────────────────────────────────────────────────────────────────
 
 def cmd_suspend(peer_id: str, reason: str, dry_run: bool) -> int:
@@ -116,6 +194,7 @@ def cmd_suspend(peer_id: str, reason: str, dry_run: bool) -> int:
 
     if not changed:
         print(f"  orchestration.json: {peer_id} already disabled")
+    _set_governance_membership(orch, peer_id, False)
     _save(_ORCH, orch, dry_run)
 
     # peers.json
@@ -131,32 +210,12 @@ def cmd_suspend(peer_id: str, reason: str, dry_run: bool) -> int:
                 print(f"  peers.json: {pk}.enabled = false")
         _save(_PEERS, peers_data, dry_run)
 
-    # model_profiles.json — block all profiles for this peer
-    mp = _load(_PROFILES)
-    if mp:
-        for pkey, pval in mp.get("profiles", {}).items():
-            if pkey.startswith(f"{peer_id}."):
-                pval["routing_state"] = "blocked"
-                print(f"  model_profiles.json: {pkey}.routing_state = blocked")
-        _save(_PROFILES, mp, dry_run)
-
     # protocol.json — remove from voters
     proto = _load(_PROTOCOL)
     if proto:
-        voter_lists = _find_voter_lists(proto)
-        for path, lst, parent, key in voter_lists:
-            if peer_id in lst:
-                parent[key] = [v for v in lst if v != peer_id]
-                print(f"  protocol.json: removed {peer_id!r} from {path}")
+        _set_governance_membership(proto, peer_id, False)
+        print(f"  protocol.json: {peer_id!r} moved to inactive voters")
         _save(_PROTOCOL, proto, dry_run)
-
-    # status_checks.json
-    sc = _load(_STATUS)
-    if sc and peer_id in sc:
-        sc[peer_id]["status"] = "blocked"
-        sc[peer_id].setdefault("_note", f"suspended: {reason}")
-        print(f"  status_checks.json: {peer_id}.status = blocked")
-        _save(_STATUS, sc, dry_run)
 
     print(f"\nDone. {peer_id} suspended.")
     if reason:
@@ -177,9 +236,10 @@ def cmd_resume(peer_id: str, dry_run: bool) -> int:
         print(f"[ERROR] peer {peer_id!r} not found in orchestration.json", file=sys.stderr)
         return 1
 
-    # Re-enable peer node; leave virtual children alone (they may have own rules)
+    # Re-enable only the root. Profile-local state remains unchanged.
     node.pop("enabled", None)  # remove enabled:false → defaults to true
     print(f"  orchestration.json: {peer_id}.enabled = true (flag removed)")
+    _set_governance_membership(orch, peer_id, True)
     _save(_ORCH, orch, dry_run)
 
     peers_data = _load(_PEERS)
@@ -194,29 +254,23 @@ def cmd_resume(peer_id: str, dry_run: bool) -> int:
                 print(f"  peers.json: {pk}.enabled = true")
         _save(_PEERS, peers_data, dry_run)
 
-    # model_profiles.json — unblock profiles
-    mp = _load(_PROFILES)
-    if mp:
-        for pkey, pval in mp.get("profiles", {}).items():
-            if pkey.startswith(f"{peer_id}."):
-                pval["routing_state"] = "eligible"
-                print(f"  model_profiles.json: {pkey}.routing_state = eligible")
-        _save(_PROFILES, mp, dry_run)
-
-    # status_checks.json
-    sc = _load(_STATUS)
-    if sc and peer_id in sc:
-        sc[peer_id]["status"] = "eligible"
-        sc[peer_id].pop("_note", None)
-        print(f"  status_checks.json: {peer_id}.status = eligible")
-        _save(_STATUS, sc, dry_run)
+    proto = _load(_PROTOCOL)
+    if proto:
+        _set_governance_membership(proto, peer_id, True)
+        print(f"  protocol.json: {peer_id!r} restored to active voters")
+        _save(_PROTOCOL, proto, dry_run)
 
     print(f"\nDone. {peer_id} resumed.")
-    print("NOTE: You must manually add the peer back to protocol.json voters if desired.")
     return 0
 
 
-def cmd_add(peer_id: str, invoke: str, model: str | None, dry_run: bool) -> int:
+def cmd_add(
+    peer_id: str,
+    invoke: str,
+    model: str | None,
+    dry_run: bool,
+    provider: str | None = None,
+) -> int:
     print(f"Adding peer: {peer_id} (invoke={invoke})")
 
     orch = _load(_ORCH)
@@ -224,40 +278,78 @@ def cmd_add(peer_id: str, invoke: str, model: str | None, dry_run: bool) -> int:
         print("[ERROR] orchestration.json not found", file=sys.stderr)
         return 1
     nodes = orch["hub_nodes"]
+    peers_data = _load(_PEERS) or {"peers": {}}
+    provider_id = _resolve_provider(peers_data, nodes, invoke, provider)
+    if provider_id is None:
+        print(
+            "[ERROR] provider could not be inferred; register installation in "
+            "peers.json and pass --provider",
+            file=sys.stderr,
+        )
+        return 1
 
     if _orch_find(nodes, peer_id):
         print(f"  orchestration.json: {peer_id} already exists — skipping add")
     else:
+        template = next((n for n in nodes if n.get("invoke") == invoke), {})
         new_node: dict = {
             "node_id": peer_id,
             "type": "peer",
             "invoke": invoke,
-            "invoke_args": ["-p", "{query}"],
-            "memory": "persistent",
-            "timeout": 0,
+            "adapter_class": template.get("adapter_class"),
+            "invoke_args": template.get("invoke_args", ["-p", "{query}"]),
+            "memory": template.get("memory", "persistent"),
+            "timeout": template.get("timeout", 0),
+            "default_profile": "effort",
+            "capability_class": template.get("capability_class", "trusted_ipc_mutation"),
+            "profiles": {
+                tier: {
+                    "model_id": model,
+                    "routing_state": "eligible",
+                    "profile_args": ["--model", model] if model else []
+                }
+                for tier in ("standard", "effort", "deepthink")
+            },
         }
+        for key in ("requires_pty", "session_mode"):
+            if key in template:
+                new_node[key] = template[key]
         nodes.append(new_node)
         print(f"  orchestration.json: added {peer_id} node (invoke={invoke})")
+    _set_governance_membership(orch, peer_id, True)
     _save(_ORCH, orch, dry_run)
 
-    # model_profiles.json — add default profile if model given
-    if model:
-        mp = _load(_PROFILES)
-        if mp and f"{peer_id}.default" not in mp.get("profiles", {}):
-            mp.setdefault("profiles", {})[f"{peer_id}.default"] = {
-                "model_id": model,
-                "routing_state": "eligible",
-                "effort": "medium",
-                "_note": "auto-generated by peer_mgr.py add",
-            }
-            print(f"  model_profiles.json: added {peer_id}.default (model={model})")
-            _save(_PROFILES, mp, dry_run)
+    provider_cfg = peers_data["peers"][provider_id]
+    provider_cfg["enabled"] = True
+    _set_list_membership(provider_cfg.setdefault("node_ids", []), peer_id, True)
+    _save(_PEERS, peers_data, dry_run)
+
+    proto = _load(_PROTOCOL)
+    if proto:
+        _set_governance_membership(proto, peer_id, True)
+        _save(_PROTOCOL, proto, dry_run)
+
+    status = _load(_STATUS) or {"peers": {}}
+    sibling_ids = [
+        node_id for node_id in provider_cfg.get("node_ids", [])
+        if node_id != peer_id
+    ]
+    status.setdefault("peers", {}).setdefault(
+        peer_id,
+        {"inherits": sibling_ids[0]} if sibling_ids else {
+            "safe_checks": [{
+                "id": f"{peer_id}.version",
+                "class": "version_only",
+                "command": f"{invoke} --version",
+                "effect_class": "read_only",
+            }]
+        },
+    )
+    _save(_STATUS, status, dry_run)
+    _write_specific_doc(peer_id, provider_id, invoke, dry_run)
 
     print(f"\nDone. {peer_id} added.")
-    print("Next steps:")
-    print(f"  1. Add {peer_id} to protocol.json default_voters / r10_voters")
-    print(f"  2. Create docs-v2/specific/{peer_id}.md")
-    print(f"  3. Run: python checks/validate_peer_config.py")
+    print("Next: run peer_mgr.py validate --strict")
     return 0
 
 
@@ -277,26 +369,41 @@ def cmd_remove(peer_id: str, dry_run: bool) -> int:
     orch["hub_nodes"] = [n for n in nodes if n.get("node_id") != peer_id
                          and n.get("peer") != peer_id
                          and n.get("parent_node") != peer_id]
+    _remove_governance_membership(orch, peer_id)
     removed = before - len(orch["hub_nodes"])
     print(f"  orchestration.json: removed {removed} node(s) for {peer_id}")
     _save(_ORCH, orch, dry_run)
 
-    # model_profiles.json — remove profiles
-    mp = _load(_PROFILES)
-    if mp:
-        profiles = mp.get("profiles", {})
-        to_remove = [k for k in profiles if k.startswith(f"{peer_id}.")]
-        for k in to_remove:
-            del profiles[k]
-            print(f"  model_profiles.json: removed {k}")
-        if to_remove:
-            _save(_PROFILES, mp, dry_run)
+    peers_data = _load(_PEERS)
+    if peers_data:
+        for provider in peers_data.get("peers", {}).values():
+            node_ids = provider.get("node_ids")
+            if isinstance(node_ids, list):
+                _set_list_membership(node_ids, peer_id, False)
+        _save(_PEERS, peers_data, dry_run)
 
-    print(f"\nDone. {peer_id} removed from orchestration and profiles.")
-    print("Manual cleanup still needed:")
-    print(f"  - peers.json entry for {peer_id}")
-    print(f"  - docs-v2/specific/{peer_id}.md (archive or delete)")
-    print(f"  - Any remaining references in agent/*.json, tool-registry.json")
+    proto = _load(_PROTOCOL)
+    if proto:
+        _remove_governance_membership(proto, peer_id)
+        _save(_PROTOCOL, proto, dry_run)
+
+    status = _load(_STATUS)
+    if status and peer_id in status.get("peers", {}):
+        status["peers"].pop(peer_id, None)
+        _save(_STATUS, status, dry_run)
+
+    doc = _SPECIFIC / f"{peer_id}.md"
+    if doc.exists():
+        archive = _SYS / "docs" / "history" / f"specific-{peer_id}.md"
+        if dry_run:
+            print(f"  [DRY-RUN] would archive {doc.relative_to(_SYS)}")
+        else:
+            archive.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(doc, archive)
+            print(f"  archived {doc.relative_to(_SYS)}")
+
+    print(f"\nDone. {peer_id} removed from logical runtime configuration.")
+    print("Run validator to locate domain-specific references, if any.")
     return 0
 
 
@@ -339,6 +446,7 @@ def main() -> int:
     p_add = sub.add_parser("add", help="Add a new peer")
     p_add.add_argument("peer_id")
     p_add.add_argument("--invoke", required=True)
+    p_add.add_argument("--provider", default=None)
     p_add.add_argument("--model", default=None)
     p_add.add_argument("--dry-run", action="store_true")
 
@@ -363,7 +471,9 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.cmd == "add":
-        return cmd_add(args.peer_id, args.invoke, args.model, args.dry_run)
+        return cmd_add(
+            args.peer_id, args.invoke, args.model, args.dry_run, args.provider
+        )
     if args.cmd == "suspend":
         return cmd_suspend(args.peer_id, args.reason, args.dry_run)
     if args.cmd == "resume":

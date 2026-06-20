@@ -65,111 +65,111 @@
   "role_bindings": {
     "coordinator": {
       "preferred_peers": ["cx", "cc"],
-      "model_profiles": ["cx.default", "cc.default"],
-      "fallback": "cc.default"
+      "model_profiles": ["cx.effort", "cc.effort"],
+      "fallback": "cc.effort"
     },
     "reviewer": {
       "preferred_peers": ["cc"],
-      "model_profiles": ["cc.default", "cc.deep"],
-      "fallback": "ag.default"
+      "model_profiles": ["cc.effort", "cc.deepthink"],
+      "fallback": "ag.effort"
     },
     "researcher": {
       "preferred_peers": ["ag"],
-      "model_profiles": ["ag.default"],
-      "fallback": "cc.default"
+      "model_profiles": ["ag.effort"],
+      "fallback": "cc.effort"
     },
     "implementer": {
       "preferred_peers": ["cx"],
-      "model_profiles": ["cx.default"],
-      "fallback": "cc.default",
+      "model_profiles": ["cx.effort"],
+      "fallback": "cc.effort",
       "notes": "cx is YELLOW in current status; cc review is required before implementation is considered accepted."
     }
   },
   "routing_rules": [
     {
       "task_type": "coordination",
-      "route": ["cx.default", "cc.default"],
-      "final_reviewer": "cc.default"
+      "route": ["cx.effort", "cc.effort"],
+      "final_reviewer": "cc.effort"
     },
     {
       "task_type": "consensus_framing",
-      "route": ["cc.default", "ag.default", "cx.default"],
-      "final_reviewer": "cc.default"
+      "route": ["cc.effort", "ag.effort", "cx.effort"],
+      "final_reviewer": "cc.effort"
     },
     {
       "task_type": "implementation_planning",
-      "route": ["cc.default", "cx.default", "ag.default"],
-      "final_reviewer": "cc.default"
+      "route": ["cc.effort", "cx.effort", "ag.effort"],
+      "final_reviewer": "cc.effort"
     },
     {
       "task_type": "code_mutation",
-      "route": ["cx.default", "cc.default"],
-      "final_reviewer": "cc.default"
+      "route": ["cx.effort", "cc.effort"],
+      "final_reviewer": "cc.effort"
     },
     {
       "task_type": "test_authoring",
-      "route": ["cx.default", "cc.default"],
-      "final_reviewer": "cc.default"
+      "route": ["cx.effort", "cc.effort"],
+      "final_reviewer": "cc.effort"
     },
     {
       "task_type": "verification",
-      "route": ["cc.default", "ag.default"],
-      "final_reviewer": "cc.default"
+      "route": ["cc.effort", "ag.effort"],
+      "final_reviewer": "cc.effort"
     },
     {
       "task_type": "large_corpus_research",
-      "route": ["ag.default", "cc.default"],
-      "final_reviewer": "cc.default"
+      "route": ["ag.effort", "cc.effort"],
+      "final_reviewer": "cc.effort"
     },
     {
       "task_type": "web_doc_research",
-      "route": ["ag.default", "cc.default"],
-      "final_reviewer": "cc.default"
+      "route": ["ag.effort", "cc.effort"],
+      "final_reviewer": "cc.effort"
     },
     {
       "task_type": "summarization_compaction",
-      "route": ["ag.default", "cc.default"],
-      "final_reviewer": "cc.default"
+      "route": ["ag.effort", "cc.effort"],
+      "final_reviewer": "cc.effort"
     },
     {
       "task_type": "mailbox_handoff_hygiene",
-      "route": ["ag.default", "cx.default", "cc.default"],
-      "final_reviewer": "cc.default"
+      "route": ["ag.effort", "cx.effort", "cc.effort"],
+      "final_reviewer": "cc.effort"
     },
     {
       "task_type": "status_health_checking",
-      "route": ["ag.default", "cx.default", "cc.default"],
-      "final_reviewer": "cc.default"
+      "route": ["ag.effort", "cx.effort", "cc.effort"],
+      "final_reviewer": "cc.effort"
     },
     {
       "task_type": "security_auth_sensitive_operation",
-      "route": ["cc.deep", "cx.default"],
-      "final_reviewer": "cc.deep"
+      "route": ["cc.deepthink", "cx.deepthink"],
+      "final_reviewer": "cc.deepthink"
     },
     {
       "task_type": "model_profile_design",
-      "route": ["ag.default", "cc.default", "cx.default"],
-      "final_reviewer": "cc.default"
+      "route": ["ag.effort", "cc.effort", "cx.effort"],
+      "final_reviewer": "cc.effort"
     },
     {
       "task_type": "status_check_design",
-      "route": ["ag.default", "cc.default", "cx.default"],
-      "final_reviewer": "cc.default"
+      "route": ["ag.effort", "cc.effort", "cx.effort"],
+      "final_reviewer": "cc.effort"
     },
     {
       "task_type": "no_code_json_edit",
-      "route": ["cx.default", "cc.default"],
-      "final_reviewer": "cc.default"
+      "route": ["cx.effort", "cc.effort"],
+      "final_reviewer": "cc.effort"
     },
     {
       "task_type": "large_context_research",
-      "route": ["ag.default", "cc.default"],
-      "final_reviewer": "cc.default"
+      "route": ["ag.effort", "cc.effort"],
+      "final_reviewer": "cc.effort"
     },
     {
       "task_type": "default",
-      "route": ["cc.default", "ag.default", "cx.default"],
-      "final_reviewer": "cc.default"
+      "route": ["cc.effort", "ag.effort", "cx.effort"],
+      "final_reviewer": "cc.effort"
     }
   ],
   "message_delivery_contract": {

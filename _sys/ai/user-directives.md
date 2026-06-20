@@ -27,7 +27,7 @@
 - Rule: All peers run with minimum non-interactive permissions and must not block on interactive approval prompts during `hub.py ask` or console wrapper invocations.
 - Implementation:
   - `cc`: `-p {query} --dangerously-skip-permissions` (upgraded from --allowedTools/acceptEdits, 2026-06-19)
-  - `cc-deep`: profile-specific — deep-review (read-only), deep-implement (mutation), deep-admin (explicit). Do NOT auto-copy --dangerously-skip-permissions.
+  - `cc.standard|effort|deepthink`: generated profile nodes inherit the cc DIR-002 mapping; reasoning depth does not independently widen permission scope.
   - `gc`: SUSPENDED — `--approval-mode auto_edit --skip-trust` (reference only; gc is tier_suspended)
   - `cx`: `-s workspace-write`
   - `ag`: PTY mode via AgyAdapter (requires_pty=true on Windows); no --permission-mode flag

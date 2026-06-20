@@ -119,39 +119,37 @@ Each successful claim appends to `handoff.md[ACTIVE_THREADS]`:
 
 > Requirement: B6 from docs-v2/user/requirements.md
 
-Each peer may use multiple underlying models based on task characteristics. Model selection lives in **per-peer config** (`_sys/ai/peers.json` → per-peer `model_profiles`); hub.py is a generic dispatcher and does NOT select models.
+Each peer may use multiple underlying models based on task characteristics.
+Model definitions live under the root peer's nested `profiles` map in
+`_sys/ai/orchestration.json`. Deterministic selection policy lives in
+`routing-config.json["auto_profile_routing"]`; hub.py applies the decision before
+invoking an adapter.
 
 ### Selection Matrix
 
 | Mode | When to use | Examples |
 |------|------------|---------|
-| **Standard** | Routine tasks, low complexity | Health checks, file reads, simple edits |
-| **Effort** | Medium complexity, needs reasoning | Multi-file refactor, architecture decisions |
-| **DeepThink** | High complexity, ambiguous trade-offs | Protocol redesign, security review, 5-Whys root cause |
+| **Standard** | Routine tasks, low complexity | Health checks, file reads, summaries |
+| **Effort** | Medium complexity or ambiguity | Implementation, refactor, tests, debugging |
+| **DeepThink** | High complexity or risk | Protocol redesign, security review, exhaustive consensus |
 
-### Decision Criteria
+### Decision Contract
 
-```
-complexity = LOW  → Standard
-complexity = MED  → Effort
-complexity = HIGH → DeepThink
-token_budget LOW  → Standard (forced)
-health = YELLOW   → Standard (forced, preserve context)
-```
-
-### peers.json Shape (per-peer)
-
-```json
-"gc": {
-  "model_profiles": {
-    "standard": "gemini-2.0-flash",
-    "effort":   "gemini-2.5-pro",
-    "deepthink": "gemini-2.5-pro-deep-research"
-  }
-}
+```text
+explicit peer.profile -> preserve
+simple evidence       -> standard
+implementation        -> effort
+high risk              -> deepthink
+ambiguous              -> effort
+repeated failure       -> promote one tier
+blocked selection      -> same-peer downward fallback
 ```
 
-Model selection is NOT hub.py's responsibility — each peer CLI handles it internally based on its profile.
+Root peer terminals start at `standard`. Root peer asks through hub.py are
+classified automatically. Explicit profile nodes are immutable.
+
+See `ops/automatic-profile-routing-2026-06-20.md` for the decision record,
+signals, fallback rules, tests, and benchmark.
 
 ---
 

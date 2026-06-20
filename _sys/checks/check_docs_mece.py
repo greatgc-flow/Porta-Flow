@@ -1,6 +1,7 @@
 """check_docs_mece.py — MECE validation for docs-v2/ (EDGE-04).
 
-Implements 7 checks (CHK-01~07) as specified in ops/impl-plan.md §5.
+Implements the documentation checks referenced by ops/governance.md and
+ops/peer-debate-2026-06-19.md.
 
 Usage:
     python check_docs_mece.py [--checks CHK-01,CHK-02] [--fix] [--json]

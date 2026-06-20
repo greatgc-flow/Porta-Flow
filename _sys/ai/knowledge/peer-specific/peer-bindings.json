@@ -22,7 +22,7 @@
     "ag": {
       "shell_preference": "powershell",
       "capabilities": ["shell-scripts", "file-ops", "system-orchestration", "real-time-feedback"],
-      "note": "inactive — PRO-15 gate"
+      "note": "active — Windows PTY adapter required"
     }
   }
 }

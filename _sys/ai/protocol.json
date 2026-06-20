@@ -515,14 +515,13 @@
     "out_of_band_direct_writes": "not_enforceable_by_hub"
   },
   "model_profiles": {
-    "strategy": "virtual_nodes_preferred",
-    "dynamic_model_arg_supported": false,
-    "profile_to_node_examples": {
-      "gemini_fast": "gc-fast",
-      "gemini_deep": "gc-deep",
-      "codex_review": "cx-review"
-    },
-    "note": "Define model-specific virtual nodes in orchestration.json with explicit invoke_args. hub ask currently selects nodes, not arbitrary runtime model strings."
+    "strategy": "nested_profiles_generate_runtime_nodes",
+    "canonical_source": "_sys/ai/orchestration.json",
+    "node_id_format": "{peer}.{profile}",
+    "required_profiles": ["standard", "effort", "deepthink"],
+    "dynamic_model_arg_supported": true,
+    "generated_nodes_tracked": false,
+    "note": "Only root peers are tracked. Runtime normalization expands nested profiles into deterministic peer.profile nodes."
   },
   "generated_artifacts": {
     "policy": "Generated launcher outputs are tracked separately from governed source files and must not block consensus unless their generator, stable wrapper, or runtime behavior is affected.",

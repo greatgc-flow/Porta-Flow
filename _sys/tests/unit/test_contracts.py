@@ -89,6 +89,16 @@ class TestActionAskContract:
         assert p["explicit_scope"].default is None
 
 
+class TestPeerStatusContract:
+    """action_peer_status() parameter contract."""
+
+    def test_optional_defaults(self):
+        sig = inspect.signature(hub.action_peer_status)
+        p = sig.parameters
+        assert p["node_id"].default is None
+        assert p["include_all"].default is False
+
+
 class TestActionLessonContract:
     """lesson-* action signatures"""
 

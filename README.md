@@ -1,247 +1,239 @@
 # Engram
 
-[![Python 3.14+](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/downloads/)
-[![Tests: 688](https://img.shields.io/badge/tests-688%20passing-brightgreen.svg)](_sys/tests/unit)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Platform: Windows](https://img.shields.io/badge/platform-Windows%2011-0078d4.svg)](https://microsoft.com/windows)
-[![Protocol: v4.2](https://img.shields.io/badge/protocol-v4.2-purple.svg)](_sys/ai/protocol.json)
-[![Peers: 4](https://img.shields.io/badge/AI%20peers-4%20equal-ff69b4.svg)](_sys/ai/peers.json)
+[![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078d4.svg)](https://www.microsoft.com/windows)
+[![Python: 3.14](https://img.shields.io/badge/python-3.14-blue.svg)](_sys/runtimes.json)
+[![Tests: 790 passing](https://img.shields.io/badge/tests-790%20passing-brightgreen.svg)](_sys/tests/unit)
+[![Protocol: 4.2](https://img.shields.io/badge/protocol-4.2-purple.svg)](_sys/ai/protocol.json)
+[![Active peers: 3](https://img.shields.io/badge/active%20peers-3-ff69b4.svg)](_sys/ai/orchestration.json)
 
-> **A portable Windows dev environment where Claude, Gemini, Codex, and Antigravity collaborate as equal AI peers — every task, every decision, automatically cross-verified and self-healing.**
+Engram is a portable Windows development environment with a multi-peer AI
+collaboration system. It provides isolated runtimes, CLI launchers, peer
+orchestration, automatic model-profile routing, health checks, consensus, and
+test-driven validation from one relocatable directory.
 
----
+## Current Peer Topology
 
-## Why Engram?
+`_sys/ai/orchestration.json` is the canonical topology source. A peer is a
+provider-level participant. Its runtime nodes are generated from the profile
+tree in memory:
 
-Most AI coding tools work in isolation. Engram is different: it runs **4 AI peers in parallel**, each checking the others' work. Every code change, every architectural decision, every bug fix goes through peer review — automatically, without you having to ask.
-
-And it all runs from a single folder. USB drive, cloud share, or network path. Zero host pollution. Right-click any folder → instant AI-powered dev environment.
-
----
-
-## ✨ Key Features
-
-### 🤝 Always-On Multi-Peer Collaboration
-Every task is automatically routed through active peer collaboration per `collab_rate`. Claude, Gemini, Codex, and Antigravity each contribute their strengths. No single AI is in charge — unanimous consent is required for high-risk changes.
-
-```
-You → [hub.py] → Claude + Gemini + Codex + Antigravity
-                      ↕ cross-verify ↕
-                  [consensus] → action
+```text
+peer
+|-- standard
+|-- effort
+`-- deepthink
 ```
 
-### 🔌 Portable by Design
-Zero installation on the host. Mount from USB, cloud drive, or network share. All tools (Python 3.14, Node.js, Git, AI CLIs) are self-contained under a single root folder.
+Disabling a peer disables every child profile. Profiles have equal governance
+weight and collaboration rights; model cost or capability does not grant
+additional authority.
+
+| Peer | CLI | State | Standard | Effort | Deepthink |
+|------|-----|-------|----------|--------|-----------|
+| `cc` | Claude Code | Active | Haiku 4.5 / low | Sonnet 4.6 / high | Opus 4.8 / max |
+| `ag` | Antigravity | Active | Gemini 3.5 Flash / low | Gemini 3.5 Flash / high | Gemini 3.1 Pro / high |
+| `cx` | Codex | Active | GPT-5.4-mini / low | GPT-5.5 / high | GPT-5.5 / xhigh |
+| `ca` | Claude alternate | Disabled | Inherited disabled | Inherited disabled | Inherited disabled |
+| `gc` | Gemini CLI | Disabled | Inherited disabled | Inherited disabled | Inherited disabled |
+
+The default profile is deliberately low cost. The hub analyzes each request and
+can promote or demote it among `standard`, `effort`, and `deepthink`.
+
+## Quick Start
+
+Requirements:
+
+- Windows 10 or Windows 11
+- Git for the initial checkout
+- Network access during installation
+- Provider authentication for each AI CLI you intend to use
+
+Install or rebuild the portable environment:
 
 ```bat
-:: Mount anywhere, leave zero trace
-REGISTER.bat   :: Maps P:\ via subst — removes on UNREGISTER.bat
+INSTALL.bat
 ```
 
-### 🧠 ContextGate v1.0
-CJK-aware token estimation protects your context budget automatically:
-- **80% utilization** → warning logged
-- **95% utilization** → automatic failover to a lower-cost peer
-- **>95%** → request rejected before token overflow
+Register the current directory on the host and map the configured drive:
 
-### 🛡️ Protocol v4.2 — Governance at Every Level
-11 collaboration levels from fully autonomous to unanimous consent:
-
-| Rate | Mode | When It Applies | Consent Required |
-|:----:|:-----|:----------------|:----------------|
-| 0 | **Inactive** | Exploration, read-only | — |
-| 1 | **Manual** | Explicit axis calls only | — |
-| 2 | **Architecture** | Before arch/structure decisions | — |
-| 3 | **Planning** | Multi-file task planning | — |
-| 4 | **Checkpoint** | Start + completion review | — |
-| 5 | **Code Partner** | Before every Edit/Write | — |
-| 6 | **Error Partner** | All edits + on any error | — |
-| 7 | **Direction** | All edits + trade-off analysis | Major direction shifts |
-| 8 | **Milestone** | Every sub-task review | Step completion |
-| 9 | **Pairing** | Every 5 explores, verify direction | Direction changes |
-| 10 | **Sync** | Full Phase: Plan/Exec/Review/Report | **Mandatory every step** |
-
-### 🏥 Self-Healing Error Taxonomy (T0–T4)
-5-tier error classification with automatic remediation:
-
-| Tier | Severity | Action |
-|:----:|:---------|:-------|
-| T0 | Info | Log only |
-| T1 | Silent | Record, continue |
-| T2 | Display | Show to user |
-| T3 | Warning | Alert + suggest fix |
-| T4 | **Fatal** | Display + `sys.exit(4)` |
-
-### 📋 MECE Doc Validation (CHK-01~07)
-7 automated checks keep code, config, and documentation in perfect sync:
-
-| Check | What it validates |
-|:-----:|:-----------------|
-| CHK-01 | All paths in docs actually exist |
-| CHK-02 | No Korean (CJK) in internal docs (INV-19) |
-| CHK-03 | Python file changes covered in docs |
-| CHK-04 | All `[[anchor]]` links resolve |
-| CHK-05 | `collab_rate` values match `protocol.json` |
-| CHK-06 | No proposals older than 14 days pending |
-| CHK-07 | All docs listed in `00-MANIFEST.md` |
-
-### 🧪 688 Tests, All Passing
-Comprehensive TDD coverage including parallel IPC stress tests, adapter protocol conformance, context gate edge cases, and error taxonomy integration.
-
----
-
-## 🏗️ Architecture
-
-```
-P:\  (portable root, mapped via subst)
-│
-├── _sys/
-│   ├── core/
-│   │   ├── hub.py           ← IPC orchestrator (all peer routing)
-│   │   ├── hub_peer.py      ← PeerAdapter: Claude/Gemini/Codex/Virtual
-│   │   ├── hub_context.py   ← ContextGate v1.0
-│   │   ├── hub_health.py    ← HealthReader + PeerHealthState
-│   │   ├── hub_logging.py   ← 7-type JSONL logger
-│   │   └── hub_error.py     ← T0-T4 error taxonomy display
-│   │
-│   ├── ai/
-│   │   ├── protocol.json    ← collab_rate, consensus, routing (SSOT)
-│   │   ├── orchestration.json ← 7 hub nodes + adapter_class
-│   │   ├── model_profiles.json ← context/output limits per model
-│   │   └── error-taxonomy.json ← T0-T4 error definitions
-│   │
-│   ├── checks/
-│   │   ├── check_docs_mece.py ← CHK-01~07 validation
-│   │   └── self_care.py       ← autonomous maintenance
-│   │
-│   └── tests/unit/          ← 688 tests, all pass
-│
-├── workspace/               ← your projects go here
-├── CLAUDE.md                ← Claude's global instructions
-├── GEMINI.md                ← Gemini's global instructions
-└── README.md                ← you are here
-```
-
----
-
-## ⚡ Quick Start
-
-### Prerequisites
-- Windows 10/11
-- Git
-- Node.js (for AI CLIs)
-
-### 1. Clone
 ```bat
-git clone https://github.com/greatgc-flow/Porta-Flow.git engram
-cd engram
+register.bat
 ```
 
-### 2. Install AI Peers
+Remove host registration:
+
 ```bat
-npm install -g @anthropic-ai/claude-cli
-npm install -g @google/gemini-cli
+unregister.bat
 ```
 
-### 3. Mount the Environment
+## Using the AI System
+
+Start a peer-specific terminal:
+
 ```bat
-REGISTER.bat
+_sys\cli\claude.bat
+_sys\cli\codex.bat
+_sys\cli\agy.bat
 ```
-This maps `P:\` via Windows `subst`. All tools become available at `P:\_sys\`.
 
-### 4. Run Your First Collaboration
+The terminal is only the human interface. Collaboration roles and the active
+coordinator can change independently through the hub.
+
+Send a request to a peer and let the router select the profile:
+
 ```bat
-python P:\_sys\core\hub.py peer-status
-```
-```
-┌──────────────────────────────────────────────────────────────┐
-│  PEER STATUS (live-refreshed)                                │
-├──────────┬──────────┬──────────┬──────────┬────────────────┤
-│ Peer     │ Gate     │ Health   │ Version  │ Details        │
-├──────────┼──────────┼──────────┼──────────┼────────────────┤
-│ claude   │ OPEN     │ GREEN    │ 2.1.x    │ 0.0MB          │
-│ gemini   │ OPEN     │ GREEN    │ 0.47.x   │ 0.0MB          │
-│ codex    │ open     │ GREEN    │ codex-cl │ 0.0MB          │
-│ antigrav │ open     │ GREEN    │ 1.0.x    │ 0.0MB          │
-└──────────┴──────────┴──────────┴──────────┴────────────────┘
+_sys\cli\msg.bat ask --to cx --query "Implement and test this change"
 ```
 
----
+Force a profile only when required:
 
-## 📖 Usage Examples
-
-### Ask a single peer
 ```bat
-python P:\_sys\core\hub.py ask --to gc --query "Review this architecture diagram"
+_sys\cli\msg.bat ask --to cx.standard --query "Make a small local edit"
+_sys\cli\msg.bat ask --to cc.effort --query "Review this architecture"
+_sys\cli\msg.bat ask --to ag.deepthink --query "Analyze the full repository"
 ```
 
-### Broadcast to all peers
+Request all active peers:
+
 ```bat
-python P:\_sys\core\hub.py ask-all --query "Should we use JSONL or SQLite for the log store?"
+_sys\cli\msg.bat ask-all --query "Review this design and identify risks"
 ```
-Each peer responds independently, Claude synthesizes.
 
-### Run MECE doc validation
+Useful status and validation commands:
+
 ```bat
-python P:\_sys\checks\check_docs_mece.py --checks CHK-01,CHK-02,CHK-03
-```
-```
-[CHK-01] ✓ All 47 doc paths exist
-[CHK-02] ✓ No INV-19 violations found
-[CHK-03] ✓ All Python changes covered in docs
+_sys\cli\msg.bat peer-status
+_sys\cli\msg.bat model-status
+_sys\cli\msg.bat profile-validate
+python _sys\checks\validate_peer_config.py --strict
 ```
 
-### Change collaboration intensity
+## Automatic Profile Routing
+
+Routing is deterministic and configuration-driven. It considers request risk,
+scope, reasoning needs, explicit overrides, peer health, profile eligibility,
+and fallback rules.
+
+```text
+request
+   |
+   v
+classify risk and complexity
+   |
+   v
+select peer.profile
+   |
+   v
+validate enabled state, health, and availability
+   |
+   v
+invoke provider CLI
+```
+
+Explicit overrides are supported for reproducible tests and exceptional tasks:
+
 ```bat
-:: Check current level
-python P:\_sys\core\hub.py status
-
-:: Bump to full sync mode (unanimous consent on everything)
-P:\_sys\cli\set-collab-rate.bat 10
+_sys\cli\msg.bat ask --to cx --query "[PROFILE:deepthink] Investigate this failure"
+_sys\cli\msg.bat ask --to cc --query "[RISK:10] Review this migration"
 ```
 
-### Run the full test suite
+See
+[`automatic-profile-routing-2026-06-20.md`](_sys/docs-v2/ops/automatic-profile-routing-2026-06-20.md)
+for the classifier, promotion and demotion rules, fallback behavior, tests, and
+benchmarks.
+
+## Repository Layout
+
+```text
+.
+|-- INSTALL.bat                 portable environment bootstrap
+|-- register.bat                host registration and drive mapping
+|-- unregister.bat              host integration removal
+|-- CLEANUP.bat                 generated-data cleanup
+|-- AGENTS.md                   contributor instructions
+|-- PROTOCOL.md                 collaboration protocol entry point
+|-- _sys/
+|   |-- ai/                     runtime policy and topology JSON
+|   |-- checks/                 health, dependency, and consistency checks
+|   |-- cli/                    peer terminals and command wrappers
+|   |-- core/                   hub, routing, setup, and lifecycle logic
+|   |-- docs-v2/                current architecture and operating docs
+|   |-- hooks/                  collaboration lifecycle hooks
+|   |-- templates/              reusable workspace and tool templates
+|   `-- tests/                  unit, integration, scenario, and stress tests
+`-- workspace/                  user projects and working documents
+```
+
+Generated state, credentials, logs, caches, and downloaded runtimes are not
+source files and must remain outside version control.
+
+## Configuration
+
+| File | Responsibility |
+|------|----------------|
+| `_sys/ai/orchestration.json` | Peer tree, profiles, models, invocation arguments, enabled state |
+| `_sys/ai/protocol.json` | Collaboration, consensus, leadership, and forwarding policy |
+| `_sys/ai/routing-config.json` | Automatic routing thresholds, fallback, and role weights |
+| `_sys/ai/model-registry.json` | Provider model specifications and validation metadata |
+| `_sys/ai/peers.json` | Peer capabilities and operational metadata |
+| `_sys/ai/status_checks.json` | Current health and model verification scenarios |
+| `_sys/ai/error-taxonomy.json` | Structured failure classification |
+
+Do not add provider or model logic to multiple call sites. Add or remove a peer,
+profile, model, or option through the canonical configuration and adapters, then
+run the strict validators and tests.
+
+## Testing
+
+Run the normal complete suite:
+
 ```bat
-cd P:\_sys\tests\unit
-python -m pytest -q
-```
-```
-688 passed in 32s ✓
+_sys\tests\run-tests.bat --all
 ```
 
----
+Run every suite, including high-memory stress tests:
 
-## 🔧 Configuration
+```bat
+_sys\tests\run-tests.bat --full
+```
 
-All configuration lives in `_sys/ai/` as JSON files (single source of truth):
+Run unit tests directly:
 
-| File | Purpose |
-|:-----|:--------|
-| `protocol.json` | `collab_rate`, consensus voters, routing |
-| `orchestration.json` | Hub nodes, adapter classes |
-| `model_profiles.json` | Context/output limits per model |
-| `error-taxonomy.json` | T0-T4 error definitions |
-| `logging-config.json` | 7-type JSONL log settings |
-| `governance_params.json` | Thresholds (ContextGate, CHK checks) |
+```bat
+python -m pytest _sys\tests\unit -q
+```
 
----
+Run targeted validation:
 
-## 🤝 Contributing
+```bat
+_sys\checks\check-deps.bat
+_sys\checks\check-portability.bat
+python _sys\checks\check_docs_mece.py --json
+python _sys\checks\validate_peer_config.py --strict
+python _sys\tests\benchmark_peer_routing.py
+```
 
-1. Fork and create a branch
-2. Write tests first (TDD)
-3. All 688 tests must pass: `python -m pytest _sys/tests/unit/ -q`
-4. MECE checks must pass: `python _sys/checks/check_docs_mece.py`
-5. Open a PR — peer review required (at least one AI peer cross-check encouraged)
+Current verified baseline: 790 unit tests passing, strict peer validation with
+zero warnings, profile parity validation passing for 12 active runtime nodes,
+and documentation checks CHK-01 through CHK-07 passing.
 
----
+## Documentation
 
-## 📄 License
+Start with:
 
-MIT License — see [LICENSE](LICENSE).
+- [`_sys/docs-v2/MOC.md`](_sys/docs-v2/MOC.md) for the documentation map
+- [`_sys/docs-v2/10-invariants.md`](_sys/docs-v2/10-invariants.md) for hard rules
+- [`_sys/docs-v2/20-architecture.md`](_sys/docs-v2/20-architecture.md) for system structure
+- [`_sys/docs-v2/ops/peer-debate-2026-06-19.md`](_sys/docs-v2/ops/peer-debate-2026-06-19.md) for the peer architecture decision
+- [`_sys/docs-v2/ops/automatic-profile-routing-2026-06-20.md`](_sys/docs-v2/ops/automatic-profile-routing-2026-06-20.md) for automatic profile routing
 
-Built for portability. Engineered for autonomy. Designed for collaboration.
+## Contribution Rules
 
----
-
-*Engram — because good ideas need a place to live.*
+- Use English in source, comments, documentation, JSON, agent definitions, and
+  batch output.
+- Keep paths portable and derive them from the repository root.
+- Add focused tests before or with behavior changes.
+- Keep configuration machine-readable and minimally reformatted.
+- Run relevant targeted checks before the full suite.
+- Use Conventional Commit prefixes such as `feat:`, `fix:`, `docs:`,
+  `refactor:`, and `test:`.

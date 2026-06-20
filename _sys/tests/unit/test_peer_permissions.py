@@ -32,20 +32,20 @@ def test_cx_uses_workspace_write_sandbox():
     assert "workspace-write" in args
 
 
-def test_cc_no_dangerously_skip():
+def test_cc_uses_dir002_skip_permissions():
     args = peer_default_args("cc", [])
-    assert "--dangerously-skip-permissions" not in args
+    assert "--dangerously-skip-permissions" in args
 
 
-def test_cc_uses_allowed_tools():
+def test_cc_does_not_mix_legacy_allowed_tools():
     args = peer_default_args("cc", [])
-    assert "--allowedTools" in args
+    assert "--allowedTools" not in args
 
 
-def test_cc_uses_accept_edits():
+def test_cc_does_not_mix_legacy_accept_edits():
     args = peer_default_args("cc", [])
-    assert "--permission-mode" in args
-    assert "acceptEdits" in args
+    assert "--permission-mode" not in args
+    assert "acceptEdits" not in args
 
 
 def test_gc_no_yolo():

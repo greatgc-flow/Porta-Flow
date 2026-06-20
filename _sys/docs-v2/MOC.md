@@ -55,7 +55,7 @@ Peer: search this table first. Load only the file(s) relevant to your current ta
 | cc (Claude Code) | `specific/cc.md` | Working as or routing to cc |
 | gc (Gemini CLI) | `specific/gc.md` | Working as or routing to gc |
 | cx (Codex) | `specific/cx.md` | Working as or routing to cx |
-| ag (AntiGravity) | `specific/ag.md` | ag recovery planning (INACTIVE — PRO-15) |
+| ag (AntiGravity) | `specific/ag.md` | active peer and Gemini CLI successor |
 
 ### Operations
 
@@ -65,7 +65,8 @@ Peer: search this table first. Load only the file(s) relevant to your current ta
 | Governance & proposals | `ops/governance.md` | Garbage/, retention, proposal lifecycle, Doc-as-Code |
 | Skill system | `ops/skills.md` | hub skills, catalog, invocation, registration |
 | JSON schemas | `ops/schemas.md` | protocol.json, peers.json, model-registry, routing-config, health.json |
-| **Implementation plan** | **`ops/impl-plan.md`** | **Pre-code blueprint: config layer, workspace arch, hub decomp, Phase 0-6 sequence** |
+| **Peer architecture decision** | **`ops/peer-debate-2026-06-19.md`** | **Final terminology, topology, lifecycle, context, status, TDD, and benchmarks** |
+| **Automatic profile routing** | **`ops/automatic-profile-routing-2026-06-20.md`** | **Terminal defaults, promotion/demotion, fallback, tests, benchmark** |
 | Exhaustive work rules | `ops/debate.md` | ROI gate, exhaustive work sessions, DIR-001 |
 | Failure modes | `ops/anti-patterns.md` | AP-01~AP-21, peer failure taxonomy |
 | Audit checklist | `ops/audit-checklist.md` | MECE audit, release checklist, bootstrap checks |
@@ -110,7 +111,7 @@ These files live at `P:\` root because AI tools load them from fixed paths.
 | `_sys/ai/user-directives.md` | Human standing rules (DIR-001~003) | Human-authoritative |
 | `_sys/ai/runtime-directives.jsonl` | TTL-bound auto-promoted corrections | hub.py managed |
 | `_sys/ai/model-registry.json` | Model measured specs (planned) | R:8 to change |
-| `_sys/ai/routing-config.json` | QUALITY_MODE + routing weights (planned) | R:3/R:5 to change |
+| `_sys/ai/routing-config.json` | QUALITY_MODE + automatic profile routing + role weights | R:3/R:5 to change |
 | `_sys/data/logs/cost-log.jsonl` | Per-ask cost/quality tracking | Observer (gitignored) |
 
 ---

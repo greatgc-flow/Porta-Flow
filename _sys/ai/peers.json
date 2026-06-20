@@ -1,6 +1,6 @@
 {
-  "_version": "1.3",
-  "_help": "AI peer registry. Add a peer here — setup/cleanup/manage/workspace-init/launcher all driven by this file. No code changes needed.",
+  "_version": "2.0",
+  "_help": "Installation/provider registry only. Logical peers, lifecycle, profiles, permissions, and roles live in orchestration.json.",
   "peers": {
     "claude": {
       "enabled": true,
@@ -70,11 +70,6 @@
           "config/.claude.json"
         ]
       },
-      "model_profiles": {
-        "standard": "claude-haiku-4-5-20251001",
-        "effort": "claude-sonnet-4-6",
-        "deepthink": "claude-opus-4-8"
-      },
       "node_ids": [
         "cc",
         "ca"
@@ -83,11 +78,7 @@
     "gemini": {
       "enabled": false,
       "description": "Google Gemini CLI",
-      "gate": {
-        "status_file": "gemini/status.json",
-        "mode_key": "mode",
-        "mode_on_value": "ON"
-      },
+      "gate": null,
       "npm_package": "@google/gemini-cli",
       "root_dir": ".gemini",
       "sys_subdir": "gemini",
@@ -124,11 +115,6 @@
           "tmp/"
         ]
       },
-      "model_profiles": {
-        "standard": "gemini-3-flash",
-        "effort": "gemini-2.5-pro",
-        "deepthink": "gemini-3-pro"
-      },
       "node_ids": [
         "gc"
       ]
@@ -155,11 +141,6 @@
         "peer_paths": [],
         "peer_globs": [],
         "config_paths": []
-      },
-      "model_profiles": {
-        "standard": "gpt-5.4-mini",
-        "effort": "gpt-5.5",
-        "deepthink": "o3-pro"
       },
       "node_ids": [
         "cx"
@@ -201,11 +182,6 @@
         "peer_paths": [],
         "peer_globs": [],
         "config_paths": []
-      },
-      "model_profiles": {
-        "standard": "default",
-        "effort": "default",
-        "deepthink": "default"
       },
       "node_ids": [
         "ag"

@@ -4,7 +4,7 @@
 Validates that all enabled peers have consistent entries across:
   - orchestration.json (hub_nodes)
   - peers.json (peer registry)
-  - model_profiles.json (profiles with routing_state)
+  - orchestration.json nested profiles (normalized peer.profile nodes)
   - protocol.json (voters)
   - docs-v2/specific/{peer}.md (documentation)
   - collaboration_loop_bindings.json (no disabled profiles in routes)
@@ -27,6 +27,8 @@ from pathlib import Path
 from typing import Any
 
 _SYS = Path(__file__).parent.parent
+sys.path.insert(0, str(_SYS / "core"))
+import hub_peer
 
 
 def _load(rel: str) -> Any:
@@ -38,7 +40,7 @@ def _load(rel: str) -> Any:
 
 def _orchestration_nodes() -> list[dict]:
     orch = _load("ai/orchestration.json") or {}
-    return orch.get("hub_nodes", [])
+    return hub_peer.normalize_orchestration(orch).get("hub_nodes", [])
 
 
 class Validator:
@@ -76,7 +78,7 @@ class Validator:
 
         self._check_orchestration(nodes, nodes_map, enabled_peers, disabled_peers)
         self._check_peers_json(enabled_ids, disabled_ids)
-        self._check_model_profiles(disabled_ids)
+        self._check_model_profiles(nodes, disabled_ids)
         self._check_protocol_voters(enabled_ids)
         self._check_docs(enabled_ids, disabled_ids)
         self._check_loop_bindings(disabled_ids)
@@ -94,22 +96,22 @@ class Validator:
         else:
             self.info(f"{label}: no duplicate node_ids ({len(ids)} total)")
 
-        # Virtual nodes must reference a real parent
+        # Generated profile nodes must reference a real parent.
         for n in nodes:
-            if n.get("type") == "virtual":
+            if n.get("type") in ("virtual", "profile"):
                 parent_id = n.get("parent_node")
                 if parent_id and parent_id not in nodes_map:
-                    self.error(f"{label}: virtual node {n.get('node_id')!r} references missing parent {parent_id!r}")
+                    self.error(f"{label}: profile node {n.get('node_id')!r} references missing parent {parent_id!r}")
                 if parent_id is None:
                     # Virtual nodes may use 'peer' field instead of 'parent_node'
                     if n.get("peer"):
-                        self.warn(f"{label}: virtual node {n.get('node_id')!r} uses legacy peer field; use parent_node")
+                        self.warn(f"{label}: profile node {n.get('node_id')!r} uses legacy peer field; use parent_node")
                     else:
-                        self.error(f"{label}: virtual node {n.get('node_id')!r} has no parent_node")
+                        self.error(f"{label}: profile node {n.get('node_id')!r} has no parent_node")
 
-        # Disabled parent → virtual child should also have enabled:false
+        # Disabled parent state is inherited without mutating child local state.
         for n in nodes:
-            if n.get("type") == "virtual":
+            if n.get("type") in ("virtual", "profile"):
                 parent_id = n.get("parent_node")
                 if parent_id:
                     parent = nodes_map.get(parent_id)
@@ -166,26 +168,41 @@ class Validator:
         else:
             self.info(f"{label}: identity split resolved — all orchestration peer IDs declared in node_ids")
 
-    def _check_model_profiles(self, disabled_ids: set):
-        label = "model_profiles.json"
-        data = _load("ai/model_profiles.json")
-        if data is None:
-            self.warn(f"{label}: file not found")
-            return
-        profiles = data.get("profiles", {})
-        blocked_violations = []
-        for profile_key, profile_val in profiles.items():
-            peer_prefix = profile_key.split(".")[0]
-            if peer_prefix in disabled_ids:
-                state = profile_val.get("routing_state")
-                if state != "blocked":
-                    blocked_violations.append(f"{profile_key} (routing_state={state!r})")
-        if blocked_violations:
-            for v in blocked_violations:
-                self.error(f"{label}: disabled peer profile not blocked: {v}")
+    def _check_model_profiles(self, nodes: list[dict], disabled_ids: set):
+        label = "orchestration.json profiles"
+        profiles = {
+            n["profile_id"]: n
+            for n in nodes
+            if n.get("type") == "profile" and n.get("profile_id")
+        }
+        roots = [n for n in nodes if n.get("type") == "peer"]
+        required = {"standard", "effort", "deepthink"}
+        for root in roots:
+            names = {
+                p.get("profile_name")
+                for p in profiles.values()
+                if p.get("parent_node") == root.get("node_id")
+            }
+            missing = required - names
+            if missing:
+                self.error(f"{label}: {root.get('node_id')} missing profiles {sorted(missing)}")
+        normalized = {"hub_nodes": nodes, "_normalized": True}
+        leaked = [
+            profile_key
+            for profile_key, profile_val in profiles.items()
+            if profile_val.get("parent_node") in disabled_ids
+            and hub_peer.is_routable(profile_key, orch=normalized)
+        ]
+        if leaked:
+            self.error(f"{label}: disabled-parent profiles are routable: {leaked}")
         else:
-            disabled_profiles = [k for k in profiles if k.split(".")[0] in disabled_ids]
-            self.info(f"{label}: all {len(disabled_profiles)} disabled-peer profiles correctly blocked")
+            inherited = [
+                key for key, profile in profiles.items()
+                if profile.get("parent_node") in disabled_ids
+            ]
+            self.info(
+                f"{label}: all {len(inherited)} disabled-parent profiles inherit effective disablement"
+            )
 
     def _check_protocol_voters(self, enabled_ids: set):
         label = "protocol.json"
@@ -249,8 +266,7 @@ class Validator:
             self.warn(f"{label}: file not found")
             return
 
-        mp = _load("ai/model_profiles.json") or {}
-        profiles = mp.get("profiles", {})
+        profiles = hub_peer.profile_catalog(_load("ai/orchestration.json") or {})
 
         violations = []
         for rule in data.get("routing_rules", []):

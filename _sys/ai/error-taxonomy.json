@@ -1,7 +1,7 @@
 {
   "_version": "1.0",
   "_updated": "2026-06-18",
-  "_help": "Maps error types to escalation tier and remediation. Read by hub.py. See ops/impl-plan.md §6.",
+  "_help": "Maps error types to escalation tier and remediation. Read by hub.py. See ops/peer-debate-2026-06-19.md.",
 
   "tiers": {
     "T0": {"label": "silent",  "log": true,  "console": false, "peer_escalate": false, "halt": false},

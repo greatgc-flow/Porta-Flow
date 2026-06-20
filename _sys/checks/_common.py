@@ -162,19 +162,17 @@ def write_unknown_json(out_file: Path, task: str, note: str) -> None:
 
 
 def update_status_error(dt: str, error_key: str) -> None:
-    """Mark Gemini status.json as OFF with api_error reason."""
-    if _active_ai_peer() != "gc":
-        return
-    gemini_dir = Path(os.environ.get("GEMINI_DIR", str(_SYS_DIR / "gemini")))
-    status_file = gemini_dir / "status.json"
-    if not status_file.exists():
-        return
+    """Record an active peer failure in its runtime health manifest."""
+    peer_id = _active_ai_peer()
+    peer_dirs = {"gc": "gemini", "ag": "antigravity", "cc": "claude", "cx": "codex"}
+    health_file = _SYS_DIR / peer_dirs.get(peer_id, peer_id) / "health.json"
     try:
-        data = json.loads(status_file.read_text(encoding="utf-8"))
-        data["last_error"] = f"{error_key}_{dt}"
-        data["mode"] = "OFF"
-        data["reason"] = "api_error"
-        status_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        data = json.loads(health_file.read_text(encoding="utf-8")) if health_file.exists() else {}
+        session = data.setdefault("session_health", {})
+        session["last_failure_reason"] = f"{error_key}_{dt}"
+        session["consecutive_failures"] = int(session.get("consecutive_failures", 0)) + 1
+        data.setdefault("availability", {})["gate_open"] = False
+        health_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception:
         pass
 

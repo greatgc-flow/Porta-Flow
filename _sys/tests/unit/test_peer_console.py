@@ -5,16 +5,22 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / "cli"))
 from peer_console import peer_default_args
 
 
-def test_claude_defaults_to_full_permissions():
+def test_claude_defaults_to_dir002_permissions():
     args = peer_default_args("cc", [])
-    assert "--allowedTools" in args
-    assert "--permission-mode" in args
-    assert "acceptEdits" in args
+    assert args == [
+        "--dangerously-skip-permissions",
+        "--model", "claude-haiku-4-5-20251001",
+        "--effort", "low",
+    ]
 
 
 def test_claude_respects_explicit_permission_mode():
     args = peer_default_args("cc", ["--permission-mode", "plan"])
-    assert args == ["--permission-mode", "plan"]
+    assert args == [
+        "--permission-mode", "plan",
+        "--model", "claude-haiku-4-5-20251001",
+        "--effort", "low",
+    ]
 
 
 def test_claude_does_not_modify_management_command():
@@ -39,12 +45,20 @@ def test_gemini_does_not_modify_management_command():
 
 def test_codex_defaults_to_workspace_write():
     args = peer_default_args("cx", [])
-    assert args == ["-s", "workspace-write", "--ignore-rules"]
+    assert args == [
+        "-s", "workspace-write", "--ignore-rules",
+        "--model", "gpt-5.4-mini",
+        "-c", 'model_reasoning_effort="low"',
+    ]
 
 
 def test_codex_respects_explicit_sandbox_policy():
     args = peer_default_args("cx", ["--sandbox", "workspace-write", "--ask-for-approval", "on-request"])
-    assert args == ["--sandbox", "workspace-write", "--ask-for-approval", "on-request"]
+    assert args == [
+        "--sandbox", "workspace-write", "--ask-for-approval", "on-request",
+        "--model", "gpt-5.4-mini",
+        "-c", 'model_reasoning_effort="low"',
+    ]
 
 
 def test_codex_does_not_modify_management_command():
@@ -54,12 +68,30 @@ def test_codex_does_not_modify_management_command():
 
 def test_agy_defaults_to_skip_permissions():
     args = peer_default_args("ag", [])
-    assert args == ["--dangerously-skip-permissions"]
+    assert args == [
+        "--dangerously-skip-permissions",
+        "--model", "Gemini 3.5 Flash (Low)",
+    ]
+
+
+def test_explicit_terminal_model_is_not_overridden():
+    args = peer_default_args("cx", ["--model", "gpt-5.5"])
+    assert args.count("--model") == 1
+    assert "gpt-5.4-mini" not in args
 
 
 def test_agy_respects_sandbox_override():
     args = peer_default_args("ag", ["--sandbox"])
-    assert args == ["--sandbox"]
+    assert args == [
+        "--sandbox",
+        "--model", "Gemini 3.5 Flash (Low)",
+    ]
+
+
+def test_agy_respects_explicit_model_override():
+    args = peer_default_args("ag", ["--model", "Claude Sonnet 4.6 (Thinking)"])
+    assert args.count("--model") == 1
+    assert "Gemini 3.5 Flash (Low)" not in args
 
 
 def test_help_is_not_modified():

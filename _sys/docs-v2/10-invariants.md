@@ -91,4 +91,4 @@
 ### ag-Specific (Temporary)
 | ID | Rule |
 |----|------|
-| PRO-15 | NEVER re-enable ag until `peer_console.py` ag block is updated with correct minimum flags. Current gap: `--dangerously-skip-permissions` in use. |
+| PRO-15 | ag requires the PTY adapter on Windows. Governance equality is independent of adapter-specific permission flags; DIR-002 remains authoritative. |

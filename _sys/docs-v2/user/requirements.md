@@ -196,7 +196,7 @@
 
 ### F1. Sandbox Options
 - Primary: WSB (Windows Sandbox) for clean test runs; lighter alternatives desirable
-- Codex sandbox modes: danger-full-access + ask-for-approval (recommended), full bypass (last resort)
+- Codex sandbox default: workspace-write; full bypass is forbidden for managed peer invocations
 - AI CLI processes isolated in portable env; root .peer dirs are junctions, not permanent
 
 ### F2. Portable CLI Setup
@@ -256,7 +256,7 @@
 
 | # | Gap | Status | Resolved in |
 |---|-----|--------|-------------|
-| 1 | Model-level routing matrix | ✅ DONE | routing.md §6 + peers.json model_profiles |
+| 1 | Model-level routing matrix | ✅ DONE | routing.md §6 + orchestration.json nested profiles |
 | 2 | Self-care cycle event triggers + procedure | ✅ DONE | self-evolution.md §4 + self_care.py |
 | 3 | Audit checklist (perspective-based) | ✅ DONE | audit-checklist.md §H |
 | 4 | Trade-off parameter registry | ✅ DONE | general/tradeoffs.md |

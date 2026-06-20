@@ -103,7 +103,7 @@ P:\                              ← SUBST root (portable drive)
 │   ├── claude/                  ← cc peer config + health
 │   ├── gemini/                  ← gc peer config + health
 │   ├── codex/                   ← cx peer config + health
-│   └── antigravity/             ← ag peer config + health (inactive)
+│   └── antigravity/             ← ag peer config + health (active)
 ├── Garbage/                     ← discarded files pending review
 └── tmp/                         ← volatile temp ([04_Volatile_Temp] equivalent)
 ```
@@ -125,7 +125,8 @@ _sys/ai/runtime-directives.jsonl ← active behavioral corrections
     ↓ routes to
 _sys/cli/{peer}*.bat/.py         ← peer entry points
     ↓ invokes
-AI Peers: cc (Claude) · gc (Gemini) · cx (Codex) · ag (AntiGravity, inactive)
+AI Peers: cc (Claude) · ca (Claude alternate, disabled) · gc (Gemini, disabled) ·
+ag (AntiGravity, active) · cx (Codex, active)
 ```
 
 ---

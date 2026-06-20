@@ -1,5 +1,6 @@
 """Tests for hub.py session reuse (session_state.json management)."""
 import json
+import hashlib
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -268,7 +269,16 @@ def test_session_fingerprint_drift_retires_session(ai_dir):
     entry = hub._get_active_session("cx", "room-test")
     assert entry is not None
     assert entry["session_id"] != "old-uuid"
-    real_fp = hub._session_fingerprint("cx", "codex")
+    base_fp = hub._session_fingerprint("cx", "codex")
+    node = hub._default_nodes()["nodes"]["cx.effort"]
+    profile_data = json.dumps(
+        {
+            "profile_id": node["profile_id"],
+            "profile_args": node["profile_args"],
+        },
+        sort_keys=True,
+    )
+    real_fp = hashlib.sha1(f"{base_fp}|{profile_data}".encode()).hexdigest()[:8]
     assert entry["fingerprint"] == real_fp
 
 

@@ -29,6 +29,31 @@ codex exec -s workspace-write --json --ignore-rules
 
 FORBIDDEN: `--dangerously-bypass-approvals-and-sandbox`, `-s full-auto`.
 
+## Runtime Profiles
+
+`cx.standard`, `cx.effort`, and `cx.deepthink` are generated from
+`orchestration.json`. The terminal and root default use `cx.standard`; hub root
+asks may automatically select a higher profile.
+
+`codex debug models` and minimal profile invocations verified the current
+account/runtime catalog on 2026-06-20:
+
+| Profile | Model | Reasoning | CLI context |
+|---|---|---|---:|
+| `cx.standard` | `gpt-5.4-mini` | low | 272k |
+| `cx.effort` | `gpt-5.5` | high | 272k |
+| `cx.deepthink` | `gpt-5.5` | xhigh | 272k |
+
+The local catalog also exposes `gpt-5.4`. All three visible models support
+`low`, `medium`, `high`, and `xhigh`; their default is `medium`. Runtime catalog
+context is intentionally recorded separately from the larger API maximum in
+`model-registry.json`.
+
+## Context and Collaboration
+
+Codex session reuse is scoped by room. Local Codex memory is not shared directly;
+the hub injects durable room references and records promoted outputs.
+
 ---
 
 ## Session Reuse (delta from general/session.md)

@@ -50,7 +50,13 @@ For human onboarding: `user/manual.md`
 | `specific/gc.md` | Gemini CLI: SUSPENDED state | 2026-06-19 |
 | `specific/cx.md` | Codex: dirs, entry point, delta flags | 2026-06-16 |
 | `specific/ag.md` | AntiGravity: ACTIVE (gc replacement) | 2026-06-19 |
-| **`ops/impl-plan.md`** | **Implementation blueprint: config layer, workspace arch, hub decomp, check automation, error visibility** | **2026-06-18** |
+| **`ops/peer-debate-2026-06-19.md`** | **Final peer/profile architecture, migration, TDD, and benchmarks** | **2026-06-19** |
+| **`ops/automatic-profile-routing-2026-06-20.md`** | **Terminal defaults, automatic profile routing debate, TDD, and benchmark** | **2026-06-20** |
+| `ops/perf-benchmark-2026-06-19.md` | Focused performance baseline | 2026-06-19 |
+| `ops/perf-benchmark-2026-06-19-full.md` | Full performance baseline | 2026-06-19 |
+| `ops/remaining-items.md` | Residual implementation ledger | 2026-06-19 |
+| `ops/REMAINING_ACTIONS.md` | Action-oriented residual ledger | 2026-06-19 |
+| `ops/TDD_PLAN_HUB_V42.md` | Hub v4.2 TDD plan | 2026-06-19 |
 | `ops/governance.md` | Garbage/, retention, proposal lifecycle (§5), Doc-as-Code (§6) | 2026-06-18 |
 | `ops/logging.md` | IPC history · console capture · per-node detail · rolling policy · 5-Whys | 2026-06-18 |
 | `ops/skills.md` | Hub skill catalog, invocation, registration | 2026-06-18 |
@@ -97,9 +103,10 @@ These files at `P:\` are consumed by AI tools from fixed paths. Content is autho
 | File | Purpose | Change Level |
 |------|---------|-------------|
 | `_sys/ai/protocol.json` | collab_rate, r10_voters, timeouts | R:10 |
-| `_sys/ai/peers.json` | peer capability registry + model_profiles | R:5 |
+| `_sys/ai/peers.json` | installation/provider registry | R:5 |
+| `_sys/ai/orchestration.json` | logical peers + nested runtime profiles | R:8 |
 | `_sys/ai/model-registry.json` | model measured specs SSOT (planned) | R:8 |
-| `_sys/ai/routing-config.json` | QUALITY_MODE + routing weights (planned) | R:3/R:5 |
+| `_sys/ai/routing-config.json` | QUALITY_MODE + automatic profile routing + role weights | R:3/R:5 |
 | `_sys/ai/user-directives.md` | human-authored standing rules (DIR-001~003) | Human only |
 | `_sys/ai/runtime-directives.jsonl` | TTL-bound auto-promoted corrections | hub.py auto |
 | `_sys/ai/knowledge/general/active-lessons.jsonl` | shared lesson store (all peers) | hub.py auto |

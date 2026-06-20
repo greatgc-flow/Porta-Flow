@@ -14,15 +14,16 @@ NEVER grant: root/SYSTEM elevation · full-danger bypass · interactive approval
 
 ## 2. Per-Peer Permission Profiles
 
-Active peers use `--dangerously-skip-permissions` (or equivalent full-access) for trusted IPC sessions.
-This is intentional: all hub.py peer invocations are controlled internal calls, not user shell input.
-PRO-15 resolved 2026-06-19 — peer equality established.
+Governance equality and execution permission are separate contracts. Active peers
+have equal vote weight, leadership eligibility, role eligibility, and access to
+collaboration state. CLI execution flags remain adapter-specific and must satisfy
+the declared capability class plus DIR-002.
 
 | Peer | Invocation flags | Status |
 |------|-----------------|--------|
 | **cc** | `claude -p {query} --dangerously-skip-permissions` | ACTIVE |
 | **ag** | `agy --dangerously-skip-permissions -p {query}` | ACTIVE (gc replacement) |
-| **cx** | `codex exec {query} --json --ephemeral --ignore-rules -s danger-full-access` | ACTIVE |
+| **cx** | `codex exec -s workspace-write --json --ignore-rules` | ACTIVE |
 | **ca** | `claude -p {query} --dangerously-skip-permissions` | INACTIVE (never activated) |
 | **gc** | `gemini --approval-mode auto_edit --skip-trust` | SUSPENDED (IneligibleTierError 2026-06-19) |
 
@@ -34,7 +35,7 @@ PRO-15 resolved 2026-06-19 — peer equality established.
 |------|:----:|:----------------:|:-------:|:-------------|
 | cc | ✓ | ✓ (all tools) | ✓ | skip-permissions |
 | ag | ✓ | ✓ (all tools) | ✓ | skip-permissions |
-| cx | ✓ | ✓ (danger-full-access) | ✓ | danger-full-access |
+| cx | ✓ | ✓ (workspace) | ✓ | workspace-write |
 | ca | ✓ | ✓ (all tools) | ✓ | skip-permissions (inactive) |
 | gc | — | — | — | SUSPENDED |
 
@@ -64,7 +65,8 @@ Prevents silent compatibility failures when permission flags change.
 1. NEVER pass raw user shell text as executable/flag fragments → injection risk
 2. NEVER grant root/SYSTEM/admin elevation to any peer subprocess
 3. NEVER use bypass/full-danger flags for external/untrusted input (`yolo`, `dangerously-bypass-*`).
-   Exception: `--dangerously-skip-permissions` is acceptable for trusted IPC peer sessions (PRO-15 resolved).
+   The current cc/ag DIR-002 mappings are trusted-IPC exceptions and remain
+   explicit policy debt until adapter sandbox parity is empirically verified.
 4. NEVER route asks to RED or gate-closed peers
 5. NEVER resume peer session without verifying session fingerprint
 6. NEVER hardcode credentials into peer invocation args or environment

@@ -54,17 +54,17 @@ class TestIntegrationP2P:
 
         room_id = "test-room-123"
         self._run(vpy, hub, ["init-session", "--agent", "cc", "--room", room_id], root)
-        self._run(vpy, hub, ["init-session", "--agent", "ca", "--room", room_id], root)
-        self._run(vpy, hub, ["init-session", "--agent", "gc", "--room", room_id], root)
+        self._run(vpy, hub, ["init-session", "--agent", "ag", "--room", room_id], root)
+        self._run(vpy, hub, ["init-session", "--agent", "cx", "--room", room_id], root)
 
         state = json.loads((root / ".ai/state.json").read_text("utf-8"))
         assert state["room_id"] == room_id
         assert "cc" in state["members"]
-        assert "ca" in state["members"]
-        assert "gc" in state["members"]
+        assert "ag" in state["members"]
+        assert "cx" in state["members"]
 
-        self._run(vpy, hub, ["send", "--from", "cc", "--to", "ca", "--msg", "p2p-hi"], root)
-        out = self._out(vpy, hub, ["check", "--target", "ca"], root)
+        self._run(vpy, hub, ["send", "--from", "cc", "--to", "ag", "--msg", "p2p-hi"], root)
+        out = self._out(vpy, hub, ["check", "--target", "ag"], root)
         assert "p2p-hi" in out
 
     def test_scenario_p2p_consensus(self, test_env):

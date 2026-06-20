@@ -116,7 +116,7 @@ This allows post-hoc budget tracking. Static reserve estimates can be calibrated
 
 | sandbox value | Effect |
 |--------------|--------|
-| `--sandbox danger-full-access` | Full system access (use for code mutation tasks) |
+| `--sandbox workspace-write` | Workspace-scoped mutation (current cx default) |
 | `--sandbox full` | Restricted (blocks writes) — **deprecated flag, do not use** |
 | `none` | No sandbox |
 
@@ -135,15 +135,16 @@ These items in existing config files diverge from §1 specs and must be updated:
 
 | ID | File | Key | Current Value | Correct Value | Priority |
 |----|------|-----|---------------|---------------|----------|
-| F-01 | `_sys/ai/model_profiles.json` | cc output_limit | 4,096 | 128,000 (all except haiku) | HIGH |
-| F-02 | `_sys/ai/model_profiles.json` | cc context_limit (opus/sonnet/fable) | 200,000 | 1,000,000 | HIGH |
+| F-01 | `_sys/ai/orchestration.json` profiles | cc output_limit | stale | vendor registry value | HIGH |
+| F-02 | `_sys/ai/orchestration.json` profiles | cc context_limit | stale | vendor registry value | HIGH |
 | F-03 | `_sys/ai/orchestration.json` | cx node model | o4-mini | gpt-5.5 | HIGH |
 | F-04 | `_sys/ai/peers.json` | cc context_limit | 200,000 | 1,000,000 (per model) | MEDIUM |
-| F-05 | `_sys/ai/model_profiles.json` | thinking API field | budget_tokens | adaptive effort | MEDIUM |
+| F-05 | `_sys/ai/orchestration.json` profiles | thinking API field | legacy budget | adapter-specific effort | MEDIUM |
 | F-06 | `_sys/ai/model-registry.json` | gc gemini-2.5-pro output_limit | 65,536 | 24,576 | LOW (already corrected) |
 | F-07 | traceability_map.json entries | model-profiles | — | refs updated to model-registry | DONE |
 
-> F-01 and F-02 are the highest impact errors. Any model_profiles.json entry that hardcodes 4096 as max output will prematurely truncate all cc responses.
+> F-01 and F-02 are the highest impact errors. Profile capacity comes from
+> `model-registry.json`; orchestration stores routing choices only.
 
 ---
 
@@ -196,8 +197,8 @@ Traceability: `traceability_map.json` entry `context-gate`
 
 | Priority | Item | File | Status |
 |----------|------|------|--------|
-| P0 | Update model_profiles.json F-01, F-02 | model_profiles.json | **DONE** (2026-06-18) |
-| P0 | Replace o4-mini with gpt-5.5 in cx.default profile | model_profiles.json | **DONE** (2026-06-18) |
+| P0 | Update profile capacity facts | model-registry.json | **DONE** (2026-06-19) |
+| P0 | Replace obsolete Codex profile models | orchestration.json | **DONE** (2026-06-19) |
 | P0 | Add 6 missing models to model-registry.json | model-registry.json | **DONE** (2026-06-18) |
 | P1 | Implement hub_context.py ContextGate | _sys/core/hub_context.py | **DONE** (v1.0, tested) |
 | P1 | Add CJK-aware token estimator | hub_context.py | **DONE** |
@@ -214,4 +215,4 @@ Traceability: `traceability_map.json` entry `context-gate`
 | TM-02 | gemini-3.1-flash-lite output_limit verification (Preview) | gc | Preview — measure when GA |
 | TM-03 | gpt-5.4-mini effort high/xhigh local test | cx | gc: documented; pending local observation |
 | TM-04 | Measure actual CJK token ratio for Korean queries | all | Needs sampling run against cx usage |
-| ~~TM-05~~ | ~~model_profiles F-01/F-02~~ | — | **DONE** |
+| ~~TM-05~~ | ~~profile capacity F-01/F-02~~ | — | **DONE** |

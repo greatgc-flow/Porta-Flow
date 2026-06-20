@@ -34,7 +34,6 @@
         "peers": "_sys/ai/peers.json",
         "orchestration": "_sys/ai/orchestration.json",
         "lifecycle_policy": "_sys/ai/lifecycle_policy.json",
-        "model_profiles": "_sys/ai/model_profiles.json",
         "model_registry": "_sys/ai/model-registry.json",
         "routing_config": "_sys/ai/routing-config.json",
         "governance_params": "_sys/ai/governance_params.json",
@@ -57,7 +56,6 @@
         "gc": {
             "glue": "_sys/gemini/config/GEMINI.md",
             "health": "_sys/gemini/health.json",
-            "status": "_sys/gemini/status.json",
             "usage": "_sys/gemini/usage.json"
         },
         "ag": {

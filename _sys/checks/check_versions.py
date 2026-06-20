@@ -28,7 +28,7 @@ def main() -> None:
 
     if not ai_available():
         print("[version-check] ERROR: Gemini not available.")
-        print("                Run start.bat first, or check _sys\\gemini\\status.json")
+        print("                Check hub.py peer-status --peer gc")
         sys.exit(1)
 
     print(f"[version-check] Querying latest tool versions via Gemini...")

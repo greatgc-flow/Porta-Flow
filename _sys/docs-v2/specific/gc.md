@@ -14,7 +14,6 @@ _sys/gemini/
 │   ├── history/            ← conversation history
 │   └── trustedFolders.json ← trusted folder list
 ├── health.json             ← peer health
-├── status.json             ← legacy gate mirror (see §Legacy Gate below)
 ├── project/
 └── templates/
 ```
@@ -29,6 +28,16 @@ gemini --approval-mode auto_edit --skip-trust
 
 FORBIDDEN: `--approval-mode yolo`, `--approval-mode full-auto`.
 
+## Runtime Profiles
+
+`gc.standard`, `gc.effort`, and `gc.deepthink` remain declared for diagnostics but
+inherit the disabled root lifecycle and are not routable.
+
+## Context and Collaboration
+
+If gc is re-enabled by a governed lifecycle change, it receives the same room
+references and promotion/ACK contract as every peer.
+
 ---
 
 ## Session Reuse (delta from general/session.md)
@@ -42,11 +51,11 @@ FORBIDDEN: `--approval-mode yolo`, `--approval-mode full-auto`.
 
 ---
 
-## Legacy Gate Mirror
+## Lifecycle Gate
 
-`status.json` is a legacy compat file for `gemini-gate.bat` / `gemini-status.bat`.
-Kept in sync by `hub.py _sync_peer_gate_file()` on quarantine/recover.
-Future: migrate bat scripts to read `health.json["availability"]["gate_open"]` directly.
+`orchestration.json` is authoritative. The legacy `status.json` gate is retired;
+live diagnostics use lifecycle state plus `health.json` freshness and zero-token
+CLI probes.
 
 ---
 
@@ -62,7 +71,7 @@ Future: migrate bat scripts to read `health.json["availability"]["gate_open"]` d
 ## Gate & Entry
 
 - Gate: `hub.py peer-quarantine --peer gc` / `hub.py peer-recover --peer gc`
-- Status check: `gemini-status.bat` (`_sys/gemini/gemini-status.bat`)
+- Status check: `hub.py peer-status --peer gc`
 - Hub command: `hub.py ask --to gc --query-file <file>`
 
 ---
@@ -72,6 +81,5 @@ Future: migrate bat scripts to read `health.json["availability"]["gate_open"]` d
 | File | Role |
 |------|------|
 | `_sys/gemini/health.json` | Health manifest |
-| `_sys/gemini/status.json` | Legacy gate mirror (do not modify directly) |
 | `_sys/gemini/config/GEMINI.md` | Session instructions |
 | `P:\GEMINI.md` | Project-level Gemini config (at root, consumed at invocation) |

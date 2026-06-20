@@ -1,7 +1,8 @@
 """
-hub.py — Portable Dev Environment AI 협업 허브 (Protocol v4.1)
-5-peer: cc, ca, gc, ag, cx — config-driven via orchestration.json + lifecycle_policy.json
+hub.py - Portable Development Environment AI Collaboration Hub (Protocol v4.2)
+Five logical peers (cc, ca, gc, ag, cx), configured by orchestration.json.
 
+v4.2: Config-driven peer/profile tree and automatic profile routing.
 v4.1: Layered policy (General/Specific/Connectors/Ambiguity). lifecycle_policy.json driven.
 v4.0: N-Way Room + health-update/check/peer-status/context-fill/checkpoint actions.
 v3.1: 실시간 협업 가시성 로그 (_log_p2p) 추가.
@@ -27,6 +28,8 @@ try:
     import psutil
 except ImportError:
     psutil = None  # type: ignore[assignment]
+
+_RETIRED_RUNTIME_NODE_IDS = {"cc-deep", "gc-plan"}
 
 try:
     from hub_error import HubError as _HubError
@@ -54,6 +57,13 @@ try:
     _HUB_PEER_AVAILABLE = True
 except ImportError:
     _HUB_PEER_AVAILABLE = False
+
+try:
+    import hub_profile_router
+    _PROFILE_ROUTER_AVAILABLE = True
+except ImportError:
+    hub_profile_router = None  # type: ignore[assignment]
+    _PROFILE_ROUTER_AVAILABLE = False
 
 # Global Logger instance (lazy initialized)
 _logger: _HubLogger | None = None
@@ -119,27 +129,46 @@ def _load_lifecycle_policy() -> dict:
         return {}
 
 
-def _load_model_profiles() -> dict:
-    """Load _sys/ai/model_profiles.json."""
-    path = Path(__file__).parent.parent / "ai" / "model_profiles.json"
+def _load_routing_config() -> dict:
+    """Load deterministic routing and quality policy."""
+    path = Path(__file__).parent.parent / "ai" / "routing-config.json"
     try:
         return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     except Exception:
         return {}
 
 
+def _load_model_profiles() -> dict:
+    """Return profiles derived from orchestration.json.
+
+    Runtime profiles live under each root node in orchestration.json and are
+    normalized by hub_peer.
+    """
+    if _HUB_PEER_AVAILABLE:
+        try:
+            profiles = hub_peer.profile_catalog(_load_orchestration())
+            if profiles:
+                return {"_status": "derived", "profiles": profiles}
+        except Exception:
+            pass
+    return {"_status": "missing", "profiles": {}}
+
+
 def _resolve_profile_id(node_id: str) -> str | None:
-    """Return the model_profiles.json profile_id for a given node_id, or None."""
+    """Return the normalized profile ID for a root or generated profile node."""
     profiles = _load_model_profiles().get("profiles", {})
     nodes = _default_nodes()["nodes"]
     node = nodes.get(node_id, {})
     explicit = node.get("profile_id")
     if explicit and explicit in profiles:
         return explicit
-    peer = node.get("peer") or node_id
-    mode = node.get("profile_mode") or "default"
+    peer = node.get("parent_node") or node.get("peer") or node_id
+    mode = node.get("profile_name") or node.get("profile_mode")
     for profile_id, profile in profiles.items():
-        if profile.get("peer") == peer and profile.get("mode") == mode:
+        if profile.get("parent_node") == peer and profile.get("profile_name") == mode:
+            return profile_id
+        # Compatibility with v1 tests/config during migration.
+        if profile.get("peer") == peer and profile.get("mode") == (mode or "default"):
             return profile_id
     return None
 
@@ -150,6 +179,55 @@ def _node_to_peer_map() -> dict:
     if configured:
         return configured
     return {"cc": "claude", "ca": "claude", "gc": "gemini", "ag": "antigravity", "cx": "codex"}
+
+
+def _select_ask_profile(to: str, query: str) -> tuple[str, dict | None]:
+    """Resolve a root peer ask to a profile node using zero-token policy."""
+    if not (_HUB_PEER_AVAILABLE and _PROFILE_ROUTER_AVAILABLE):
+        return to, None
+    routing = _load_routing_config()
+    if not routing.get("auto_profile_routing", {}).get("enabled", False):
+        return to, None
+    orchestration = _load_orchestration()
+    canonical = hub_peer.resolve_node_id(to, orch=orchestration)
+    if canonical is None:
+        return to, None
+    normalized = hub_peer.normalize_orchestration(orchestration)
+    node = next(
+        (item for item in normalized.get("hub_nodes", [])
+         if item.get("node_id") == canonical),
+        None,
+    )
+    if node is None or node.get("type") not in {"peer", "profile"}:
+        return to, None
+    root_id = node.get("parent_node") or canonical
+    raw_root = next(
+        (item for item in orchestration.get("hub_nodes", [])
+         if item.get("node_id") == root_id),
+        None,
+    )
+    # Compatibility/custom nodes without the v2 profile contract keep their
+    # direct invocation behavior.
+    if not raw_root or not raw_root.get("profiles"):
+        return to, None
+    failures = 0
+    failure_reason: str | None = None
+    try:
+        _, health = _read_peer_health(root_id)
+        session_health = health.get("session_health", {})
+        failures = int(session_health.get("consecutive_failures", 0) or 0)
+        failure_reason = session_health.get("last_failure_reason")
+    except Exception:
+        pass
+    decision = hub_profile_router.select_profile_node(
+        canonical,
+        query,
+        orchestration=orchestration,
+        routing_config=routing,
+        consecutive_failures=failures,
+        consecutive_failure_reason=failure_reason,
+    )
+    return decision.node_id, decision.as_dict()
 
 
 def _peer_sys_dir(peer_id: str) -> Path:
@@ -185,20 +263,117 @@ def is_routable(node_id: str, *, orch: dict | None = None) -> bool:
 def _default_nodes() -> dict:
     """orchestration.json hub_nodes 배열에서 기본 노드 목록을 읽어 반환.
 
-    Applies tree-propagation: virtual nodes whose parent peer is disabled are excluded
-    even if the virtual node itself lacks an explicit enabled:false flag.
+    Applies tree propagation: generated profile nodes whose root peer is disabled
+    are excluded without mutating profile-local state.
     """
-    orch = _load_orchestration()
+    raw_orch = _load_orchestration()
+    orch = hub_peer.normalize_orchestration(raw_orch) if _HUB_PEER_AVAILABLE else raw_orch
     nodes = {}
     for entry in orch.get("hub_nodes", []):
         nid = entry.get("node_id")
         if nid and is_routable(nid, orch=orch):
             nodes[nid] = {k: v for k, v in entry.items() if k != "node_id"}
-    if not nodes and not orch.get("hub_nodes"):
+    if not nodes and not raw_orch.get("hub_nodes"):
         # Only use bootstrap fallback when orchestration is absent, never when
         # policy intentionally disables every configured node.
         nodes = {"cc": {"type": "peer", "invoke": "claude", "invoke_args": ["-p", "{query}"], "timeout": 0, "memory": "persistent"}}
     return {"version": "2", "nodes": nodes}
+
+
+def _runtime_node_policy() -> tuple[set[str], set[str], set[str]]:
+    """Return configured IDs, routable root peers, and retired legacy IDs."""
+    raw = _load_orchestration()
+    normalized = hub_peer.normalize_orchestration(raw) if _HUB_PEER_AVAILABLE else raw
+    configured = {
+        str(node.get("node_id"))
+        for node in normalized.get("hub_nodes", [])
+        if node.get("node_id")
+    }
+    active_roots = {
+        str(node.get("node_id"))
+        for node in raw.get("hub_nodes", [])
+        if node.get("node_id")
+        and node.get("type") == "peer"
+        and is_routable(str(node.get("node_id")), orch=raw)
+    }
+    retired = set(_RETIRED_RUNTIME_NODE_IDS)
+    return configured, active_roots, retired
+
+
+def _normalize_runtime_files(ai_root: Path) -> None:
+    """Remove canonical/retired node copies and invalid peers from runtime state."""
+    configured, active_roots, retired = _runtime_node_policy()
+
+    nodes_path = ai_root / "nodes.json"
+    nodes_data = _read_json(nodes_path) if nodes_path.exists() else {}
+    custom_nodes = nodes_data.get("nodes", {})
+    filtered_nodes = {
+        node_id: value
+        for node_id, value in custom_nodes.items()
+        if node_id not in configured and node_id not in retired
+    }
+    normalized_nodes = {"version": "2", "nodes": filtered_nodes}
+    if nodes_data != normalized_nodes:
+        _write_json(nodes_path, normalized_nodes)
+
+    state_path = ai_root / "state.json"
+    state = _read_json(state_path)
+    changed = False
+    members = state.get("members", {})
+    filtered_members = {
+        peer_id: sid
+        for peer_id, sid in members.items()
+        if peer_id in active_roots
+    }
+    if members != filtered_members:
+        state["members"] = filtered_members
+        changed = True
+
+    for field in ("active_coordinator", "human_interface_peer", "leader"):
+        if state.get(field) and state[field] not in active_roots:
+            state[field] = None
+            changed = True
+
+    leadership = state.get("leadership")
+    if (
+        isinstance(leadership, dict)
+        and leadership.get("peer")
+        and leadership.get("peer") not in active_roots
+    ):
+        state["leadership"] = {
+            "peer": None,
+            "status": "VACANT",
+            "reason": "peer_disabled_or_retired",
+            "normalized_at": _now(),
+        }
+        changed = True
+
+    roles = state.get("role_assignments", {})
+    if isinstance(roles, dict):
+        filtered_roles = {}
+        for role, assignment in roles.items():
+            peer = assignment.get("peer") if isinstance(assignment, dict) else assignment
+            if peer in active_roots:
+                filtered_roles[role] = (
+                    assignment if isinstance(assignment, dict) else {"peer": peer}
+                )
+        if roles != filtered_roles:
+            state["role_assignments"] = filtered_roles
+            changed = True
+
+    if changed:
+        state["updated_at"] = _now()
+        _write_state(ai_root, state)
+
+    leases_path = ai_root / "leases.json"
+    leases = _read_json(leases_path) if leases_path.exists() else {}
+    filtered_leases = {
+        node_id: value
+        for node_id, value in leases.items()
+        if node_id not in retired
+    }
+    if leases != filtered_leases:
+        _write_json(leases_path, filtered_leases)
 
 
 def ensure_ai_dir(ai_root: Path) -> Path:
@@ -223,7 +398,8 @@ def ensure_ai_dir(ai_root: Path) -> Path:
     if not (ai_root / "task_registry.json").exists():
         _write_json(ai_root / "task_registry.json", {})
     if not (ai_root / "nodes.json").exists():
-        _write_json(ai_root / "nodes.json", _default_nodes())
+        _write_json(ai_root / "nodes.json", {"version": "2", "nodes": {}})
+    _normalize_runtime_files(ai_root)
     # Provenance logs — touch only; schema documented below as constants
     for log_name in ("ask_history.jsonl", "routing_metrics.jsonl"):
         if not (ai_root / log_name).exists():
@@ -479,7 +655,13 @@ def _load_nodes(ai_root: Path) -> dict:
     if nodes_path.exists():
         data = _read_json(nodes_path)
         custom = data.get("nodes", {})
-        # orchestration 노드가 우선, custom은 신규 노드만 추가
+        configured, _, retired = _runtime_node_policy()
+        custom = {
+            node_id: value
+            for node_id, value in custom.items()
+            if node_id not in configured and node_id not in retired
+        }
+        # Canonical orchestration nodes win; only unrelated custom nodes merge.
         return {**custom, **base}
     return base
 
@@ -1076,7 +1258,9 @@ def _record_ask_success(peer_id: str, elapsed: int, ai_root: Path | None, health
         "transient_red_recovery_reasons",
         ["sandbox_spawn_eperm", "rate_or_session_limit", "cli_not_found"],
     ))
-    if ctx.get("status") == "YELLOW" or (ctx.get("status") == "RED" and previous_reason in transient_red):
+    if ctx.get("status") in {"STALE", "YELLOW"} or (
+        ctx.get("status") == "RED" and previous_reason in transient_red
+    ):
         ctx["status"] = "GREEN"
     ctx["checked_at"] = datetime.now().strftime("%Y%m%dT%H%M%S")
     sh = data.setdefault("session_health", {})
@@ -1097,8 +1281,33 @@ def _record_ask_success(peer_id: str, elapsed: int, ai_root: Path | None, health
     availability.pop("workspace_not_trusted", None)
     availability.pop("retry_hint", None)
     _write_peer_health(peer_id, data, ai_root, health_dir)
+    _clear_recovered_health_handoff(ai_root, peer_id)
     # Clear first_success runtime directives; pass previous_reason to narrow scope
     _clear_peer_runtime_directives(peer_id, ai_root, trigger_reason=previous_reason)
+
+
+def _clear_recovered_health_handoff(ai_root: Path, peer_id: str) -> None:
+    """Remove obsolete STALE pending issues after a successful invocation."""
+    state = _read_json(ai_root / "state.json")
+    room_id = state.get("room_id")
+    if not room_id:
+        return
+    session_dir = ai_root / "sessions" / room_id
+    if not session_dir.exists():
+        return
+    handoff = _read_handoff(session_dir)
+    issues = handoff.get("PENDING_ISSUES", [])
+    filtered = [
+        issue
+        for issue in issues
+        if not (
+            peer_id.lower() in str(issue).lower()
+            and "health marked stale" in str(issue).lower()
+        )
+    ]
+    if filtered != issues:
+        handoff["PENDING_ISSUES"] = filtered
+        _write_handoff(session_dir, handoff)
 
 
 def _record_ask_failure(
@@ -1389,29 +1598,6 @@ def _new_member_sids(members: dict) -> dict:
     return {agent: _short_id(agent[:1]) for agent in members.keys()}
 
 
-def _sync_peer_gate_file(peer_id: str, mode_on: bool, reason: str) -> None:
-    """Sync the peer-specific gate file (e.g. status.json) when it exists.
-    Some peers (gc/gemini) have a separate gate file read by peer-status display.
-    Without this, peer-quarantine/peer-recover only update health.json and the
-    peer-status display stays inconsistent (shows wrong ON/OFF state)."""
-    peers = _load_peers()
-    peer_cfg = (peers.get("peers") or peers).get(peer_id, {})
-    gate_cfg = peer_cfg.get("gate")
-    if not gate_cfg:
-        return
-    sys_dir = Path(__file__).parent.parent
-    gate_file = sys_dir / gate_cfg["status_file"]
-    if not gate_file.exists():
-        return
-    try:
-        gd = json.loads(gate_file.read_text(encoding="utf-8"))
-        gd[gate_cfg["mode_key"]] = gate_cfg["mode_on_value"] if mode_on else "OFF"
-        gd["reason"] = reason or ("recovered" if mode_on else "quarantined")
-        gate_file.write_text(json.dumps(gd, indent=2, ensure_ascii=False), encoding="utf-8")
-    except Exception as e:
-        print(f"[HUB:WARN] could not sync gate file for {peer_id}: {e}", file=sys.stderr)
-
-
 def action_peer_quarantine(ai_root: Path, peer_id: str, reason: str) -> None:
     _, data = _read_peer_health(peer_id)
     data.setdefault("context_health", {})["status"] = "RED"
@@ -1423,7 +1609,6 @@ def action_peer_quarantine(ai_root: Path, peer_id: str, reason: str) -> None:
     availability["gate_open"] = False
     availability["quarantined"] = True
     _write_peer_health(peer_id, data, ai_root)
-    _sync_peer_gate_file(peer_id, mode_on=False, reason=reason or "manual_quarantine")
     _append_handoff_item(ai_root, "PENDING_ISSUES", f"{_now()} {peer_id}: quarantined ({reason or 'manual'})")
     print(f"[HUB] PEER-QUARANTINE {peer_id} | reason={reason or 'manual'}")
 
@@ -1451,7 +1636,6 @@ def action_peer_recover(ai_root: Path, peer_id: str, reason: str) -> None:
     availability.pop("workspace_not_trusted", None)
     availability.pop("retry_hint", None)
     _write_peer_health(peer_id, data, ai_root)
-    _sync_peer_gate_file(peer_id, mode_on=True, reason=reason or "manual_recover")
     _append_handoff_item(ai_root, "RECENT_COMPLETED", f"{_now()} {peer_id}: recovered ({reason or 'manual'})")
     print(f"[HUB] PEER-RECOVER {peer_id} | reason={reason or 'manual'}")
 
@@ -1612,7 +1796,17 @@ def _save_session_state(peer_id: str, data: dict, ai_root: Path | None = None) -
 
 
 def _get_active_session(peer_id: str, scope_key: str) -> dict | None:
-    entry = _load_session_state(peer_id).get("active", {}).get(scope_key)
+    active = _load_session_state(peer_id).get("active", {})
+    entry = active.get(scope_key)
+    if entry is None and ":" not in scope_key:
+        # Compatibility lookup: callers using the pre-v2 room-only key may
+        # retrieve a single profile-scoped session.
+        matches = [
+            value for key, value in active.items()
+            if key.startswith(f"{scope_key}:")
+        ]
+        if len(matches) == 1:
+            entry = matches[0]
     return entry if entry and entry.get("status") == "active" else None
 
 
@@ -1762,10 +1956,38 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         query = "\n".join(lines[body_start:]) if body_start > 0 else raw_content
         qf.unlink()
 
+    requested_to = to
+    profile_decision: dict | None = None
+    try:
+        to, profile_decision = _select_ask_profile(to, query)
+    except Exception as exc:
+        if _PROFILE_ROUTER_AVAILABLE and isinstance(
+            exc, hub_profile_router.ProfileRoutingError
+        ):
+            print(f"[HUB:ERROR] profile routing failed: {exc}", file=sys.stderr)
+            sys.exit(1)
+        raise
+    if profile_decision:
+        if ai_root:
+            _record_routing_metric(
+                ai_root,
+                "auto_profile_route",
+                requested_target=requested_to,
+                **profile_decision,
+            )
+        if profile_decision.get("classifier_triggered") and not quiet:
+            selected = profile_decision.get("node_id", to)
+            signals = ",".join(profile_decision.get("signals", [])[:3])
+            print(
+                f"[HUB] AUTO-PROFILE {requested_to} -> {selected} "
+                f"score={profile_decision.get('score', 0)} signals={signals}",
+                file=sys.stderr,
+            )
+
     nodes = _load_nodes(ai_root) if ai_root else _default_nodes()["nodes"]
     _orch_for_gate = _load_orchestration()
     # Resolve aliases first (is_routable needs the canonical node_id)
-    original_to = to
+    original_to = requested_to
     if to not in nodes:
         for nid, ncfg in nodes.items():
             if to in ncfg.get("aliases", []):
@@ -1773,7 +1995,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                 break
 
     # is_routable() is the authoritative gate: checks explicit enabled:false AND
-    # parent-disablement propagation (virtual nodes inherit parent state via 'peer' field)
+    # Parent disablement propagates to generated profile nodes.
     if not is_routable(to, orch=_orch_for_gate):
         print(f"[ERROR] ask target disabled by default: {to}", file=sys.stderr)
         sys.exit(1)
@@ -1851,9 +2073,24 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
     gc_new_session_id: str | None = None
 
     if use_session:
-        scope_key = _compute_scope_key(ai_root, explicit_scope)
-        current_fp = _session_fingerprint(health_peer, exe_name)
+        base_scope = _compute_scope_key(ai_root, explicit_scope)
+        profile_id = _resolve_profile_id(to) or to
+        scope_key = f"{base_scope}:{profile_id}"
+        base_fp = _session_fingerprint(health_peer, exe_name)
+        profile_fp_data = json.dumps(
+            {
+                "profile_id": profile_id,
+                "profile_args": node.get("profile_args", []),
+            },
+            sort_keys=True,
+        )
+        current_fp = hashlib.sha1(f"{base_fp}|{profile_fp_data}".encode()).hexdigest()[:8]
         existing_session = _get_active_session(health_peer, scope_key)
+        if existing_session is None:
+            legacy_session = _get_active_session(health_peer, base_scope)
+            if legacy_session and legacy_session.get("scope_key") == base_scope:
+                existing_session = legacy_session
+                scope_key = base_scope
         # Retire session if invocation flags drifted since session was created
         if existing_session:
             stored_fp = existing_session.get("fingerprint")
@@ -1892,7 +2129,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
     peers = _load_peers()
     target_peer_id = None
     target_peer_cfg = None
-    mapped_peer = _node_to_peer_map().get(to, to)
+    mapped_peer = _node_to_peer_map().get(health_peer, health_peer)
     if mapped_peer in peers:
         target_peer_id = mapped_peer
         target_peer_cfg = peers[mapped_peer]
@@ -1950,7 +2187,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             usage: dict = adapter.extract_usage(raw_pty, node) if adapter else {}
             logger.log_cost(
                 peer_id=to,
-                model_id=node.get("invoke", to),
+                model_id=node.get("model_id") or node.get("runtime_model") or node.get("invoke", to),
                 profile_id=profile_id,
                 latency_sec=float(elapsed),
                 input_tokens=usage.get("input_tokens"),
@@ -2046,7 +2283,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             usage: dict = adapter.extract_usage(raw_text, node) if adapter else {}
             logger.log_cost(
                 peer_id=to,
-                model_id=node.get("invoke", to),
+                model_id=node.get("model_id") or node.get("runtime_model") or node.get("invoke", to),
                 profile_id=profile_id,
                 latency_sec=float(elapsed),
                 input_tokens=usage.get("input_tokens"),
@@ -2056,7 +2293,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             if usage.get("reasoning_tokens") is not None:
                 logger.log_reasoning(
                     peer_id=to,
-                    model_id=node.get("invoke", to),
+                    model_id=node.get("model_id") or node.get("runtime_model") or node.get("invoke", to),
                     reasoning_tokens=usage["reasoning_tokens"],
                 )
                 # Token calibration: compare static estimate vs actual (TM-04)
@@ -2088,13 +2325,23 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                 _retire_session(health_peer, scope_key, "resume_failed", ai_root)
                 _lease_close(ai_root, to, proc.pid, "retry")
 
-                fresh_args, _, gc_new_session_id = _build_session_cmd(health_peer, None, exe_name)
-                fresh_cmd = [exe] + fresh_args
-                proc = subprocess.Popen(fresh_cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=process_env)
+                fresh_cmd, fresh_use_stdin = adapter.build_cmd(node, query, None) if adapter else (cmd, use_stdin)
+                fresh_cmd[0] = exe
+                if health_peer == "gc":
+                    gc_new_session_id = str(uuid.uuid4())
+                    fresh_cmd = [fresh_cmd[0], "--session-id", gc_new_session_id] + fresh_cmd[1:]
+                proc = subprocess.Popen(
+                    fresh_cmd,
+                    stdin=subprocess.PIPE if fresh_use_stdin else None,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    env=process_env,
+                )
                 _lease_open(ai_root, to, proc.pid, lease_timeout_sec, ask_id=ask_id + "-r")
                 t1 = time.monotonic()
                 try:
-                    raw_out, raw_err = proc.communicate(input=query.encode("utf-8"), timeout=timeout_sec if timeout_sec > 0 else None)
+                    retry_input = query.encode("utf-8") if fresh_use_stdin else None
+                    raw_out, raw_err = proc.communicate(input=retry_input, timeout=timeout_sec if timeout_sec > 0 else None)
                 except subprocess.TimeoutExpired:
                     _kill_process_tree(proc)
                     raise
@@ -2140,7 +2387,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                     lease_status = "failed"
                     _record_ask_failure(health_peer, reason, clean_err or output, elapsed, ai_root, extra)
                     _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, False, reason)
-                    print(f"[HUB:ERROR] {to} exited {proc.returncode}\n{clean_err}", file=sys.stderr)
+                    print(f"[HUB:ERROR] {requested_to} exited {proc.returncode}\n{clean_err}", file=sys.stderr)
                     sys.exit(proc.returncode)
             else:
                 # Transient failure: do not retire session, just report error and exit
@@ -2158,7 +2405,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, False, reason)
             if ai_root:
                 _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=elapsed, failure_reason=reason)
-            print(f"[HUB:ERROR] {to} exited {proc.returncode}\n{clean_err}", file=sys.stderr)
+            print(f"[HUB:ERROR] {requested_to} exited {proc.returncode}\n{clean_err}", file=sys.stderr)
             sys.exit(1)
         elif not output.strip():
             reason = "empty_response"
@@ -2535,6 +2782,9 @@ def action_health_update(peer_id: str, status: str, jsonl_mb: float = 0.0, failu
         if computed_status in ("GREEN", "YELLOW") and failures == 0:
             sh["last_success_at"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
             sh["session_count_today"] = sh.get("session_count_today", 0) + 1
+            sh["last_failure_reason"] = None
+            sh["last_failure_detail"] = None
+            sh["last_failure_at"] = None
         if extra:
             ctx.update(extra)
         # availability 섹션 갱신: 명시적 dict 또는 GREEN 성공 시 자동 추론
@@ -2681,123 +2931,81 @@ def _refresh_peer_health_live(peer_name: str, peer_dir: Path, invoke_cmd: str, a
         _write_peer_health(peer_name, data, ai_root)
 
 
-def action_peer_status(node_id: str | None = None) -> None:
-    """피어 상태 체크 — 표시 전 zero-token live refresh (STALE + CLI 확인) 후 테이블 출력."""
-    import shutil as _shutil
+
+def action_peer_status(node_id: str | None = None, include_all: bool = False) -> None:
+    """Display zero-token live status for logical root peers."""
     sys_dir = Path(__file__).parent.parent
     ai_root = find_ai_root()
-
-    status_checks_path = sys_dir / "ai" / "status_checks.json"
-    checks_cfg = {}
-    if status_checks_path.exists():
-        try:
-            checks_cfg = json.loads(status_checks_path.read_text(encoding="utf-8")).get("peers", {})
-        except Exception:
-            pass
-
-    peers_data = _load_peers()
-    all_peers_cfg = peers_data.get("peers", peers_data)
-
-    # orchestration.json에서 invoke 명령 매핑 (peer_name → CLI binary)
+    checks_path = sys_dir / "ai" / "status_checks.json"
+    checks = _read_json(checks_path).get("peers", {}) if checks_path.exists() else {}
+    installations = _load_peers()
     orch = _load_orchestration()
-    invoke_map: dict[str, str] = {}
-    lp = _load_lifecycle_policy()
-    node_to_peer_map = lp.get("identity", {}).get("node_to_peer", {})
-    for node in orch.get("hub_nodes", []):
-        nid = node.get("node_id", "")
-        peer_key = node_to_peer_map.get(nid, nid)
-        if node.get("invoke"):
-            invoke_map[peer_key] = node["invoke"]
+    roots = [n for n in orch.get("hub_nodes", []) if n.get("type") == "peer"]
 
     if node_id:
-        # node_id가 peers.json 키(claude/gemini/...)이거나 node_id(cc/gc/...)일 수 있음
-        peer_key = node_to_peer_map.get(node_id, node_id)
-        target_peers = {k: v for k, v in all_peers_cfg.items() if k == peer_key or k == node_id}
-        if not target_peers:
+        canonical = hub_peer.resolve_node_id(node_id, orch=orch) if _HUB_PEER_AVAILABLE else node_id
+        normalized = hub_peer.normalize_orchestration(orch) if _HUB_PEER_AVAILABLE else orch
+        selected = next(
+            (n for n in normalized.get("hub_nodes", []) if n.get("node_id") == canonical),
+            None,
+        )
+        root_id = selected.get("parent_node") if selected and selected.get("parent_node") else canonical
+        targets = [n for n in roots if n.get("node_id") == root_id]
+        if not targets:
             print(f"[HUB:ERROR] unknown peer: {node_id}", file=sys.stderr)
             return
     else:
-        target_peers = {k: v for k, v in all_peers_cfg.items() if v.get("enabled", True)}
+        targets = [n for n in roots if include_all or n.get("enabled") is not False]
 
-    # ── Zero-token live refresh (표시 전 현행화) ──────────────────
-    for peer_name, pcfg in target_peers.items():
-        sys_subdir = pcfg.get("sys_subdir", peer_name)
-        peer_dir = sys_dir / sys_subdir
-        invoke_cmd = invoke_map.get(peer_name, "")
-        try:
-            _refresh_peer_health_live(peer_name, peer_dir, invoke_cmd, ai_root)
-        except Exception:
-            pass  # refresh 실패해도 표시는 계속
+    print("PEER\tLIFECYCLE\tGATE\tHEALTH\tVERSION\tDETAILS")
+    for node in targets:
+        peer_id = node["node_id"]
+        installation_id = _node_to_peer_map().get(peer_id, peer_id)
+        installation = installations.get(installation_id, {})
+        peer_dir = sys_dir / installation.get("sys_subdir", installation_id)
 
-    print("┌──────────────────────────────────────────────────────────────────────┐")
-    print("│  PEER STATUS (live-refreshed)                                        │")
-    print("├──────────┬──────────┬──────────┬──────────┬────────────────────────┤")
-    print("│ Peer     │ Gate     │ Health   │ Version  │ Details                │")
-    print("├──────────┼──────────┼──────────┼──────────┼────────────────────────┤")
-
-    for peer_name, pcfg in target_peers.items():
-        sys_subdir = pcfg.get("sys_subdir", peer_name)
-        peer_dir = sys_dir / sys_subdir
-
-        # gate 파일 확인 (gc legacy gate)
-        gate_cfg = pcfg.get("gate")
-        if gate_cfg:
-            gate_file = sys_dir / gate_cfg["status_file"]
+        lifecycle = "enabled" if node.get("enabled") is not False else "disabled"
+        gate = lifecycle
+        health = "DISABLED" if lifecycle == "disabled" else "NO_FILE"
+        details = ""
+        if lifecycle == "enabled":
             try:
-                gd = json.loads(gate_file.read_text(encoding="utf-8"))
-                gate = "ON" if gd.get(gate_cfg["mode_key"]) == gate_cfg["mode_on_value"] else "OFF"
+                _refresh_peer_health_live(peer_id, peer_dir, node.get("invoke", ""), ai_root)
             except Exception:
-                gate = "?"
-        else:
-            gate = "open"
-
-        # health.json 읽기 (refresh 후)
+                pass
         health_path = peer_dir / "health.json"
-        health, details = "NO FILE", ""
-        failures, reason = 0, ""
-        if health_path.exists():
+        if lifecycle == "enabled" and health_path.exists():
             try:
-                h = json.loads(health_path.read_text(encoding="utf-8"))
-                ctx = h.get("context_health", {})
-                sh = h.get("session_health", {})
-                av = h.get("availability", {})
-                health = ctx.get("status", "?")
-                mb = ctx.get("jsonl_mb", 0.0)
-                failures = int(sh.get("consecutive_failures", 0))
-                reason = sh.get("last_failure_reason") or ""
-                # gate_open=false overrides gate file display (health.json is authoritative)
-                if av.get("gate_open") is False:
-                    gate = "CLOSED"
-                details_parts = [f"{mb:.1f}MB"]
+                data = json.loads(health_path.read_text(encoding="utf-8"))
+                context = data.get("context_health", {})
+                session = data.get("session_health", {})
+                availability = data.get("availability", {})
+                health = str(context.get("status", "UNKNOWN"))
+                if lifecycle == "enabled" and availability.get("gate_open") is False:
+                    gate = "closed"
+                parts = [f"{float(context.get('jsonl_mb', 0.0)):.1f}MB"]
+                failures = int(session.get("consecutive_failures", 0))
                 if failures:
-                    details_parts.append(f"fail={failures}")
+                    parts.append(f"fail={failures}")
+                reason = session.get("last_failure_reason")
                 if reason:
-                    details_parts.append(reason[:12])
-                details = " ".join(details_parts)
+                    parts.append(str(reason)[:16])
+                details = " ".join(parts)
             except Exception:
-                health, details = "ERR", ""
+                health = "ERROR"
 
-        # version_only 체크 (CLI 버전)
-        version_str = ""
-        peer_to_node = {v: k for k, v in node_to_peer_map.items() if k not in ("ca",)}
-        node_id_for_peer = peer_to_node.get(peer_name, peer_name)
-        peer_checks = checks_cfg.get(node_id_for_peer, {})
-        if peer_checks:
-            check_results = {}
-            gate_rule = peer_checks.get("derived_gate_rule", {})
-            for check in peer_checks.get("safe_checks", []):
-                if check.get("class") == "version_only":
-                    ok, out = _run_status_check(check)
-                    check_results[check["id"]] = (ok, out)
-                    if ok and out:
-                        version_str = out.split("\n")[0][:8]
-            if check_results and not gate_cfg and gate not in ("CLOSED",):
-                derived = _derive_gate_state(check_results, gate_rule)
-                gate = derived[:8]
+        peer_checks = checks.get(peer_id, {})
+        if not peer_checks.get("safe_checks") and peer_checks.get("inherits"):
+            peer_checks = checks.get(peer_checks["inherits"], {})
+        version = ""
+        for check in peer_checks.get("safe_checks", []):
+            if check.get("class") == "version_only":
+                ok, output = _run_status_check(check)
+                if ok and output:
+                    version = output.splitlines()[0][:12]
+                break
 
-        print(f"│ {peer_name:<8} │ {gate:<8} │ {health:<8} │ {version_str:<8} │ {details:<22} │")
-
-    print("└──────────┴──────────┴──────────┴──────────┴────────────────────────┘")
+        print(f"{peer_id}\t{lifecycle}\t{gate}\t{health}\t{version}\t{details}")
 
 
 def _task_registry_path(ai_root: Path) -> Path:
@@ -4890,6 +5098,8 @@ def _check_flag_parity() -> list[str]:
     # Flags that MUST appear in both hub and console paths
     # Note: --json (cx output format) is hub-internal only, excluded intentionally.
     REQUIRED: dict[str, set[str]] = {
+        "cc": {"--dangerously-skip-permissions"},
+        "ag": {"--dangerously-skip-permissions"},
         "cx": {"-s", "workspace-write", "--ignore-rules"},
         "gc": {"--approval-mode", "auto_edit", "--skip-trust"},
     }
@@ -4902,7 +5112,10 @@ def _check_flag_parity() -> list[str]:
     EXE = {"cx": "codex", "gc": "gemini"}
 
     for peer_id, required in REQUIRED.items():
-        hub_args, _, _ = _build_session_cmd(peer_id, None, EXE[peer_id])
+        if peer_id in EXE:
+            hub_args, _, _ = _build_session_cmd(peer_id, None, EXE[peer_id])
+        else:
+            hub_args = _default_nodes()["nodes"].get(peer_id, {}).get("invoke_args", [])
         console_args = peer_default_args(peer_id, [])
         hub_set = set(hub_args)
         console_set = set(console_args)
@@ -4922,7 +5135,7 @@ def _check_flag_parity() -> list[str]:
 
 
 def action_validate_profiles(node_id: str | None = None) -> None:
-    """Cross-check model_profiles.json against status_checks.json for each node."""
+    """Cross-check normalized orchestration profiles against status probes."""
     errors = []
     profiles = _load_model_profiles().get("profiles", {})
     checks_path = Path(__file__).parent.parent / "ai" / "status_checks.json"
@@ -4942,17 +5155,19 @@ def action_validate_profiles(node_id: str | None = None) -> None:
         if not profile:
             errors.append(f"{target}: no matching model profile (resolved={profile_id})")
             continue
-        peer = node.get("peer") or profile.get("peer") or target
+        peer = (
+            node.get("parent_node")
+            or profile.get("parent_node")
+            or node.get("peer")
+            or profile.get("peer")
+            or target
+        )
         status = checks_cfg.get(peer)
         if not status:
             errors.append(f"{target}: no status_checks entry for peer '{peer}'")
             continue
         if profile.get("peer") and profile.get("peer") != peer:
             errors.append(f"{target}: profile.peer={profile.get('peer')} != node.peer={peer}")
-        routing_state = profile.get("routing_state")
-        declared_status = status.get("status")
-        if routing_state == "eligible" and declared_status not in ("eligible", "degraded"):
-            errors.append(f"{target}: profile routing_state=eligible but status_checks.status={declared_status}")
         known_overrides = status.get("known_overrides", {})
         for key in profile.get("invoke_overrides", {}):
             expected = f"{key}_flag"
@@ -5004,22 +5219,50 @@ def action_lease_status(ai_root: Path) -> None:
 
 
 def action_model_status() -> None:
-    print("peer\tstatus\tcost\ttier\tcontext\tcapabilities")
+    """Display current root-peer defaults from the orchestration SSOT.
+
+    Health files contain operational observations and may retain profile fields
+    from an older invocation. Model, effort, cost, and context therefore come
+    from the configured default profile rather than from health.json.
+    """
+    print("peer\tstatus\tprofile\tmodel\teffort\tcost\tcontext\tcapabilities")
     for node in _load_orchestration().get("hub_nodes", []):
         if node.get("enabled") is False:
             continue
         peer = node.get("node_id")
         status, data = _peer_effective_health(peer)
-        profile = data.get("profile", {})
-        caps = ",".join(str(c) for c in profile.get("capabilities", []))
-        print(f"{peer}\t{status}\t{profile.get('cost_tier','')}\t{profile.get('tier','')}\t{profile.get('context_window','')}\t{caps}")
+        health_profile = data.get("profile", {})
+        default_name = node.get("default_profile", "standard")
+        profile = node.get("profiles", {}).get(default_name, {})
+        model = profile.get("model_id") or profile.get("runtime_model") or ""
+        context = profile.get("runtime_context_window")
+        if context is None:
+            context = health_profile.get("context_window", "")
+        caps = ",".join(str(c) for c in health_profile.get("capabilities", []))
+        print(
+            f"{peer}\t{status}\t{default_name}\t{model}\t"
+            f"{profile.get('reasoning_effort','')}\t{profile.get('cost_tier','')}\t"
+            f"{context}\t{caps}"
+        )
 
 
 def action_transient_scan(ai_root: Path) -> None:
     root = ai_root.parent
     candidates = []
     for path in root.iterdir():
-        if path.is_file() and re.match(r"^[A-Za-z0-9_-]{4,12}\.(tmp|log|txt)$", path.name):
+        if not path.is_file():
+            continue
+        named_transient = re.fullmatch(
+            r"[A-Za-z0-9_-]{4,12}\.(?:tmp|log|txt)",
+            path.name,
+        )
+        python_probe = False
+        if re.fullmatch(r"[a-z0-9_]{8}", path.name) and path.stat().st_size == 4:
+            try:
+                python_probe = path.read_bytes() == b"blat"
+            except OSError:
+                pass
+        if named_transient or python_probe:
             candidates.append(path.name)
     if not candidates:
         print("No transient root-file candidates found.")
@@ -5099,7 +5342,10 @@ def _check_exception_ttl(exception_data: dict) -> tuple[bool, str]:
     return False, ""
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="hub", description="AI 협업 허브 — Protocol v4.1")
+    parser = argparse.ArgumentParser(
+        prog="hub",
+        description="AI collaboration hub - Protocol v4.2",
+    )
     parser.add_argument("action", choices=["init-session", "end-session", "send", "broadcast", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "ask-all", "ask-coordinator", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint", "peer-quarantine", "peer-recover", "new-topic", "clear-room", "preflight", "context-hash", "context-ack", "report-error", "feedback-add", "feedback-list", "feedback-resolve", "artifact-claim", "artifact-status", "artifact-finalize", "leader-yield", "leader-claim", "elect-leader", "discover", "assign-role", "release-role", "role-status", "health-precheck", "health-sweep", "append-handoff", "task-checkpoint", "task-status", "task-failover", "approval-request", "file-lock", "file-unlock", "lock-status", "profile-validate", "lease-status", "lease-sweep", "model-status", "transient-scan", "directive-add", "directive-list", "directive-clear", "lessons-list", "lessons-propose", "lessons-activate", "lessons-retire", "lesson-broadcast", "lesson-sweep", "lesson-inject", "thread-new", "thread-append", "thread-react", "thread-promote", "alert-raise", "proposal-add", "proposal-vote", "proposal-list", "update-signatures"])
     parser.add_argument("--needs")
     parser.add_argument("--effort", default="mid")
@@ -5186,12 +5432,16 @@ def main() -> None:
         ai_root_opt = None
         try: ai_root_opt = find_ai_root()
         except (RuntimeError, OSError): pass
+        if ai_root_opt is not None:
+            ensure_ai_dir(ai_root_opt)
         action_ask(args.to_, args.query, args.query_file, args.timeout, ai_root_opt, quiet=args.quiet, output_file=args.output_file, session_policy=args.session_policy, explicit_scope=args.scope)
         return
     if args.action == "ask-all":
         ai_root_opt = None
         try: ai_root_opt = find_ai_root()
         except (RuntimeError, OSError): pass
+        if ai_root_opt is not None:
+            ensure_ai_dir(ai_root_opt)
         exclude_list = [x.strip() for x in args.peers.split(",") if x.strip()] if getattr(args, "peers", None) else []
         action_ask_all(args.query, args.query_file, args.timeout, ai_root_opt, exclude=exclude_list or None, quiet=args.quiet)
         return
@@ -5247,7 +5497,7 @@ def main() -> None:
     elif act == "health-check":
         action_health_check(args.peer)
     elif act == "peer-status":
-        action_peer_status(args.peer or None)
+        action_peer_status(args.peer or None, include_all=bool(args.all))
     elif act == "context-fill":
         sections = [s.strip() for s in args.sections.split(",")] if args.sections else None
         action_context_fill(ai_root, sections)

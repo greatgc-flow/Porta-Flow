@@ -34,7 +34,8 @@ Both files created:
 - `_sys/ai/model-registry.json` v1.0 (10 models: cc/gc/cx) — validated_at "2026-06-18", confidence levels set
 - `_sys/ai/routing-config.json` v1.0 (R01-R12 role taxonomy routing weights)
 - Additional new files: `error-taxonomy.json`, `logging-config.json`
-- Schemas documented in ops/schemas.md §5-7, ops/impl-plan.md §2-3
+- Schemas documented in `ops/schemas.md`; architecture decisions in
+  `ops/peer-debate-2026-06-19.md`.
 
 ### EDGE-02: ~~`.ai/` vs `_sys/ai/` path inconsistency~~ (RESOLVED 2026-06-18)
 

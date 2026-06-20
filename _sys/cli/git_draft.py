@@ -34,7 +34,7 @@ def main() -> None:
 
     if not ai_available():
         print("[git-draft] ERROR: Gemini not available.")
-        print("            Run start.bat first, or check _sys\\gemini\\status.json")
+        print("            Check hub.py peer-status --peer gc")
         sys.exit(1)
 
     if not shutil.which("git"):

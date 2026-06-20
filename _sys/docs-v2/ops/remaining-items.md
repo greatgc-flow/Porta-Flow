@@ -15,7 +15,8 @@ updated: 2026-06-18
 - **ag session tracking (B2)**: Implement session state tracking for Antigravity (`ag`) in `hub.py` for parity with `gc` and `cx`.
 
 ### axis-h / check_health.py (D2)
-- **Legacy status.json coupling**: Migrate direct `status.json` write to `hub_health.py` / `health.json` model to fully decouple health checks from legacy gate files. Axis scripts should eventually read from a central health hub.
+- **Legacy status.json coupling — RESOLVED 2026-06-19**: lifecycle is read from
+  `orchestration.json`; live status uses `health.json` and zero-token probes.
 
 ### check_docs_mece.py
 - **`build_cmd` return type changed**: Now returns `tuple[list[str], bool]` but no changelog entry. Docs and tests were mismatched until this session. Add migration note to CHANGELOG.

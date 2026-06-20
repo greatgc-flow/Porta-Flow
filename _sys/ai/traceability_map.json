@@ -119,7 +119,6 @@
         "_sys/docs-v2/ops/schemas.md#2-peersjson"
       ],
       "config": [
-        "_sys/ai/model_profiles.json",
         "_sys/ai/orchestration.json#/hub_nodes"
       ],
       "runtime": [
@@ -180,7 +179,6 @@
         "_sys/docs-v2/general/resource-governance.md#continuous-update-model-registry"
       ],
       "config": [
-        "_sys/ai/model_profiles.json",
         "_sys/ai/model-registry.json",
         "_sys/ai/orchestration.json#/hub_nodes"
       ],
@@ -231,14 +229,13 @@
       ]
     },
     {
-      "id": "virtual-nodes",
+      "id": "generated-profile-nodes",
       "docs": [
         "_sys/docs-v2/general/resource-governance.md#node-architecture",
         "_sys/docs-v2/general/resource-governance.md#5-layer-routing-architecture"
       ],
       "config": [
-        "_sys/ai/orchestration.json#/hub_nodes",
-        "_sys/ai/model_profiles.json"
+        "_sys/ai/orchestration.json#/hub_nodes/profiles"
       ],
       "runtime": [
         "_sys/core/hub.py#action_ask",
@@ -273,7 +270,7 @@
       "id": "workspace-environment",
       "docs": [
         "_sys/docs-v2/20-architecture.md",
-        "_sys/docs-v2/ops/impl-plan.md#2-workspace-scoping-architecture"
+        "_sys/docs-v2/ops/peer-debate-2026-06-19.md#6-interface-and-worker-separation"
       ],
       "config": [
         "_sys/ai/peers.json",
@@ -348,7 +345,7 @@
     {
       "id": "workspace-scoping",
       "docs": [
-        "_sys/docs-v2/ops/impl-plan.md#2-workspace-scoping-architecture"
+        "_sys/docs-v2/ops/peer-debate-2026-06-19.md#6-interface-and-worker-separation"
       ],
       "config": [
         "workspace/{name}/specific/config/workspace-config.json",
@@ -363,7 +360,7 @@
       "id": "docs-mece-check",
       "docs": [
         "_sys/docs-v2/ops/governance.md#62-validation",
-        "_sys/docs-v2/ops/impl-plan.md#5-check_docs_mecepy-implementation-spec"
+        "_sys/docs-v2/ops/peer-debate-2026-06-19.md#10-tdd-matrix"
       ],
       "config": [
         "_sys/ai/governance_params.json#docs_mece_checks_enabled"
@@ -381,7 +378,7 @@
     {
       "id": "error-visibility",
       "docs": [
-        "_sys/docs-v2/ops/impl-plan.md#6-error-visibility-design"
+        "_sys/docs-v2/ops/peer-debate-2026-06-19.md#2-findings-ledger"
       ],
       "config": [
         "_sys/ai/error-taxonomy.json",
@@ -399,7 +396,7 @@
       "id": "inv-19-language-policy",
       "docs": [
         "_sys/docs-v2/10-invariants.md#inv-19",
-        "_sys/docs-v2/ops/impl-plan.md#5-check_docs_mecepy-implementation-spec"
+        "_sys/docs-v2/ops/peer-debate-2026-06-19.md#10-tdd-matrix"
       ],
       "invariants": [
         "INV-19",
@@ -418,7 +415,7 @@
     {
       "id": "peer-adapter-interface",
       "docs": [
-        "_sys/docs-v2/ops/impl-plan.md#4-hub-decomposition"
+        "_sys/docs-v2/ops/peer-debate-2026-06-19.md#4-canonical-runtime-contract"
       ],
       "config": [
         "_sys/ai/orchestration.json#/hub_nodes"
@@ -468,7 +465,7 @@
     {
       "id": "error-taxonomy-display",
       "docs": [
-        "_sys/docs-v2/ops/impl-plan.md#6-error-visibility-design"
+        "_sys/docs-v2/ops/peer-debate-2026-06-19.md#2-findings-ledger"
       ],
       "config": [
         "_sys/ai/error-taxonomy.json",

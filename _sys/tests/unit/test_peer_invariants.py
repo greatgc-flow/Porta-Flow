@@ -38,7 +38,7 @@ def _load_json(rel: str) -> dict:
 
 
 def _orchestration() -> dict:
-    return _load_json("ai/orchestration.json")
+    return hub_peer.normalize_orchestration(_load_json("ai/orchestration.json"))
 
 
 def _all_nodes() -> list[dict]:
@@ -95,7 +95,7 @@ def test_inv_p03_virtual_nodes_inherit_parent_disablement():
     """Virtual nodes whose parent is disabled must themselves be non-routable."""
     orch = _orchestration()
     nodes_map = {n["node_id"]: n for n in orch.get("hub_nodes", []) if "node_id" in n}
-    virtual_nodes = [n for n in _all_nodes() if n.get("type") == "virtual" and "node_id" in n]
+    virtual_nodes = [n for n in _all_nodes() if n.get("type") in ("virtual", "profile") and "node_id" in n]
 
     for vnode in virtual_nodes:
         parent_id = vnode.get("parent_node")
@@ -131,8 +131,7 @@ def test_inv_p05_is_routable_true_for_enabled(node_id):
 
 def test_inv_p06_disabled_peer_profiles_are_blocked():
     """model_profiles routing_state must be 'blocked' for every disabled peer's profiles."""
-    mp = _load_json("ai/model_profiles.json")
-    profiles = mp.get("profiles", {})
+    profiles = hub_peer.profile_catalog(_load_json("ai/orchestration.json"))
     disabled_peer_ids = {
         n["node_id"]
         for n in _all_nodes()
@@ -236,8 +235,7 @@ def test_inv_p10_aliases_dont_bypass_disablement():
 def test_inv_p11_loop_bindings_no_disabled_profiles():
     """collaboration_loop_bindings routing routes must not reference disabled peer profiles."""
     bindings = _load_json("ai/collaboration_loop_bindings.json")
-    mp = _load_json("ai/model_profiles.json")
-    profiles = mp.get("profiles", {})
+    profiles = hub_peer.profile_catalog(_load_json("ai/orchestration.json"))
     disabled_peer_ids = {
         n["node_id"]
         for n in _all_nodes()

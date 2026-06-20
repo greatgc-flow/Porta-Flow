@@ -1,31 +1,25 @@
-# Zero-Token Symmetric Memory (Gemini Node)
-> Last updated: 2026-06-16
+# Gemini CLI Peer Configuration
 
-## Zero-Token Summary
+> Protocol 4.2 | Node ID: `gc` | Updated: 2026-06-20
 
-### 1) Tasks Completed Since Last Save
-- **Root Swap Rollback Recovery**: Recovered from a failed Root Swap rollback. Fixed `virtualizer.py` to handle read-only files during junction migration and corrected junction status detection.
-- **Environment Stabilized**: Re-applied host and project junctions for all peers; verified environment health with 381 passing baseline tests via `venv`.
-- **DIR-003 Established**: Added mandatory `test_contracts.py` sync rule for `hub.py` API changes to prevent silent test failures.
-- **Docs-v2 SSOT Consensus**: All active peers agreed to adopt `_sys/docs-v2/` as the primary Single Source of Truth for protocol documentation.
-- **gc Recovery**: Successfully recovered from multiple lease expiration events; verified health status.
-- **Round 2 Review**: Completed review of debate protocol gaps; initiated clarification on voting states (§14-5).
-- **Lesson LL-008**: Codified stability requirements for core hub API contracts.
+`gc` is currently disabled. It remains registered so that it can be restored
+without reconstructing provider configuration.
 
-### 2) Technical State
-- **Room ID**: `room-fe18` (ACTIVE)
-- **Protocol**: `PROTOCOL.md v4.1` / `protocol.json v1.1` (SSOT)
-- **Consensus**: COLLAB_RATE=10 (Full Sync mode).
-- **Members**: cc, gc (Active voters).
-- **Health**: GREEN (All peers synchronized).
-- **Infra**: `infra.json` managing all portable paths correctly.
+The authoritative state is:
 
-### 3) Critical Next Steps
-1. **TAXONOMY_v11.md**: Execute final governance framework transition.
-2. **WSB Validation**: Verify `install.bat` and `register.bat` in Windows Sandbox.
-3. **P2P Reliability**: Debug occasional file lock timeouts in mailbox communication.
-4. **Voting State Gap**: Resolve clarification request for §14-5 voting states.
+- topology and lifecycle: `_sys/ai/orchestration.json`
+- provider installation: `_sys/ai/peers.json`
+- collaboration policy: `_sys/ai/protocol.json`
+- peer-specific guidance: `_sys/docs-v2/specific/gc.md`
 
+Disabling `gc` disables its `standard`, `effort`, and `deepthink` child
+profiles. Disabled peers are excluded from active voters, role assignments, and
+automatic routing.
 
----
-*This file is a symmetric mirror of CLAUDE.md for Gemini's persistent memory.*
+Do not infer current room membership, health, model choice, or voter status from
+this file. Query the hub instead:
+
+```bat
+_sys\cli\msg.bat peer-status --all
+_sys\cli\msg.bat profile-validate
+```

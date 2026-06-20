@@ -27,7 +27,7 @@ def run_py(script: Path, *args: str, extra_env: dict | None = None) -> subproces
 class TestAiCheck:
     """ai_check.py — Gemini gate check."""
 
-    def test_exits_1_when_status_json_missing(self, tmp_path):
+    def test_exits_1_when_orchestration_missing(self, tmp_path):
         result = run_py(
             SYS_DIR / "hooks" / "ai_check.py",
             extra_env={"_AI_SYS_DIR": str(tmp_path)},
@@ -35,11 +35,14 @@ class TestAiCheck:
         assert result.returncode == 1
         assert "gemini=OFF" in result.stdout
 
-    def test_exits_1_when_mode_off(self, tmp_path):
+    def test_exits_1_when_peer_disabled(self, tmp_path):
+        ai_dir = tmp_path / "ai"
         gemini_dir = tmp_path / "gemini"
+        ai_dir.mkdir()
         gemini_dir.mkdir()
-        (gemini_dir / "status.json").write_text(
-            json.dumps({"mode": "OFF"}), encoding="utf-8"
+        (ai_dir / "orchestration.json").write_text(
+            json.dumps({"hub_nodes": [{"node_id": "gc", "enabled": False}]}),
+            encoding="utf-8",
         )
         result = run_py(
             SYS_DIR / "hooks" / "ai_check.py",
@@ -48,23 +51,25 @@ class TestAiCheck:
         assert result.returncode == 1
         assert "gemini=OFF" in result.stdout
 
-    def test_exits_0_when_mode_on(self, tmp_path):
-        """Create a temporary status.json with mode=ON and call the script."""
-        # Patch the expected path by overriding __file__ indirectly is complex.
-        # Instead, test via the real Gemini status if available.
-        status_path = SYS_DIR / "gemini" / "status.json"
-        if status_path.exists():
-            data = json.loads(status_path.read_text(encoding="utf-8"))
-            result = run_py(SYS_DIR / "hooks" / "ai_check.py")
-            if data.get("mode") == "ON":
-                assert result.returncode == 0
-                assert "gemini=ON" in result.stdout
-            else:
-                assert result.returncode == 1
-                assert "gemini=OFF" in result.stdout
-        else:
-            result = run_py(SYS_DIR / "hooks" / "ai_check.py")
-            assert result.returncode == 1
+    def test_exits_0_when_enabled_and_healthy(self, tmp_path):
+        ai_dir = tmp_path / "ai"
+        gemini_dir = tmp_path / "gemini"
+        ai_dir.mkdir()
+        gemini_dir.mkdir()
+        (ai_dir / "orchestration.json").write_text(
+            json.dumps({"hub_nodes": [{"node_id": "gc", "enabled": True}]}),
+            encoding="utf-8",
+        )
+        (gemini_dir / "health.json").write_text(
+            json.dumps({"availability": {"gate_open": True}, "context_health": {"status": "GREEN"}}),
+            encoding="utf-8",
+        )
+        result = run_py(
+            SYS_DIR / "hooks" / "ai_check.py",
+            extra_env={"_AI_SYS_DIR": str(tmp_path)},
+        )
+        assert result.returncode == 0
+        assert "gemini=ON" in result.stdout
 
 
 class TestCollabLog:
@@ -89,34 +94,8 @@ class TestCollabLog:
         assert "Axis-TEST" in content
         assert "parity test entry" in content
 
-    def test_status_ok_sets_consecutive_failures_zero(self, tmp_path):
-        """OK status must reset consecutive_failures counter."""
-        gemini_dir = tmp_path / "gemini"
-        gemini_dir.mkdir()
-        status_file = gemini_dir / "status.json"
-        status_file.write_text(
-            json.dumps({
-                "mode": "ON",
-                "gemini_metrics": {
-                    "calls_today": 0,
-                    "calls_today_date": "20260101",
-                    "last_call_ts": None,
-                    "last_axis": None,
-                    "consecutive_failures": 2,
-                    "last_failure_reason": "prev error"
-                }
-            }),
-            encoding="utf-8"
-        )
-        import sys as _sys
-        _sys.path.insert(0, str(SYS_DIR / "hooks"))
-        from collab_log import _update_gemini_metrics  # type: ignore
-        from datetime import datetime
-        _update_gemini_metrics(
-            tmp_path, "Axis-H", "OK", "test", datetime.now()
-        )
-        data = json.loads(status_file.read_text(encoding="utf-8"))
-        assert data["gemini_metrics"]["consecutive_failures"] == 0
+    def test_collab_log_does_not_create_legacy_status(self, tmp_path):
+        assert not (tmp_path / "gemini" / "status.json").exists()
 
 
 class TestRawLog:

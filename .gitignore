@@ -133,7 +133,8 @@ _sys/gemini/config/policies/auto-saved.toml
 # AI runtime state (changes every session — not tracked)
 _sys/data/operational_errors.jsonl
 _sys/ai/runtime-directives.jsonl
-_sys/ai/snapshots/
+_sys/ai/snapshots/*
+!_sys/ai/snapshots/hub_api.json
 _sys/ai/knowledge/logs/*.jsonl
 _sys/ai/ipc/
 
@@ -184,8 +185,8 @@ _sys/temp_manual_gen.py
 # Accidental 0-byte peer temp files (e.g., /See created by cx during ask session)
 /See
 /Remains
-# IPC subprocess temp files (8-char alphanumeric) scattered to root by hub.py proc_cwd bug
-/[0-9a-z_][0-9a-z_][0-9a-z_][0-9a-z_][0-9a-z_][0-9a-z_][0-9a-z_][0-9a-z_]
+# Python temporary-directory write probes contain exactly "blat". These files
+# are detected by validation and should be removed, not silently ignored.
 
 # Pytest temp dirs scattered to root
 /.pytest-basetemp/

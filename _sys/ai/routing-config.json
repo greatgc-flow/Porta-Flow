@@ -7,6 +7,67 @@
   "quality_mode": 5,
   "quality_mode_override": null,
 
+  "auto_profile_routing": {
+    "enabled": true,
+    "scope": "root_peer_asks",
+    "explicit_profile_policy": "immutable",
+    "ambiguous_default": "effort",
+    "profile_order": ["standard", "effort", "deepthink"],
+    "thresholds": {
+      "effort_score": 3,
+      "deepthink_score": 8,
+      "effort_min_chars": 800,
+      "deepthink_min_chars": 4000,
+      "complex_structure_count": 4,
+      "multilingual_ratio": 0.3,
+      "multilingual_simple_max_chars": 50,
+      "multilingual_complex_min_chars": 80,
+      "multilingual_complex_min_tokens": 8
+    },
+    "signals": {
+      "marker_hit_cap": 2,
+      "deepthink_marker_weight": 5,
+      "effort_marker_weight": 3,
+      "standard_marker_weight": -4,
+      "risk_high_weight": 10,
+      "risk_medium_weight": 4,
+      "risk_low_weight": 4,
+      "very_large_query_weight": 6,
+      "large_query_weight": 3,
+      "complex_structure_weight": 3,
+      "multilingual_simple_weight": 4,
+      "multilingual_complex_weight": 8,
+      "deepthink_markers": [
+        "architecture", "security", "protocol", "exhaustive", "consensus",
+        "invariant", "threat model", "root cause", "cross-review"
+      ],
+      "effort_markers": [
+        "implement", "write", "fix", "refactor", "test", "debug", "migrate",
+        "benchmark", "design", "review", "update"
+      ],
+      "standard_markers": [
+        "status", "list", "show", "read", "summarize", "explain", "what is",
+        "health check"
+      ]
+    },
+    "failure_promotion": {
+      "enabled": true,
+      "consecutive_threshold": 2,
+      "max_tier_increase": 1,
+      "promotion_resets_on_success": true,
+      "allowed_reasons": [
+        "quality_failure",
+        "test_failure",
+        "reasoning_failure"
+      ]
+    },
+    "fallback": {
+      "direction": "same_peer_downward_only",
+      "all_blocked": "fail_closed",
+      "cross_peer_change": "forbidden"
+    }
+  },
+
   "task_overrides": {
     "ESCALATION": 10,
     "FAST_QA": 0,
@@ -59,7 +120,7 @@
     },
     "R07": {
       "_label": "Code Mutator",
-      "primary": "cx::gpt-5.5::high::danger-full-access",
+      "primary": "cx::gpt-5.5::high::workspace-write",
       "fallback": "cc::claude-sonnet-4-6::medium::none",
       "weight": 1.0
     },

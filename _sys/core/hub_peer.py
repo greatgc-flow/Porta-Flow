@@ -20,6 +20,7 @@ Adapter selection:
 from __future__ import annotations
 
 import json
+import copy
 import shlex
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
@@ -29,22 +30,117 @@ _SYS_DIR = _CORE_DIR.parent
 _AI_DIR = _SYS_DIR / "ai"
 _ORCHESTRATION_PATH = _AI_DIR / "orchestration.json"
 _SESSIONS_PATH = _AI_DIR / "sessions"
+_ORCHESTRATION_MTIME_NS = -1
+_ORCHESTRATION_CACHE: dict[str, Any] = {}
+_NORMALIZED_CACHE: dict[str, Any] | None = None
+_NORMALIZED_SOURCE: dict[str, Any] | None = None
 
 
 def _load_orchestration() -> dict:
+    global _ORCHESTRATION_MTIME_NS, _ORCHESTRATION_CACHE
+    global _NORMALIZED_CACHE, _NORMALIZED_SOURCE
     if _ORCHESTRATION_PATH.exists():
         try:
-            return json.loads(_ORCHESTRATION_PATH.read_text(encoding="utf-8"))
+            mtime_ns = _ORCHESTRATION_PATH.stat().st_mtime_ns
+            if mtime_ns != _ORCHESTRATION_MTIME_NS:
+                _ORCHESTRATION_CACHE = json.loads(
+                    _ORCHESTRATION_PATH.read_text(encoding="utf-8")
+                )
+                _ORCHESTRATION_MTIME_NS = mtime_ns
+                _NORMALIZED_CACHE = None
+                _NORMALIZED_SOURCE = None
+            return _ORCHESTRATION_CACHE
         except Exception:
             pass
     return {}
+
+
+def normalize_orchestration(orch: dict | None = None) -> dict:
+    """Expand nested peer profiles into a deterministic in-memory node tree.
+
+    The tracked configuration stores physical/root peers only. Each
+    ``hub_nodes[].profiles`` entry becomes a routable child named
+    ``{peer_id}.{profile_name}``. The root peer itself is merged with its
+    ``default_profile`` so legacy calls such as ``hub.py ask --to cx`` retain
+    their stable identity while using an explicit model/profile.
+    """
+    global _NORMALIZED_CACHE, _NORMALIZED_SOURCE
+    if orch and orch.get("_normalized") is True:
+        return orch
+    use_cache = orch is None
+    if use_cache:
+        raw = _load_orchestration()
+        if _NORMALIZED_CACHE is not None and _NORMALIZED_SOURCE is raw:
+            return _NORMALIZED_CACHE
+    else:
+        raw = orch or {}
+    source = copy.deepcopy(raw)
+    raw_nodes = source.get("hub_nodes", [])
+    expanded: list[dict[str, Any]] = []
+
+    for raw_node in raw_nodes:
+        base = copy.deepcopy(raw_node)
+        profiles = base.pop("profiles", {}) or {}
+        default_profile = base.pop("default_profile", None)
+        root = copy.deepcopy(base)
+
+        if default_profile and default_profile in profiles:
+            selected = copy.deepcopy(profiles[default_profile])
+            root["profile_id"] = f"{root.get('node_id')}.{default_profile}"
+            root["profile_name"] = default_profile
+            for key in (
+                "model_id", "runtime_model", "model_availability",
+                "runtime_context_window", "validated_at", "validation_method",
+                "routing_state", "profile_args", "capability_class",
+                "reasoning_effort", "cost_tier",
+            ):
+                if key in selected:
+                    root[key] = selected[key]
+        expanded.append(root)
+
+        root_id = root.get("node_id")
+        if not root_id:
+            continue
+        for profile_name, profile in profiles.items():
+            child = copy.deepcopy(base)
+            child["node_id"] = f"{root_id}.{profile_name}"
+            child["type"] = "profile"
+            child["parent_node"] = root_id
+            child["profile_id"] = child["node_id"]
+            child["profile_name"] = profile_name
+            child["aliases"] = list(profile.get("aliases", []))
+            for key, value in profile.items():
+                if key != "aliases":
+                    child[key] = copy.deepcopy(value)
+            expanded.append(child)
+
+    source["hub_nodes"] = expanded
+    source["_normalized"] = True
+    if use_cache:
+        _NORMALIZED_CACHE = source
+        _NORMALIZED_SOURCE = raw
+    return source
+
+
+def profile_catalog(orch: dict | None = None) -> dict[str, dict[str, Any]]:
+    """Return normalized profile metadata keyed by ``peer.profile``."""
+    normalized = normalize_orchestration(orch)
+    return {
+        node["profile_id"]: {
+            key: copy.deepcopy(value)
+            for key, value in node.items()
+            if key not in {"invoke_args", "aliases", "adapter_class", "requires_pty"}
+        }
+        for node in normalized.get("hub_nodes", [])
+        if node.get("type") == "profile" and node.get("profile_id")
+    }
 
 
 def resolve_node_id(node_id: str | None, *, orch: dict | None = None) -> str | None:
     """Resolve a node ID, alias, or invoke name to its canonical node ID."""
     if not node_id or not isinstance(node_id, str):
         return None
-    orch = orch or _load_orchestration()
+    orch = normalize_orchestration(orch)
     nodes = orch.get("hub_nodes", [])
     for node in nodes:
         canonical = node.get("node_id")
@@ -65,7 +161,7 @@ def _parent_node_id(node: dict) -> str | None:
 
 def is_routable(node_id: str | None, *, orch: dict | None = None) -> bool:
     """Return effective routability after recursively evaluating ancestors."""
-    orch = orch or _load_orchestration()
+    orch = normalize_orchestration(orch)
     canonical = resolve_node_id(node_id, orch=orch)
     if canonical is None:
         return False
@@ -81,7 +177,11 @@ def is_routable(node_id: str | None, *, orch: dict | None = None) -> bool:
             return False
         seen.add(current)
         node = nodes.get(current)
-        if node is None or node.get("enabled") is False:
+        if (
+            node is None
+            or node.get("enabled") is False
+            or node.get("routing_state") == "blocked"
+        ):
             return False
         parent = _parent_node_id(node)
         if not parent:
@@ -92,7 +192,7 @@ def is_routable(node_id: str | None, *, orch: dict | None = None) -> bool:
 
 def root_peer_id(node_id: str | None, *, orch: dict | None = None) -> str | None:
     """Return the physical root peer for a routable node tree."""
-    orch = orch or _load_orchestration()
+    orch = normalize_orchestration(orch)
     canonical = resolve_node_id(node_id, orch=orch)
     if canonical is None or not is_routable(canonical, orch=orch):
         return None
@@ -191,6 +291,7 @@ class BaseAdapter:
                     use_stdin = True
             else:
                 cmd_args.append(a)
+        cmd_args.extend(node.get("profile_args", []))
         return [invoke] + cmd_args, use_stdin
 
     def parse_output(self, stdout: str, node: dict[str, Any]) -> str:
@@ -209,7 +310,7 @@ class ClaudeAdapter(BaseAdapter):
         raw_args = node.get("invoke_args", ["-p", "{query}"])
         # Claude Code currently doesn't use session_id for resume via CLI flags in the same way cx/gc do.
         # It relies on local state files.
-        return [invoke] + self._substitute_args(raw_args, query), False
+        return [invoke] + self._substitute_args(raw_args, query) + node.get("profile_args", []), False
 
     def parse_output(self, stdout: str, node: dict[str, Any]) -> str:
         return stdout.strip()
@@ -245,7 +346,7 @@ class CodexAdapter(BaseAdapter):
 
     def build_cmd(self, node: dict[str, Any], query: str, session_id: str | None = None) -> tuple[list[str], bool]:
         invoke = node.get("invoke", "codex")
-        base = ["-s", "workspace-write", "--json", "--ignore-rules"]
+        base = ["-s", "workspace-write", "--json", "--ignore-rules"] + node.get("profile_args", [])
         if session_id:
             return [invoke, "exec", "resume", session_id, "-"] + base, True
         return [invoke, "exec", "-"] + base, True
@@ -300,14 +401,14 @@ class AgyAdapter(BaseAdapter):
         invoke = node.get("invoke", "agy")
         raw_args = node.get("invoke_args", ["--dangerously-skip-permissions", "-p", "{query}"])
         # agy -p takes the prompt inline (not via stdin); use _substitute_args to keep query in args
-        return [invoke] + self._substitute_args(raw_args, query), False
+        return [invoke] + self._substitute_args(raw_args, query) + node.get("profile_args", []), False
 
     def parse_output(self, stdout: str, node: dict[str, Any]) -> str:
         return stdout.strip()
 
 
 class VirtualAdapter(BaseAdapter):
-    """Adapter for virtual nodes (profile-specific variants like cc-deep)."""
+    """Compatibility adapter for generated profile nodes."""
 
     node_id = "virtual"
 
@@ -367,7 +468,7 @@ def get_adapter_for_peer(peer_id: str, *, skip_disabled: bool = True) -> BaseAda
 
     Raises ValueError if peer is disabled (enabled:false) unless skip_disabled=False.
     """
-    orch = _load_orchestration()
+    orch = normalize_orchestration()
     canonical = resolve_node_id(peer_id, orch=orch)
     if canonical is not None:
         if skip_disabled and not is_routable(canonical, orch=orch):
@@ -398,7 +499,7 @@ def _main() -> None:
         return
 
     adapter = get_adapter_for_peer(args.peer)
-    orch = _load_orchestration()
+    orch = normalize_orchestration()
     node = next(
         (n for n in orch.get("hub_nodes", []) if n.get("node_id") == args.peer),
         {"node_id": args.peer, "invoke": args.peer, "invoke_args": ["-p", "{query}"]},

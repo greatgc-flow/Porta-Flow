@@ -122,6 +122,8 @@ Preference order: GREEN → YELLOW → (avoid STALE) → RED blocked.
 
 ## 9. gc Legacy Gate Mirror (gc-specific, see also `specific/gc.md`)
 
-`_sys/gemini/status.json` is a legacy compat mirror of `health.json["availability"]["gate_open"]`.
+Peer-specific status gate files are retired. Lifecycle comes from
+`orchestration.json`; runtime availability and freshness come from
+`_sys/{installation}/health.json` and zero-token probes.
 Kept in sync by `hub.py _sync_peer_gate_file()` on quarantine/recover.
 Future: migrate `gemini-*.bat` to read `health.json` directly → remove mirror.
