@@ -34,6 +34,7 @@ Peer: search this table first. Load only the file(s) relevant to your current ta
 | Knowledge propagation | `general/knowledge.md` | lesson lifecycle, pack delivery, active-lessons |
 | Self-evolution | `general/self-evolution.md` | self_care.py, DocsSyncer, SaturationDetector |
 | Parameter tradeoffs | `general/tradeoffs.md` | COLLAB_RATE/EFFORT/SLIM/SANDBOX tuning |
+| V5 Refactoring Plan | `general/master-refactor-v5.md` | Zero-Code MECE Architecture, JSON-bindings |
 | Proposal lifecycle | `ops/governance.md §5` | proposal states, TTL, voting thresholds, template |
 
 ### Resource & Cost Management
@@ -139,6 +140,7 @@ docs-v2/
 │   ├── self-evolution.md ← self_care, DocsSyncer, SaturationDetector
 │   ├── tradeoffs.md      ← parameter registry
 │   ├── master-plan.md    ← unified architecture blueprint
+│   ├── master-refactor-v5.md ← Zero-Code MECE Architecture Plan
 │   └── resource-governance.md ← model inventory, node arch, cost/quality
 │
 ├── specific/             ← peer delta only (what differs from general/)

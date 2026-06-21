@@ -44,6 +44,7 @@ For human onboarding: `user/manual.md`
 | `general/knowledge.md` | Lesson propagation, pack delivery, active-lessons | 2026-06-16 |
 | `general/self-evolution.md` | SelfHealer, DocsSyncer, SaturationDetector | 2026-06-18 |
 | `general/master-plan.md` | Unified architecture blueprint (Recovery Journal, Continuity Score) | 2026-06-16 |
+| `general/master-refactor-v5.md` | Zero-Code Composable MECE Architecture Refactoring Plan | 2026-06-21 |
 | `general/resource-governance.md` | Model inventory · Node arch (§6) · Role taxonomy (§7) · 5-Layer routing (§8) · Cost/quality (§9) · QUALITY_MODE (§10) · Continuous update (§11) | 2026-06-18 |
 | `general/token-management.md` | Per-peer model inventory (cc/gc/cx) · context/output limits · Extended Thinking API · ContextGate v1.0 design | 2026-06-18 |
 | `specific/cc.md` | Claude Code: dirs, gate, delta flags | 2026-06-16 |
