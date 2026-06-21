@@ -35,28 +35,24 @@ class TestDocConsistency:
             assert (doc_root / "_sys" / "docs-v2" / filename).exists(), f"Mandatory docs-v2 doc missing: {filename}"
 
     def test_claude_md_sections(self, doc_root):
-        """Ensure project CLAUDE.md contains required lifecycle sections."""
+        """Ensure project CLAUDE.md acts as a pointer to SSOT."""
         claude_md = doc_root / "CLAUDE.md"
         if not claude_md.exists():
             pytest.skip("CLAUDE.md not found in root")
             
         content = claude_md.read_text(encoding="utf-8")
-        required_headers = [
-            r"^## (Architecture )?Decisions( Made)?",
-            r"^## Current State",
-            r"^## Next Steps"
-        ]
-        for header_pattern in required_headers:
-            assert re.search(header_pattern, content, re.MULTILINE), f"Missing section in CLAUDE.md: {header_pattern}"
+        assert "This file is a **pointer only**" in content, "CLAUDE.md must be a pointer"
+        assert "_sys/docs-v2/MOC.md" in content, "CLAUDE.md must link to MOC.md"
 
     def test_gemini_md_version_sync(self, doc_root):
-        """Ensure GEMINI.md references the latest protocol version (v3)."""
+        """Ensure GEMINI.md acts as a pointer to SSOT."""
         gemini_md = doc_root / "GEMINI.md"
         if not gemini_md.exists():
             pytest.skip("GEMINI.md not found")
             
         content = gemini_md.read_text(encoding="utf-8")
-        assert "v3" in content or "v4" in content, "GEMINI.md might be referencing an outdated protocol version"
+        assert "This file is a **pointer only**" in content, "GEMINI.md must be a pointer"
+        assert "_sys/docs-v2/MOC.md" in content, "GEMINI.md must link to MOC.md"
 
     def test_no_korean_in_sys_scripts(self, doc_root):
         """Ensure no Korean characters in _sys batch scripts (except allowed ones)."""

@@ -1,0 +1,29 @@
+{
+  "paths": {
+    "base": "{ROOT_DRIVE}",
+    "sys": "{base}/_sys",
+    "shared": "{base}/_shared",
+    "workspace_template": "{sys}/templates/workspace-base",
+    "env": "{sys}/env",
+    "nodejs": "{env}/nodejs",
+    "python": "{env}/python",
+    "venv": "{env}/venv",
+    "data": "{sys}/data",
+    "state": "{data}/state",
+    "generated": "{data}/generated",
+    "logs": "{data}/logs",
+    "temp": "{data}/temp",
+    "tools": "{sys}/tools",
+    "claude_config": "{sys}/claude/config",
+    "gemini_config": "{sys}/gemini/config",
+    "codex_config": "{sys}/codex/config"
+  },
+  "env_vars": {
+    "PYTHONUTF8": "1",
+    "NPM_CONFIG_PREFIX": "{nodejs}/npm-global",
+    "NPM_CONFIG_CACHE": "{nodejs}/npm-cache",
+    "PIP_CACHE_DIR": "{python}/pip-cache",
+    "PYTHONUSERBASE": "{python}/userbase",
+    "BAT_CACHE_PATH": "{tools}/bat/cache"
+  }
+}

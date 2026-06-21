@@ -24,19 +24,24 @@ def _load_json(path: Path) -> dict:
     return {}
 
 
-def _resolve_paths(base: Path, sys: Path) -> dict:
-    """Load paths.json and resolve all aliases to absolute Paths."""
-    raw = _load_json(sys / "paths.json")
+def _resolve_paths(base_dir: Path) -> dict:
+    """Load environment.json and resolve all aliases to absolute Paths."""
+    from core.env_loader import EnvironmentLoader
+    config_path = base_dir / "_sys" / "config" / "environment.json"
+    loader = EnvironmentLoader(str(config_path), str(base_dir))
+    loader.apply_to_os()
+    paths = loader.get_paths()
     resolved = {"localappdata": Path(os.environ.get("LOCALAPPDATA", ""))}
-    for key, rel in raw.items():
-        if key.startswith("_"):
-            continue
-        resolved[key] = (base / rel) if rel else base
+    for k, v in paths.items():
+        resolved[k] = Path(v)
+    # Also inject root and sys for legacy compat
+    resolved["root"] = base_dir
+    resolved["sys"] = base_dir / "_sys"
     return resolved
 
 
 def _build_ctx(cmd: str, extra_args: list) -> dict:
-    paths = _resolve_paths(base_dir, sys_dir)
+    paths = _resolve_paths(base_dir)
     ctx = {
         "base_dir": base_dir,
         "sys_dir":  sys_dir,
