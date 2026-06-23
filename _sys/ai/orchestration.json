@@ -236,7 +236,7 @@
       "type": "peer",
       "enabled": true,
       "adapter_class": "AgyAdapter",
-      "invoke": "agy",
+      "invoke": "_sys\\tools\\agy\\agy.exe",
       "invoke_args": [
         "--dangerously-skip-permissions",
         "-p",

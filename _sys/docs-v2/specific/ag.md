@@ -34,11 +34,39 @@ agy --dangerously-skip-permissions -p {query} --print-timeout 60m
 `session_mode: none` is a statement about *hub-managed reuse*, **not** a claim of stateless
 storage. agy itself persists conversation state on disk:
 
-- `AGY_CONFIG_HOME/config/conversations/*.db` and the `implicit/` directory are **durable**.
-- A bare `agy -p` invocation **may load ambient/implicit context** from that store.
+- `AGY_CONFIG_HOME/conversations/*.db` and the `implicit/` directory are **durable**.
+- A bare `agy -p` invocation **auto-continues ambient/implicit context** from that store
+  even with no `-c`/`--conversation` flag (empirically verified 2026-06-23: a fresh
+  config home answered a fresh query cleanly; the shared home ignored the query and
+  replayed prior session state).
 - Therefore `session_mode: none` must NOT be read as "ag has no memory between calls" — it
   only means the hub does not orchestrate `-c`/`--continue`/`--conversation` resume flags.
   Storage-level durability is an agy-internal behavior outside hub control.
+
+### IPC stateless home (A6 contamination fix)
+
+Because agy auto-continues durable state, **hub IPC asks would otherwise inherit prior
+interactive session content** (the A6 contamination root cause: an ag ping replied about
+unrelated prior work that was never in the prompt). The hub fixes this **without touching
+the user's interactive `config/` home**:
+
+- `peers.json → antigravity.ipc_stateless_home` declares a dedicated **IPC config home**
+  (`_sys/antigravity/ipc-config/`).
+- Before every hub IPC invocation, `hub._prepare_ipc_stateless_home()`:
+  1. **Seeds** auth/model files from `config/` by explicit allowlist
+     (`settings.json`, `installation_id`, `AGY.md`, `keybindings.json`, `status.json`,
+     `usage.json`) — so model selection and auth still resolve and ag actually runs.
+  2. **Recreates the durable-state dirs (`conversations/`, `implicit/`) EMPTY** on every
+     call, so each ask is stateless.
+- The hub then **repoints `AGY_CONFIG_HOME` and `GEMINI_DIR`** (the `env_keys`) at the IPC
+  home for the ag invocation only.
+- **Non-destructive:** the interactive `config/` home — including its 100+ durable
+  `conversations/*.db` — is never read-modified or deleted.
+- **General-specific clean:** this is a config-declared capability resolved in the generic
+  env-injection path (`target_peer_cfg.get("ipc_stateless_home")`); there is **no peer-id
+  branch** in core dispatch. Peers without the key (cc/cx) are entirely unaffected — their
+  environment is byte-identical.
+- The IPC home is fully runtime-generated and `.gitignore`d (`_sys/antigravity/ipc-config/`).
 
 ## Runtime Profiles
 
@@ -69,12 +97,20 @@ only after the hub records or promotes it.
 
 ```
 _sys/antigravity/
-├── config/
+├── config/                 ← INTERACTIVE home (durable; never mutated by hub IPC)
 │   ├── AGY.md              ← session instructions
 │   ├── brain/              ← reasoning modules (now archived to _archive/reviews/agy/)
 │   ├── builtin/            ← built-in commands
+│   ├── conversations/      ← durable session .db store (auto-continued by agy)
+│   ├── implicit/           ← durable implicit context
 │   ├── settings.json       ← agy settings
 │   └── log/                ← session logs
+├── ipc-config/             ← STATELESS IPC home (A6; gitignored, runtime-generated)
+│   ├── settings.json       ← seeded from config/ (auth/model resolve)
+│   ├── installation_id     ← seeded from config/
+│   ├── AGY.md              ← seeded from config/
+│   ├── conversations/      ← recreated EMPTY before every IPC ask
+│   └── implicit/           ← recreated EMPTY before every IPC ask
 ├── health.json             ← peer health (runtime-generated)
 └── project/
 ```

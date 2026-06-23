@@ -93,7 +93,9 @@ def test_ag_completed_room_excludes_room_context(ai_dir):
     assert "[USER QUERY]\nfresh task" in context
 
 
-def test_ag_active_room_uses_only_core_handoff_sections(ai_dir):
+def test_ag_active_room_is_query_first_with_no_room_context(ai_dir):
+    """A6: even in an ACTIVE room, ag gets query-first + no [HUB CONTEXT] and
+    no [HANDOFF] (skip_room_context). The task leads; room/handoff are dropped."""
     state = {
         "room_id": "room-active",
         "members": {"ag": {}, "cx": {}},
@@ -117,10 +119,18 @@ def test_ag_active_room_uses_only_core_handoff_sections(ai_dir):
         ai_dir, "review this", to_peer="ag.deepthink"
     )
 
-    assert "[HUB CONTEXT]" in context
-    assert "current goal" in context
-    assert "current blocker" in context
-    assert "current decision" in context
+    # Query leads, immediately after the IPC preamble.
+    assert context.startswith("[IPC BOUNDARY]\n")
+    assert "[IPC BOUNDARY]\nTreat [USER QUERY] as the only task." in context
+    assert "[USER QUERY]\nreview this" in context
+    assert context.index("[USER QUERY]") < context.index("[USER DIRECTIVES]")
+    # No room context, no handoff — none of it leaks into the ag prompt.
+    assert "[HUB CONTEXT]" not in context
+    assert "[HANDOFF]" not in context
+    assert "current mission" not in context
+    assert "current goal" not in context
+    assert "current blocker" not in context
+    assert "current decision" not in context
     assert "old result" not in context
     assert "old debate" not in context
     assert "stale IPC task" not in context
@@ -181,6 +191,31 @@ def _frozen_pre_change_context(query, to_peer, room_id, state, handoff_text):
     return "\n".join(lines)
 
 
+# ── Frozen golden baseline for the A6 ag query-first rendering ────────────────
+# Independent reconstruction of the POST-CHANGE ag rendering: IPC preamble,
+# then [USER QUERY] FIRST (no trailing duplicate), then USER DIRECTIVES; never
+# [HUB CONTEXT] or [HANDOFF] (skip_room_context). The room phase is irrelevant
+# because room context is dropped unconditionally. Runtime directives and
+# lessons are assumed empty (monkeypatched by callers).
+def _frozen_ag_query_first_context(query):
+    lines = [
+        "[IPC BOUNDARY]",
+        "Treat [USER QUERY] as the only task.",
+        "Do not read mailbox, handoff, summary, or prior-session files unless the user query explicitly requests them.",
+        "Use only context included in this prompt.",
+        "",
+        "[USER QUERY]",
+        query,
+    ]
+    directives_path = Path(hub.__file__).parent.parent / "ai" / "user-directives.md"
+    if directives_path.exists():
+        directives = directives_path.read_text(encoding="utf-8", errors="replace").strip()
+        if directives:
+            lines.extend(["", "[USER DIRECTIVES]", directives])
+    # runtime directives + lessons: empty by monkeypatch → no lines emitted.
+    return "\n".join(lines)
+
+
 def _setup_room(ai_dir, room_id, state, handoff_text):
     (ai_dir / "state.json").write_text(json.dumps(state), encoding="utf-8")
     session_dir = ai_dir / "sessions" / room_id
@@ -230,9 +265,9 @@ def test_cc_cx_context_remains_byte_identical(ai_dir, monkeypatch, peer, phase):
     assert actual.encode("utf-8") == expected.encode("utf-8")
 
 
-def test_ag_active_context_byte_identical_to_old_is_ag(ai_dir, monkeypatch):
-    """ag active room: IPC boundary + HUB CONTEXT + 3 filtered handoff sections,
-    byte-identical to the old is_ag rendering."""
+def test_ag_active_context_byte_identical_to_query_first_golden(ai_dir, monkeypatch):
+    """A6 ag active room: IPC boundary + query-first + USER DIRECTIVES, with no
+    [HUB CONTEXT] and no [HANDOFF]. Byte-identical to the new query-first golden."""
     room_id = "room-active"
     state = {
         "room_id": room_id,
@@ -248,23 +283,22 @@ def test_ag_active_context_byte_identical_to_old_is_ag(ai_dir, monkeypatch):
     actual = hub._build_ask_query_with_context(
         ai_dir, "review this", to_peer="ag.deepthink"
     )
-    expected = _frozen_pre_change_context(
-        "review this", "ag.deepthink", room_id, state, _GOLDEN_HANDOFF
-    )
+    expected = _frozen_ag_query_first_context("review this")
     assert actual.encode("utf-8") == expected.encode("utf-8")
     # Spot-check the frozen shape so the golden itself cannot silently rot.
     assert actual.startswith("[IPC BOUNDARY]\n")
-    assert "[HUB CONTEXT]" in actual
-    assert "ship the refactor" in actual          # GOAL kept
-    assert "wire context policy" in actual         # PENDING_ISSUES kept
-    assert "adapter owns context policy" in actual  # KEY_DECISIONS kept
-    assert "batch 1 and 2 landed" not in actual     # RECENT_COMPLETED dropped
-    assert "stale IPC task" not in actual           # ACTIVE_THREADS dropped
+    assert "[USER QUERY]\nreview this" in actual
+    assert actual.index("[USER QUERY]") < actual.index("[USER DIRECTIVES]")
+    assert "[HUB CONTEXT]" not in actual
+    assert "[HANDOFF]" not in actual
+    assert "ship the refactor" not in actual        # GOAL not injected
+    assert "wire context policy" not in actual       # PENDING_ISSUES not injected
+    assert "stale IPC task" not in actual            # ACTIVE_THREADS not injected
 
 
-def test_ag_completed_context_byte_identical_to_old_is_ag(ai_dir, monkeypatch):
-    """ag completed room: IPC boundary only, no HUB CONTEXT / no handoff,
-    byte-identical to the old is_ag rendering."""
+def test_ag_completed_context_byte_identical_to_query_first_golden(ai_dir, monkeypatch):
+    """A6 ag completed room: identical query-first shape — room phase is
+    irrelevant because room context is dropped unconditionally."""
     room_id = "room-complete"
     state = {
         "room_id": room_id,
@@ -280,11 +314,10 @@ def test_ag_completed_context_byte_identical_to_old_is_ag(ai_dir, monkeypatch):
     actual = hub._build_ask_query_with_context(
         ai_dir, "fresh task", to_peer="ag"
     )
-    expected = _frozen_pre_change_context(
-        "fresh task", "ag", room_id, state, _GOLDEN_HANDOFF
-    )
+    expected = _frozen_ag_query_first_context("fresh task")
     assert actual.encode("utf-8") == expected.encode("utf-8")
     assert actual.startswith("[IPC BOUNDARY]\n")
+    assert "[USER QUERY]\nfresh task" in actual
     assert "[HUB CONTEXT]" not in actual
     assert "[HANDOFF]" not in actual
     assert "old completed mission" not in actual

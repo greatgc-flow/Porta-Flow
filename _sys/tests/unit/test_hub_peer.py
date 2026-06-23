@@ -200,6 +200,9 @@ class TestContextPolicy:
         assert policy.preamble_lines == ()
         assert policy.skip_room_context_when_complete is False
         assert policy.handoff_sections is None
+        # A6: new query-shaping fields default off → cc/cx rendering unchanged.
+        assert policy.query_first is False
+        assert policy.skip_room_context is False
 
     @pytest.mark.parametrize("cls", [ClaudeAdapter, CodexAdapter, GeminiAdapter])
     def test_cc_cx_gc_inherit_default_context_policy(self, cls):
@@ -315,6 +318,13 @@ class TestAgyAdapter:
         assert policy.handoff_sections == ("GOAL", "PENDING_ISSUES", "KEY_DECISIONS")
         assert policy.preamble_lines[0] == "[IPC BOUNDARY]"
         assert len(policy.preamble_lines) == 4
+
+    def test_ag_context_policy_is_query_first_and_minimal(self):
+        # A6: agy is context-fragile — task must lead and injected room/handoff
+        # context is dropped unconditionally.
+        policy = self.adapter.context_policy({})
+        assert policy.query_first is True
+        assert policy.skip_room_context is True
 
 
 class TestVirtualAdapter:

@@ -106,6 +106,9 @@ _sys/antigravity/config/*.exe
 _sys/antigravity/config/bin/*.exe
 # Re-include tracked files
 _sys/antigravity/config/bin/agentapi.bat
+# IPC stateless home (A6): seeded auth/settings + per-call-emptied durable state.
+# Entirely runtime-generated — never tracked.
+_sys/antigravity/ipc-config/
 
 # Codex runtime data in config/ (tracked: CODEX.md)
 _sys/codex/config/.codex/

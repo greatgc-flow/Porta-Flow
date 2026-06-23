@@ -36,12 +36,20 @@ class ContextPolicy:
     """Adapter-owned policy for shaping hub-injected context.
 
     Defaults reproduce the current non-ag behavior exactly: no preamble,
-    room context always included, handoff unfiltered.
+    room context always included, handoff unfiltered, query rendered last,
+    and room context never unconditionally skipped.
     """
 
     preamble_lines: tuple[str, ...] = ()
     skip_room_context_when_complete: bool = False
     handoff_sections: tuple[str, ...] | None = None
+    # A6: query-first / minimal-context shaping for context-fragile adapters.
+    # query_first renders [USER QUERY] immediately after the preamble (no
+    # trailing duplicate) so the task leads; skip_room_context always drops
+    # [HUB CONTEXT] and [HANDOFF] (distinct from skip_room_context_when_complete,
+    # which only fires for completed rooms). Both default False → cc/cx unchanged.
+    query_first: bool = False
+    skip_room_context: bool = False
 
 
 @dataclass(frozen=True)
@@ -607,6 +615,17 @@ class AgyAdapter(BaseAdapter):
 
     def build_cmd(self, node: dict[str, Any], query: str, session_id: str | None = None) -> tuple[list[str], bool]:
         invoke = node.get("invoke", "agy")
+        # Resolve a repo-relative `_sys\...` invoke to an absolute path so it
+        # targets the native agy.exe directly, NOT the agy.bat wrapper (which
+        # re-runs agy_entry.py -> context-fill against the shared config home and
+        # contaminates IPC replies). Mirrors ClaudeAdapter (cc -> claude.cmd).
+        invoke_path = Path(invoke)
+        if (
+            not invoke_path.is_absolute()
+            and invoke_path.parts
+            and invoke_path.parts[0].casefold() == "_sys"
+        ):
+            invoke = str((_SYS_DIR.parent / invoke_path).resolve())
         raw_args = node.get("invoke_args", ["--dangerously-skip-permissions", "-p", "{query}"])
         profile_args = node.get("profile_args", [])
         # A6: refuse continuation/conversation flags. Scan the unsubstituted
@@ -625,8 +644,13 @@ class AgyAdapter(BaseAdapter):
         return [invoke] + self._substitute_args(raw_args, query) + profile_args, False
 
     def context_policy(self, node: dict[str, Any]) -> ContextPolicy:
-        """ag IPC context delta: prepend the IPC BOUNDARY preamble, drop room
-        context for completed rooms, and filter the handoff to three sections."""
+        """ag IPC context delta (A6): the agy model is context-fragile — it
+        responds to the largest leading block, not a small trailing query. So
+        ag gets the task FIRST (query_first) and NO injected room/handoff
+        (skip_room_context); agy loads ambient repo context on its own. The IPC
+        BOUNDARY preamble still leads. skip_room_context_when_complete and
+        handoff_sections are retained for defence-in-depth but are subsumed by
+        skip_room_context (which drops [HUB CONTEXT]/[HANDOFF] unconditionally)."""
         return ContextPolicy(
             preamble_lines=(
                 "[IPC BOUNDARY]",
@@ -634,6 +658,8 @@ class AgyAdapter(BaseAdapter):
                 "Do not read mailbox, handoff, summary, or prior-session files unless the user query explicitly requests them.",
                 "Use only context included in this prompt.",
             ),
+            query_first=True,
+            skip_room_context=True,
             skip_room_context_when_complete=True,
             handoff_sections=(
                 "GOAL",

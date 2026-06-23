@@ -256,6 +256,41 @@ def _load_peers() -> dict:
         return {}
 
 
+def _prepare_ipc_stateless_home(peer_subdir: Path, cfg: dict) -> Path:
+    """Materialize a durable-state-CLEAN config home for stateless IPC asks.
+
+    Some CLIs (notably agy/antigravity) auto-continue durable session state
+    (e.g. conversations/*.db + implicit/*.pb) even without an explicit
+    --conversation flag, which contaminates IPC asks with prior interactive
+    context (A6 root cause). This builds a dedicated IPC home that mirrors the
+    source home's auth/model settings (a small explicit file allowlist) but
+    whose durable-state directories are recreated EMPTY on every IPC call, so
+    each ask starts stateless. The user's interactive source home is never
+    modified — this is a config-declared capability, not a peer-id branch.
+
+    `cfg` keys: subdir, seed_from, seed_files[], ephemeral_dirs[].
+    Returns the absolute path to the prepared home.
+    """
+    source = (peer_subdir / cfg.get("seed_from", "config")).resolve()
+    home = (peer_subdir / cfg.get("subdir", "ipc-config")).resolve()
+    home.mkdir(parents=True, exist_ok=True)
+    # Seed auth/model files only (explicit allowlist) — never bulk-copy state.
+    for name in cfg.get("seed_files", []):
+        src = source / name
+        if src.is_file():
+            try:
+                shutil.copy2(src, home / name)
+            except Exception:
+                pass
+    # Force durable-state dirs to exist and be EMPTY for every IPC invocation.
+    for rel in cfg.get("ephemeral_dirs", []):
+        target = home / rel
+        if target.exists():
+            shutil.rmtree(target, ignore_errors=True)
+        target.mkdir(parents=True, exist_ok=True)
+    return home
+
+
 def is_routable(node_id: str, *, orch: dict | None = None) -> bool:
     """Compatibility wrapper for the shared recursive node-tree gate."""
     if not _HUB_PEER_AVAILABLE:
@@ -1327,71 +1362,93 @@ def _build_ask_query_with_context(ai_root: Path | None, query: str, to_peer: str
     room_complete = phase in {"complete", "completed", "finalized", "closed", "done"}
 
     lines = list(policy.preamble_lines) if policy else []
+    query_first = bool(policy and policy.query_first)
+    skip_room = bool(policy and policy.skip_room_context)
     skip_completed = bool(policy and policy.skip_room_context_when_complete)
-    include_room_context = not (skip_completed and room_complete)
+    # skip_room_context drops room context unconditionally; the *_when_complete
+    # variant only fires for completed rooms. Either suppresses [HUB CONTEXT]/[HANDOFF].
+    include_room_context = not skip_room and not (skip_completed and room_complete)
 
-    # Ephemeral AG calls must not be re-oriented into a room that is already complete.
-    if include_room_context:
-        lines.extend([
-            "[HUB CONTEXT]",
-            f"Room ID: {room_id}",
-            f"Members: {', '.join(state.get('members', {}).keys()) or 'none'}",
-            f"Mission: {state.get('mission') or 'none'}",
-            f"Blocked: {state.get('blocked') or 'none'}",
-            f"Phase: {state.get('phase') or 'none'}",
-        ])
-    # ── User Directives 주입 (_sys/ai/user-directives.md) ────────
-    directives_path = Path(__file__).parent.parent / "ai" / "user-directives.md"
-    if directives_path.exists():
-        directives = directives_path.read_text(encoding="utf-8", errors="replace").strip()
-        if directives:
-            lines.extend(["", "[USER DIRECTIVES]", directives])
-    # ── Runtime Directives 주입 (_sys/ai/runtime-directives.jsonl) ──
-    _RD_MAX_COUNT = 10
-    _RD_MAX_CHARS = 2000
-    runtime_dir_path = _runtime_directives_path(ai_root)
-    active_runtime = _get_active_runtime_directives(runtime_dir_path)
-    if active_runtime:
-        # Filter by target_peers if set (None/empty = broadcast to all)
+    def _append_room_context(dst: list[str]) -> None:
+        # Ephemeral context-fragile calls are not re-oriented into a room.
+        if include_room_context:
+            dst.extend([
+                "[HUB CONTEXT]",
+                f"Room ID: {room_id}",
+                f"Members: {', '.join(state.get('members', {}).keys()) or 'none'}",
+                f"Mission: {state.get('mission') or 'none'}",
+                f"Blocked: {state.get('blocked') or 'none'}",
+                f"Phase: {state.get('phase') or 'none'}",
+            ])
+
+    def _append_directives_and_lessons(dst: list[str]) -> None:
+        # ── User Directives 주입 (_sys/ai/user-directives.md) ────────
+        directives_path = Path(__file__).parent.parent / "ai" / "user-directives.md"
+        if directives_path.exists():
+            directives = directives_path.read_text(encoding="utf-8", errors="replace").strip()
+            if directives:
+                dst.extend(["", "[USER DIRECTIVES]", directives])
+        # ── Runtime Directives 주입 (_sys/ai/runtime-directives.jsonl) ──
+        _RD_MAX_COUNT = 10
+        _RD_MAX_CHARS = 2000
+        runtime_dir_path = _runtime_directives_path(ai_root)
+        active_runtime = _get_active_runtime_directives(runtime_dir_path)
+        if active_runtime:
+            # Filter by target_peers if set (None/empty = broadcast to all)
+            if to_peer:
+                active_runtime = [r for r in active_runtime if not r.get("target_peers") or to_peer in r["target_peers"]]
+            # Sort newest-first; cap count and total chars to prevent prompt bloat
+            active_runtime = sorted(active_runtime, key=lambda r: r.get("effective", ""), reverse=True)[:_RD_MAX_COUNT]
+            rd_lines = []
+            rd_chars = 0
+            for r in active_runtime:
+                entry = f"- [{r['id']}] {r['rule']}"
+                if rd_chars + len(entry) > _RD_MAX_CHARS:
+                    rd_lines.append(f"- [...{len(active_runtime) - len(rd_lines)} more directives omitted — check directive-list]")
+                    break
+                rd_lines.append(entry)
+                rd_chars += len(entry)
+            dst.extend(["", "[RUNTIME DIRECTIVES]", "\n".join(rd_lines)])
+        # ── Peer Lessons 주입 (_sys/ai/knowledge/) ──────────────────
         if to_peer:
-            active_runtime = [r for r in active_runtime if not r.get("target_peers") or to_peer in r["target_peers"]]
-        # Sort newest-first; cap count and total chars to prevent prompt bloat
-        active_runtime = sorted(active_runtime, key=lambda r: r.get("effective", ""), reverse=True)[:_RD_MAX_COUNT]
-        rd_lines = []
-        rd_chars = 0
-        for r in active_runtime:
-            entry = f"- [{r['id']}] {r['rule']}"
-            if rd_chars + len(entry) > _RD_MAX_CHARS:
-                rd_lines.append(f"- [...{len(active_runtime) - len(rd_lines)} more directives omitted — check directive-list]")
-                break
-            rd_lines.append(entry)
-            rd_chars += len(entry)
-        lines.extend(["", "[RUNTIME DIRECTIVES]", "\n".join(rd_lines)])
-    # ── Peer Lessons 주입 (_sys/ai/knowledge/) ──────────────────
-    if to_peer:
-        all_lessons = _load_active_lessons(workspace_ai_root=ai_root)
-        peer_lessons = _filter_lessons_for_peer(all_lessons, to_peer, workspace_ai_root=ai_root)
-        lessons_block = _compile_lessons_block(peer_lessons, workspace_ai_root=ai_root)
-        if lessons_block:
-            lines.extend(["", lessons_block])
-    handoff_path = ai_root / "sessions" / room_id / "handoff.md"
-    if handoff_path.exists() and include_room_context:
-        handoff = handoff_path.read_text(encoding="utf-8", errors="replace").strip()
-        selected_sections = policy.handoff_sections if policy else None
-        if selected_sections is not None and handoff:
-            sections = _parse_handoff(handoff)
-            filtered_lines = []
-            for section in selected_sections:
-                items = sections.get(section, [])
-                if not items:
-                    continue
-                filtered_lines.append(f"## [{section}]")
-                filtered_lines.extend(f"- {item}" for item in items)
-                filtered_lines.append("")
-            handoff = "\n".join(filtered_lines).strip()
-        if handoff:
-            lines.extend(["", "[HANDOFF]", handoff])
-    lines.extend(["", "[USER QUERY]", query])
+            all_lessons = _load_active_lessons(workspace_ai_root=ai_root)
+            peer_lessons = _filter_lessons_for_peer(all_lessons, to_peer, workspace_ai_root=ai_root)
+            lessons_block = _compile_lessons_block(peer_lessons, workspace_ai_root=ai_root)
+            if lessons_block:
+                dst.extend(["", lessons_block])
+
+    def _append_handoff(dst: list[str]) -> None:
+        handoff_path = ai_root / "sessions" / room_id / "handoff.md"
+        if handoff_path.exists() and include_room_context:
+            handoff = handoff_path.read_text(encoding="utf-8", errors="replace").strip()
+            selected_sections = policy.handoff_sections if policy else None
+            if selected_sections is not None and handoff:
+                sections = _parse_handoff(handoff)
+                filtered_lines = []
+                for section in selected_sections:
+                    items = sections.get(section, [])
+                    if not items:
+                        continue
+                    filtered_lines.append(f"## [{section}]")
+                    filtered_lines.extend(f"- {item}" for item in items)
+                    filtered_lines.append("")
+                handoff = "\n".join(filtered_lines).strip()
+            if handoff:
+                dst.extend(["", "[HANDOFF]", handoff])
+
+    if query_first:
+        # Context-fragile adapters (ag): task leads, directives/lessons trail.
+        # No trailing duplicate query; room context/handoff only if not skipped.
+        lines.extend(["", "[USER QUERY]", query])
+        _append_directives_and_lessons(lines)
+        _append_room_context(lines)
+        _append_handoff(lines)
+    else:
+        # Default order (cc/cx): byte-identical to the pre-change rendering.
+        _append_room_context(lines)
+        _append_directives_and_lessons(lines)
+        _append_handoff(lines)
+        lines.extend(["", "[USER QUERY]", query])
     return "\n".join(lines)
 
 
@@ -2260,6 +2317,18 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                 process_env[k] = rel.lower()
             else:
                 process_env[k] = str((peer_subdir / rel).resolve())
+        # A6: config-declared stateless IPC home. For peers that auto-continue
+        # durable session state, repoint the config-home env vars at a home with
+        # emptied durable-state dirs so each IPC ask is stateless. Data-driven
+        # (no peer-id branch); peers without this key are untouched.
+        ipc_home_cfg = target_peer_cfg.get("ipc_stateless_home")
+        if ipc_home_cfg:
+            try:
+                ipc_home = _prepare_ipc_stateless_home(peer_subdir, ipc_home_cfg)
+                for k in ipc_home_cfg.get("env_keys", []):
+                    process_env[k] = str(ipc_home)
+            except Exception as exc:
+                print(f"[HUB:WARN] IPC stateless home prep failed: {exc}", file=sys.stderr)
 
     # ── PTY path ───────────────────────────────────────────────
     if requires_pty:
