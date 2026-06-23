@@ -1,6 +1,6 @@
 # Antigravity Peer Configuration
 
-> Protocol 4.2 | Node ID: `ag` | Updated: 2026-06-20
+> Protocol 4.2 | Node ID: `ag` | Updated: 2026-06-24
 
 `ag` is the active Antigravity CLI peer. Runtime topology, lifecycle, profiles,
 models, permissions, and roles are defined in `_sys/ai/orchestration.json`.
@@ -10,11 +10,14 @@ models, permissions, and roles are defined in `_sys/ai/orchestration.json`.
 - Shared rules: `_sys/ai/common/peer-rules.md`
 - Runtime policy: `_sys/ai/protocol.json`
 - Health state: `_sys/antigravity/health.json`
-- Output artifact: `.ai/out/ag.last.md`
 - IPC entry point: `_sys/cli/msg.bat`
 
-`agy_entry.py` performs session initialization and health reporting before
-launching the CLI.
+## Execution & Stateless IPC
+
+- **Launch:** Hub `ask --to ag` invokes the native `_sys\tools\agy\agy.exe` DIRECTLY via `AgyAdapter`. This bypasses `agy.bat` to avoid context-fill contamination. (`agy_entry.py` / `agy.bat` are used for INTERACTIVE launch only).
+- **Arguments:** `ag` is PTY-only, inline `-p {query}` (agy ignores stdin); `--print-timeout 60m`.
+- **Session Mode:** `session_mode: none` — no hub-managed session reuse; hub never sends `-c`/`--continue`/`--conversation`.
+- **Environment:** IPC `ag` calls run against a conversation/implicit-CLEAN stateless home (`ipc-config`, seeded from `config/`) so each ask is stateless. The interactive `config/` home (durable conversations/implicit) remains untouched.
 
 ## Profile Defaults
 

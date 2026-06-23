@@ -112,7 +112,8 @@
             "high"
           ]
         }
-      }
+      },
+      "pattern": "std_cli_stdio"
     },
     {
       "node_id": "ca",
@@ -228,7 +229,8 @@
             "Gemini 3.1 Pro (High)"
           ]
         }
-      }
+      },
+      "pattern": "std_cli_pty"
     },
     {
       "node_id": "cx",
@@ -301,7 +303,8 @@
             "model_reasoning_effort=\"xhigh\""
           ]
         }
-      }
+      },
+      "pattern": "std_cli_jsonl"
     }
   ],
   "consensus": {

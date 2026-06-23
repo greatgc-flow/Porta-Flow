@@ -6029,5 +6029,35 @@ def main() -> None:
     elif act == "update-signatures":
         action_update_signatures()
 
+def global_exception_trap(exc_type, exc_value, exc_traceback):
+    import traceback
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+    print("\n[SYSTEM_FATAL_ERROR] A critical unhandled exception occurred in the Hub.", file=sys.stderr)
+    print("==========================================================================", file=sys.stderr)
+    print("Traceback:", file=sys.stderr)
+    traceback.print_exception(exc_type, exc_value, exc_traceback, file=sys.stderr)
+    print("\nEnvironment State:", file=sys.stderr)
+    for key in ["SYS_DIR", "LOCALAPPDATA", "TEMP", "PYTHONUTF8"]:
+        print(f"  {key} = {os.environ.get(key, 'Not Set')}", file=sys.stderr)
+    print("\n--- 5-Whys Root Cause Analysis Template ---", file=sys.stderr)
+    print("1. Why did the system fail? (Exception type/message)", file=sys.stderr)
+    print("2. Why did that component receive invalid state? (Tracing backwards)", file=sys.stderr)
+    print("3. Why did the upstream component send invalid state? (Logic flaw)", file=sys.stderr)
+    print("4. Why wasn't this caught by validation/tests? (Coverage gap)", file=sys.stderr)
+    print("5. Why does this architectural pattern allow this failure? (Design flaw)", file=sys.stderr)
+    print("==========================================================================\n", file=sys.stderr)
+    sys.exit(1)
+
+sys.excepthook = global_exception_trap
+
 if __name__ == "__main__":
+    try:
+        from env_loader import load_json_env
+        _env_path = Path(__file__).parent.parent / "ai" / "config" / "environment.json"
+        if _env_path.exists():
+            load_json_env(str(_env_path))
+    except Exception:
+        pass
     main()

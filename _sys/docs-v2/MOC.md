@@ -55,7 +55,6 @@ Peer: search this table first. Load only the file(s) relevant to your current ta
 | Peer | File | Load When |
 |------|------|-----------|
 | cc (Claude Code) | `specific/cc.md` | Working as or routing to cc |
-| gc (Gemini CLI) | `specific/gc.md` | Working as or routing to gc |
 | cx (Codex) | `specific/cx.md` | Working as or routing to cx |
 | ag (AntiGravity) | `specific/ag.md` | active peer and Gemini CLI successor |
 
@@ -147,7 +146,6 @@ docs-v2/
 │
 ├── specific/             ← peer delta only (what differs from general/)
 │   ├── cc.md
-│   ├── gc.md
 │   ├── cx.md
 │   └── ag.md
 │

@@ -63,3 +63,33 @@ class EnvironmentLoader:
     def apply_to_os(self):
         for k, v in self.env_vars.items():
             os.environ[k] = str(v)
+
+def load_json_env(config_path: str):
+    """Loads environment configuration directly from JSON and updates os.environ"""
+    with open(config_path, 'r', encoding='utf-8') as f:
+        config = json.load(f)
+        
+    paths = config.get("paths", {})
+    env_vars = config.get("env_vars", {})
+    
+    # Resolve {base} recursively
+    resolved_paths = {}
+    
+    def resolve_val(val: str):
+        for _ in range(5):
+            matches = re.findall(r"\{([^}]+)\}", val)
+            if not matches:
+                break
+            for match in matches:
+                if match in resolved_paths:
+                    val = val.replace(f"{{{match}}}", resolved_paths[match])
+        return val
+
+    for k, v in paths.items():
+        resolved_paths[k] = resolve_val(v)
+        
+    for k, v in env_vars.items():
+        os.environ[k] = str(resolve_val(v))
+        
+    if "sys" in resolved_paths:
+        os.environ["SYS_DIR"] = resolved_paths["sys"]

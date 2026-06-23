@@ -56,16 +56,20 @@
         "ag": {
             "glue": "_sys/antigravity/config/AGY.md",
             "health": "_sys/antigravity/health.json",
-            "agentapi_bat": "_sys/antigravity/config/bin/agentapi.bat"
+            "agentapi_bat": "_sys/antigravity/config/bin/agentapi.bat",
+            "statusline": "_sys/antigravity/config/statusline-command.sh"
         },
         "cx": {
             "glue": "_sys/codex/config/CODEX.md",
-            "health": "_sys/codex/health.json"
+            "health": "_sys/codex/health.json",
+            "statusline_config": "_sys/codex/config/config.toml"
         },
         "common": {
             "skills_dir": "_sys/ai/common/skills",
             "agents_dir": "_sys/ai/common/agents",
-            "mcp_catalog": "_sys/ai/common/mcp/catalog.json"
+            "mcp_catalog": "_sys/ai/common/mcp/catalog.json",
+            "statusline_unified": "_sys/ai/common/statusline/statusline-unified.sh",
+            "statusline_schema": "_sys/ai/common/statusline/statusline-schema.json"
         }
     },
 
