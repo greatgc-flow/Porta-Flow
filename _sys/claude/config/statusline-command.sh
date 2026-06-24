@@ -13,7 +13,7 @@ UNIFIED="$SCRIPT_DIR/../../ai/common/statusline/statusline-unified.sh"
 # Claude Code pipes its state JSON on stdin — pass it straight through
 # to the unified formatter with peer_id = "cc"
 if [ -f "$UNIFIED" ]; then
-  exec bash "$UNIFIED" "cc"
+  tee "$SCRIPT_DIR/status_input.log" | bash "$UNIFIED" "cc"
 else
   # Fallback: minimal inline output if unified script is missing
   input=$(cat)

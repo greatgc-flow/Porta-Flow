@@ -12,6 +12,9 @@ def main():
             pass
 
     # Call the new unified bash script for Antigravity
+    with open('D:/PortableDev (v2.0)/_sys/cli/ag_stdin.log', 'w') as f:
+        f.write(stdin_data)
+
     # The bash script is at P:\_sys\antigravity\config\statusline-command.sh
     # We pass the stdin_data to it
     try:

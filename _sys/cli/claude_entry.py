@@ -28,7 +28,23 @@ def _env() -> dict:
     return e
 
 
+def _set_title(peer: str) -> None:
+    try:
+        import json
+        import ctypes
+        state_file = _PORTABLE_ROOT / ".ai" / "state.json"
+        room_id = ""
+        if state_file.exists():
+            data = json.loads(state_file.read_text(encoding="utf-8"))
+            room_id = data.get("room_id", "")
+        title = f"[{room_id}] {peer}" if room_id else peer
+        ctypes.windll.kernel32.SetConsoleTitleW(title)
+    except Exception:
+        pass
+
+
 def main() -> None:
+    _set_title("Claude (cc)")
     env = _env()
     subprocess.run([_PYTHON, str(_HUB), "init-session", "--agent", "cc"],
                    capture_output=True, env=env)

@@ -33,6 +33,21 @@ def _env() -> dict:
     return e
 
 
+def _set_title(peer: str) -> None:
+    try:
+        import json
+        import ctypes
+        state_file = _PORTABLE_ROOT / ".ai" / "state.json"
+        room_id = ""
+        if state_file.exists():
+            data = json.loads(state_file.read_text(encoding="utf-8"))
+            room_id = data.get("room_id", "")
+        title = f"[{room_id}] {peer}" if room_id else peer
+        ctypes.windll.kernel32.SetConsoleTitleW(title)
+    except Exception:
+        pass
+
+
 def _health(env: dict, status: str, failures: int = 0, duration_ms: int | None = None) -> None:
     cmd = [_PYTHON, str(_HUB), "health-update", "--peer", "cx",
            "--status", status, "--failures", str(failures)]
@@ -52,6 +67,7 @@ def _health(env: dict, status: str, failures: int = 0, duration_ms: int | None =
 
 
 def main() -> None:
+    _set_title("Codex (cx)")
     env = _env()
     subprocess.run([_PYTHON, str(_HUB), "init-session", "--agent", "cx"],
                    capture_output=True, env=env)

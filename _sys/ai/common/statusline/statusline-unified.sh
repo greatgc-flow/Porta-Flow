@@ -21,6 +21,17 @@ input=$(cat)
 
 # ── 1. Model Name ─────────────────────────────────────────
 model=$(echo "$input" | jq -r 'if .model_name then .model_name elif (.model | type) == "object" then .model.display_name elif (.model | type) == "string" then .model else "Unknown" end')
+effort=$(echo "$input" | jq -r '
+  if (.model_reasoning_effort | type) == "object" then .model_reasoning_effort.level // .model_reasoning_effort
+  elif (.effort | type) == "object" then .effort.level // .effort
+  else (.model_reasoning_effort // .effort) end | select(.!=null)
+' 2>/dev/null | tr -d '\n\r' | sed 's/[{}]//g' | sed 's/"//g')
+
+if [ -n "$effort" ] && [ "$effort" != "null" ]; then
+  if ! echo "$model" | grep -qi "$effort"; then
+    model="${model} (${effort})"
+  fi
+fi
 
 # ── 2. Context Usage ──────────────────────────────────────
 used_tokens=$(echo "$input" | jq -r '.context_used_tokens // .context_window.total_input_tokens // 0')
@@ -46,22 +57,36 @@ location="$short_cwd"
 [ -n "$git_branch" ] && location="$short_cwd ($git_branch)"
 
 # ── 4. Rate Limits ────────────────────────────────────────
-five_pct=$(echo "$input" | jq -r '.rate_5h_pct // .rate_limits.five_hour.used_percentage // empty')
-week_pct=$(echo "$input" | jq -r '.rate_7d_pct // .rate_limits.seven_day.used_percentage // empty')
-five_reset=$(echo "$input" | jq -r '.rate_5h_reset // .rate_limits.five_hour.reset_at // empty')
+five_pct=$(echo "$input" | jq -r '.rate_5h_pct // .rate_limits.five_hour.used_percentage // (if .quota."gemini-5h".remaining_fraction != null then (1 - .quota."gemini-5h".remaining_fraction) * 100 else empty end) // empty')
+week_pct=$(echo "$input" | jq -r '.rate_7d_pct // .rate_limits.seven_day.used_percentage // (if .quota."gemini-weekly".remaining_fraction != null then (1 - .quota."gemini-weekly".remaining_fraction) * 100 else empty end) // empty')
+five_reset=$(echo "$input" | jq -r '.rate_5h_reset // .rate_limits.five_hour.reset_at // .rate_limits.five_hour.resets_at // .quota."gemini-5h".reset_time // empty')
+week_reset=$(echo "$input" | jq -r '.rate_7d_reset // .rate_limits.seven_day.reset_at // .rate_limits.seven_day.resets_at // .quota."gemini-weekly".reset_time // empty')
 
 rate_parts=""
 if [ -n "$five_pct" ]; then
   rate_parts=$(printf "5h:%.0f%%" "$five_pct")
   if [ -n "$five_reset" ]; then
-    reset_hm=$(echo "$five_reset" | grep -oE '[0-9]{2}:[0-9]{2}' | head -1)
+    if [[ "$five_reset" =~ ^[0-9]+$ ]]; then
+      reset_hm=$(date -d "@$five_reset" +"%H:%M" 2>/dev/null)
+    else
+      reset_hm=$(date -d "$five_reset" +"%H:%M" 2>/dev/null || echo "$five_reset" | grep -oE '[0-9]{2}:[0-9]{2}' | head -1)
+    fi
     [ -n "$reset_hm" ] && rate_parts="${rate_parts}[↻${reset_hm}]"
   fi
 else
   rate_parts="5h:N/A"
 fi
 if [ -n "$week_pct" ]; then
-  rate_parts="${rate_parts} $(printf "7d:%.0f%%" "$week_pct")"
+  week_str=$(printf "7d:%.0f%%" "$week_pct")
+  if [ -n "$week_reset" ]; then
+    if [[ "$week_reset" =~ ^[0-9]+$ ]]; then
+      reset_md=$(date -d "@$week_reset" +"%m/%d" 2>/dev/null)
+    else
+      reset_md=$(date -d "$week_reset" +"%m/%d" 2>/dev/null || echo "$week_reset" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | awk -F'-' '{print $2"/"$3}' | head -1)
+    fi
+    [ -n "$reset_md" ] && week_str="${week_str}[↻${reset_md}]"
+  fi
+  rate_parts="${rate_parts} ${week_str}"
 else
   rate_parts="${rate_parts} 7d:N/A"
 fi
@@ -71,7 +96,13 @@ hub_str=""
 hub_state_file="$SYS_DIR/../.ai/state.json"
 if [ -f "$hub_state_file" ]; then
   hub_phase=$(jq -r '.phase // "idle"' "$hub_state_file" 2>/dev/null || echo "idle")
-  hub_str=" | hub:${hub_phase}"
+  hub_room=$(jq -r '.room_id // empty' "$hub_state_file" 2>/dev/null)
+  
+  if [ -n "$hub_room" ]; then
+    hub_str=" | hub:${hub_phase} [${hub_room}]"
+  else
+    hub_str=" | hub:${hub_phase}"
+  fi
 fi
 
 # ── Output ────────────────────────────────────────────────
