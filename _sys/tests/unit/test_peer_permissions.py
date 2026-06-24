@@ -78,3 +78,25 @@ def test_hub_timeout_zero_is_unlimited(monkeypatch):
 def test_hub_lease_timeout_is_1800():
     _, lease_timeout_sec, _ = hub._lease_cfg()  # (heartbeat, lease, zombie)
     assert lease_timeout_sec >= 1800
+
+
+def test_cx_parity_accepts_config_sandbox_form():
+    """cx workspace-write sandbox parity passes whether enforced via -s or -c sandbox=."""
+    # Real config: cx uses `-c sandbox="workspace-write"` -> must produce NO cx parity error.
+    errors = hub._check_flag_parity()
+    cx_errors = [e for e in errors if e.startswith("PARITY cx")]
+    gc_errors = [e for e in errors if e.startswith("PARITY gc")]
+    assert cx_errors == [], f"unexpected cx parity errors: {cx_errors}"
+    assert gc_errors == [], f"gc was retired; must not be a parity target: {gc_errors}"
+
+
+def test_cx_parity_still_fails_when_sandbox_absent():
+    """Security not weakened: a cx command with NO workspace-write sandbox is flagged."""
+    orch = hub.hub_peer.normalize_orchestration(hub._load_orchestration())
+    for node in orch.get("hub_nodes", []):
+        if node.get("node_id") == "cx":
+            node["invoke_args"] = ["exec", "{query}", "--json"]  # strip sandbox
+    with patch.object(hub.hub_peer, "normalize_orchestration", return_value=orch):
+        errors = hub._check_flag_parity()
+    assert any("PARITY cx" in e and "workspace-write" in e for e in errors), \
+        f"sandbox-absent cx must be flagged, got: {errors}"

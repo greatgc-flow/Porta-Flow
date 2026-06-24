@@ -5630,11 +5630,12 @@ def _check_flag_parity() -> list[str]:
     # Flags that MUST appear in both hub and console paths
     # Note: --json / --ignore-rules are hub-internal cx execution flags, not
     # direct-console permission controls, so parity intentionally excludes them.
+    # cx sandbox is checked semantically below (it is enforced via either
+    # `-s workspace-write` or the codex config override `-c sandbox="workspace-write"`).
+    # gc was retired from orchestration.json, so it is no longer a parity target.
     REQUIRED: dict[str, set[str]] = {
         "cc": {"--dangerously-skip-permissions"},
         "ag": {"--dangerously-skip-permissions"},
-        "cx": {"-s", "workspace-write"},
-        "gc": {"--approval-mode", "auto_edit", "--skip-trust"},
     }
     # Flags that must NEVER appear in any managed peer invocation
     FORBIDDEN = {
@@ -5678,6 +5679,27 @@ def _check_flag_parity() -> list[str]:
             for flag in FORBIDDEN:
                 if any(flag in f for f in flag_set):
                     errors.append(f"PARITY {peer_id}: forbidden flag '{flag}' found in {path_name} path")
+
+    # cx workspace-write sandbox parity — semantic check (accepts `-s workspace-write`
+    # OR `-c sandbox="workspace-write"`). Security intent preserved: fails if NO
+    # workspace-write sandbox is present in either path.
+    cx_node = nodes.get("cx")
+    if cx_node:
+        cx_adapter = hub_peer.get_adapter(cx_node)
+        if cx_node.get("session_mode") == "reuse":
+            cx_hub_args = cx_adapter.build_session_cmd(cx_node, "parity-check", None).cmd
+        else:
+            cx_hub_args, _ = cx_adapter.build_cmd(cx_node, "parity-check")
+        cx_paths = [
+            ("hub path (live adapter command)", " ".join(cx_hub_args)),
+            ("console path (peer_console.py)", " ".join(peer_default_args("cx", []))),
+        ]
+        for label, joined in cx_paths:
+            if "workspace-write" not in joined:
+                errors.append(f"PARITY cx: workspace-write sandbox missing from {label}")
+            for bad in FORBIDDEN:
+                if bad in joined:
+                    errors.append(f"PARITY cx: forbidden flag '{bad}' found in {label}")
 
     return errors
 
