@@ -83,5 +83,4 @@ class TestDocConsistency:
         """PRO-19 invariant note must not claim enforcement that hub.py does not implement."""
         text = (doc_root / "_sys" / "docs-v2" / "10-invariants.md").read_text(encoding="utf-8")
         section = text.split("### Transport-Role Enforcement (PRO-19)", 1)[1]
-        assert "target floors — NOT YET ENFORCED" in section
-        assert "Enforced programmatically in `hub.py`" not in section
+        assert "ENFORCED for mutating_hub_actions; read-only asks/consultation exempt regardless of tier" in section

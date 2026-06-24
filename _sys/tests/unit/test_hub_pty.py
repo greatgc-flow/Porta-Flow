@@ -130,7 +130,7 @@ def test_blocking_read_honors_execution_deadline(fake_winpty):
 
 
 def test_lease_renewal_happens_while_read_blocked(fake_winpty, monkeypatch):
-    monkeypatch.setattr(hub, "_lease_cfg", lambda: (0.1, 10, 10))
+    monkeypatch.setattr(hub, "_lease_cfg", lambda node_id=None: (0.1, 10, 10))
     renews = []
     monkeypatch.setattr(hub, "_lease_renew", lambda *a: renews.append(a))
     monkeypatch.setattr(hub, "_lease_open", lambda *a, **k: None)
@@ -142,7 +142,7 @@ def test_lease_renewal_happens_while_read_blocked(fake_winpty, monkeypatch):
 def test_silent_zombie_timeout(fake_winpty, monkeypatch):
     """Alive but silent child is killed by the zombie guard."""
     # heartbeat, lease_timeout, zombie  → tiny zombie so the test is fast.
-    monkeypatch.setattr(hub, "_lease_cfg", lambda: (30, 300, 1))
+    monkeypatch.setattr(hub, "_lease_cfg", lambda node_id=None: (30, 300, 1))
     fake_winpty(block=True)
     r = hub._ask_with_pty(["agy"], "ag", 60, {}, quiet=True, ai_root=None)
     assert r.timed_out is True

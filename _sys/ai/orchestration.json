@@ -192,7 +192,7 @@
       "requires_pty": true,
       "memory": "session",
       "session_mode": "reuse",
-      "timeout": 300,
+      "timeout": 0,
       "default_profile": "standard",
       "capability_class": "trusted_ipc_mutation",
       "profiles": {

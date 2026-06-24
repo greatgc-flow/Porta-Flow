@@ -935,7 +935,7 @@ class TestOperationalGuard:
     def test_collab_rate_guard_blocks_mutation_without_finalized_consensus(self, ai_dir):
         with pytest.raises(SystemExit) as exc:
             # register-node is a mutating action and is NOT in the exempt list in protocol.json
-            hub._guard_action(ai_dir, "register-node")
+            hub._guard_action(ai_dir, "register-node", origin="worker")
         assert exc.value.code == 3
 
     def test_collab_rate_guard_allows_after_finalized_consensus(self, ai_dir):
@@ -944,7 +944,7 @@ class TestOperationalGuard:
             "status": "finalized",
             "subject": "approve mutation",
         }), encoding="utf-8")
-        hub._guard_action(ai_dir, "update-status")
+        hub._guard_action(ai_dir, "update-status", origin="worker")
 
 
 class TestEnhancedCollaboration:

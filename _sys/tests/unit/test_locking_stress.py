@@ -9,6 +9,7 @@ per pool worker × subprocess per task = OOM risk at ~150MB per Python process.
 import subprocess
 import time
 import json
+import os
 import pytest
 from pathlib import Path
 
@@ -36,6 +37,7 @@ class TestLockingStress:
 
     def run_hub_cmd(self, env, args):
         """Run a single hub command synchronously with timeout."""
+        sub_env = {**os.environ, "HUB_ORIGIN": "worker"}
         return subprocess.run(
             [str(env["venv_py"]), str(env["hub_py"])] + args,
             cwd=env["root"],
@@ -43,18 +45,21 @@ class TestLockingStress:
             text=True,
             encoding="utf-8",
             timeout=_SUBPROCESS_TIMEOUT,
+            env=sub_env,
         )
 
     def _run_hub_parallel(self, env, arg_list):
         """Spawn hub.py subprocesses in parallel via Popen, collect results.
         Avoids ProcessPoolExecutor to prevent double-layer process spawning.
         """
+        sub_env = {**os.environ, "HUB_ORIGIN": "worker"}
         procs = [
             subprocess.Popen(
                 [str(env["venv_py"]), str(env["hub_py"])] + args,
                 cwd=env["root"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                env=sub_env,
             )
             for args in arg_list
         ]

@@ -9,7 +9,6 @@
     "cc",
     "ca",
     "ag",
-    "ag",
     "cx"
   ],
   "leader_election": {
@@ -476,7 +475,12 @@
       "enforceable_by_hub": false,
       "policy": "non_compliant_for_governed_artifacts_without_artifact_workflow"
     },
-    "zombie_timeout_sec": 600
+    "zombie_timeout_sec": 600,
+    "zombie_profile_map": {
+      "standard": 600,
+      "effort": 600,
+      "deepthink": 7200
+    }
   },
   "feedback_loop": {
     "enabled": true,

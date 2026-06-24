@@ -32,6 +32,12 @@ import core.hub as hub
 class TestLeafCfgContract:
     """_lease_cfg() → (heartbeat_sec, lease_timeout_sec, zombie_timeout_sec)"""
 
+    def test_parameter_contract(self):
+        sig = inspect.signature(hub._lease_cfg)
+        params = list(sig.parameters.keys())
+        assert "node_id" in params, "_lease_cfg() missing optional param: node_id"
+        assert sig.parameters["node_id"].default is None
+
     def test_returns_3_tuple(self):
         result = hub._lease_cfg()
         assert len(result) == 3, "_lease_cfg() contract: must return exactly 3 values"
@@ -462,13 +468,15 @@ class TestPhase1ObserveOnly:
         assert process_env["HUB_PEER_TIER"] == "effort"
 
     def test_observe_only_logs_would_block_but_executes(self, capsys, monkeypatch, tmp_path):
-        # A mutating action from terminal should log [HUB:WOULD-BLOCK] but not sys.exit.
+        # PRO-19 is now ENFORCED. Terminal mutating action must sys.exit.
         ai_root = tmp_path / ".ai"
         ai_root.mkdir()
-        hub._guard_action(ai_root, "init-session", force_tier0=False, origin="terminal")
+        import pytest
+        with pytest.raises(SystemExit) as exc:
+            hub._guard_action(ai_root, "update-status", force_tier0=False, origin="terminal")
+        assert exc.value.code == 3
         captured = capsys.readouterr()
-        assert "[HUB:WOULD-BLOCK]" in captured.err, "must log WOULD-BLOCK"
-        # If it sys.exited, test would fail. So nothing blocked.
+        assert "PRO-19:" in captured.err, "must log PRO-19 block"
 
     def test_force_tier0_marks_exempt(self, capsys, tmp_path):
         ai_root = tmp_path / ".ai"

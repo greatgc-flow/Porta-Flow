@@ -36,16 +36,18 @@ class TestIntegrationP2P:
 
     def _run(self, vpy, hub, args, cwd, **kwargs):
         """subprocess.run wrapper with guaranteed timeout."""
+        sub_env = {**os.environ, "HUB_ORIGIN": "worker"}
         return subprocess.run(
             [str(vpy), str(hub)] + args, cwd=cwd,
-            check=True, timeout=_HUB_TIMEOUT, **kwargs
+            check=True, timeout=_HUB_TIMEOUT, env=sub_env, **kwargs
         )
 
     def _out(self, vpy, hub, args, cwd):
         """subprocess.check_output wrapper with guaranteed timeout."""
+        sub_env = {**os.environ, "HUB_ORIGIN": "worker"}
         return subprocess.check_output(
             [str(vpy), str(hub)] + args,
-            cwd=cwd, text=True, encoding="utf-8", timeout=_HUB_TIMEOUT
+            cwd=cwd, text=True, encoding="utf-8", timeout=_HUB_TIMEOUT, env=sub_env
         )
 
     def test_scenario_nway_lifecycle(self, test_env):

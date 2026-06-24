@@ -3120,8 +3120,7 @@ def action_ask_coordinator(ai_root: Path, query: str, query_file: str | None, ti
 def action_consensus_propose(ai_root: Path, subject: str, voters: list[str], proposed_by: str) -> None:
     snapshot_voters = []
     for v in voters:
-        st, _ = _peer_effective_health(v, ai_root=ai_root)
-        if st not in ("RED", "STALE"):
+        if _healthy_peer(v, ai_root=ai_root):
             snapshot_voters.append(v)
             
     round_id = _short_id("r-")
@@ -3171,24 +3170,9 @@ def action_consensus_vote(ai_root: Path, round_id: str, voter: str, vote_val: st
             
             proposer = data.get("proposed_by", "")
             non_proposer_agrees = sum(1 for v_name, v_dict in votes.items() if v_dict is not None and v_dict["vote"] == "agree" and v_name != proposer)
-            
-            # Supermajority check: all active (non-quarantined) voters agree
-            active_voters = [v for v in data["voters"] if v not in quarantined_voters]
-            active_all_agree = len(active_voters) >= 2 and all(
-                votes.get(v) is not None and votes[v]["vote"] == "agree" for v in active_voters
-            )
-            active_non_proposer_agrees = sum(1 for v in active_voters if votes.get(v) is not None and votes[v]["vote"] == "agree" and v != proposer)
-            
             if total < 2:
                 data["status"] = "escalated"
                 data["outcome"] = "human_gate"
-            elif mid_round_closed and active_all_agree and active_non_proposer_agrees > 0:
-                # Supermajority: all healthy voters agree, quarantined voter(s) auto-abstained
-                for qv in quarantined_voters:
-                    votes[qv] = {"vote": "abstain", "reason": f"auto-abstain (quarantined at vote time)", "ts": _now()}
-                data["votes"] = votes
-                data["status"] = "finalized"
-                data["outcome"] = "supermajority"
             elif mid_round_closed:
                 data["status"] = "escalated"
                 data["outcome"] = "human_gate"
@@ -3256,7 +3240,7 @@ def action_consensus_check(ai_root: Path, round_id: str | None) -> None:
 
 
 def action_consensus_sweep(ai_root: Path, timeout_minutes: int = 30) -> None:
-    """Auto-escalate stalled voting rounds; auto-finalize supermajority when quarantined voters block."""
+    """Auto-escalate stalled voting rounds."""
     consensus_dir = ai_root / "consensus"
     if not consensus_dir.exists(): return
     now = datetime.now()
@@ -3272,54 +3256,6 @@ def action_consensus_sweep(ai_root: Path, timeout_minutes: int = 30) -> None:
             age_minutes = (now - proposed_at).total_seconds() / 60
         except Exception:
             age_minutes = 0
-        
-        # Check for quarantined voters who haven't voted
-        votes = r.get("votes", {})
-        quarantined_pending = []
-        for v in r.get("voters", []):
-            if votes.get(v) is None:
-                st, _ = _peer_effective_health(v, ai_root=ai_root)
-                if st in ("RED", "STALE"):
-                    quarantined_pending.append(v)
-        
-        # Auto-abstain quarantined voters after offline_auto_abstain_minutes
-        if quarantined_pending and age_minutes >= auto_abstain_min:
-            with _get_lock(ai_root, f"consensus_{r['round_id']}"):
-                r = _read_json(f)
-                if r.get("status") != "voting": continue
-                votes = r.get("votes", {})
-                for qv in quarantined_pending:
-                    if votes.get(qv) is None:
-                        votes[qv] = {"vote": "abstain", "reason": f"auto-abstain (offline >{auto_abstain_min}m, quarantined)", "ts": _now()}
-                r["votes"] = votes
-                
-                # Re-evaluate: can we finalize now?
-                proposer = r.get("proposed_by", "")
-                active_voters = [v for v in r["voters"] if v not in quarantined_pending]
-                active_all_agree = len(active_voters) >= 2 and all(
-                    votes.get(v) is not None and votes[v]["vote"] == "agree" for v in active_voters
-                )
-                active_non_proposer_agrees = sum(1 for v in active_voters if votes.get(v) is not None and votes[v]["vote"] == "agree" and v != proposer)
-                has_disagree = any(v is not None and v.get("vote") == "disagree" for v in votes.values())
-                
-                if has_disagree:
-                    r["status"] = "escalated"
-                    r["outcome"] = "human_gate"
-                elif active_all_agree and active_non_proposer_agrees > 0:
-                    r["status"] = "finalized"
-                    r["outcome"] = "supermajority"
-                else:
-                    r["status"] = "escalated"
-                    r["outcome"] = "human_gate"
-                r["outcome_at"] = _now()
-                _write_json(f, r)
-            _log_p2p("DECISION", f"ID={r['round_id']} Status={r['status'].upper()} Outcome={r['outcome']} (auto-abstain sweep, age={age_minutes:.0f}m)", from_node="SYSTEM")
-            print(f"[HUB] SWEEP {r['round_id']} {r['status'].upper()} | {r['outcome']} | quarantined={','.join(quarantined_pending)} | age={age_minutes:.0f}m")
-            _append_consensus_history(ai_root, r["round_id"], r["subject"], f"{r['status'].upper()}({r['outcome']})")
-            if r["status"] == "finalized":
-                _emit_decision_capsule(ai_root, r)
-            swept += 1
-            continue
         
         # Original timeout-based escalation
         if age_minutes >= timeout_minutes:
@@ -3988,10 +3924,7 @@ def _guard_action(ai_root: Path, action: str, force_tier0: bool = False, origin:
             _log_p2p("BLOCK", f"PRO-19: terminal-origin mutating action '{action}' rejected. Use --force-tier0 for Tier-0 human override.", from_node="GUARD")
             _block(f"PRO-19: terminal/router cannot execute '{action}'. This is a governance-mutating action. "
                    f"[ESCALATE] Use --force-tier0 if you are exercising Tier-0 human authority (INV-03).")
-        if action == "ask" and target_peer and ("effort" in target_peer.lower() or "deepthink" in target_peer.lower() or "deep" in target_peer.lower()):
-            _log_p2p("BLOCK", f"PRO-19: terminal-origin ask to >=effort target '{target_peer}' rejected.", from_node="GUARD")
-            _block(f"PRO-19: terminal/router cannot directly invoke '{target_peer}'. "
-                   f"[ESCALATE] Use --force-tier0 for Tier-0 human override.")
+
         tier_floor = cfg.get("decision_tier_floor", {})
         if tier_floor.get("enabled", False) and _is_mutating_action(action):
             _log_p2p("BLOCK", f"PRO-19/C2: tier-floor violation for action '{action}'", from_node="GUARD")

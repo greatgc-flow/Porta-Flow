@@ -465,7 +465,7 @@ def test_collab_rate_guard(ai_dir, capsys, monkeypatch):
         capsys.readouterr()
         
         # Now guard should pass since a finalized consensus round exists
-        hub._guard_action(ai_dir, "update-status", force_tier0=False) # should not raise
+        hub._guard_action(ai_dir, "update-status", force_tier0=False, origin="worker") # should not raise
 
 
 # 3. Test feedback actions
