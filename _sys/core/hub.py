@@ -1183,8 +1183,78 @@ def _decode_output(data: bytes) -> str:
     return data.decode("utf-8", errors="replace").replace("\r\n", "\n")
 
 
+_TRANSIENT_REASONS = {"rate_or_session_limit", "transient_network"}
+
+def _parse_reset_time(text: str) -> str | None:
+    import re
+    from datetime import datetime, timedelta
+    match = re.search(r"try again at\s+([A-Za-z]+\s+\d+(?:st|nd|rd|th)?,\s+\d{4}\s+\d{1,2}:\d{2}\s+(?:AM|PM))", text, re.IGNORECASE)
+    if match:
+        date_str = match.group(1).replace("st,", ",").replace("nd,", ",").replace("rd,", ",").replace("th,", ",")
+        try:
+            dt = datetime.strptime(date_str, "%b %d, %Y %I:%M %p")
+            return dt.isoformat()
+        except ValueError:
+            pass
+    
+    match = re.search(r"try again at\s+(\d{1,2}:\d{2}\s+(?:AM|PM))", text, re.IGNORECASE)
+    if match:
+        time_str = match.group(1)
+        try:
+            t = datetime.strptime(time_str, "%I:%M %p").time()
+            now = datetime.now()
+            dt = datetime.combine(now.date(), t)
+            if dt <= now:
+                dt += timedelta(days=1)
+            return dt.isoformat()
+        except ValueError:
+            pass
+    return None
+
 def _classify_ask_failure(text: str) -> tuple[str, dict]:
     lower = text.lower()
+    
+    import json
+    try:
+        data = json.loads(text)
+        if isinstance(data, dict):
+            msg = str(data.get("message", "")).lower()
+            err_type = str(data.get("type", "")).lower()
+            lower += " " + msg + " " + err_type
+    except Exception:
+        pass
+        
+    policy = _load_lifecycle_policy().get("ask_failure_classification", {})
+
+    # 1. Critical reasons must never be shadowed by transient keywords
+    critical_needles_reason_map = {
+        "sandbox_spawn_eperm": "sandbox_spawn_eperm",
+        "eperm": "sandbox_spawn_eperm",
+        "spawn": "sandbox_spawn_eperm",
+        "cli_not_found": "cli_not_found",
+        "not found": "cli_not_found"
+    }
+    for needle, reason in critical_needles_reason_map.items():
+        if needle in lower:
+            extra = {}
+            for rule in policy.get("patterns", []):
+                if rule.get("reason") == reason:
+                    extra = dict(rule.get("availability", {}))
+                    break
+            return reason, extra
+
+    # 2. Transient reasons
+    transient_needles = [
+        "usage limit", "rate limit", "quota", "temporarily unavailable",
+        "connection reset", "connection refused", "network error", "timed out"
+    ]
+    if any(n in lower for n in transient_needles) or re.search(r"(?<!\bindex\s)\b(http\s*)?(status\s*)?(429|50[23])\b", lower):
+        extra = {}
+        reset_at = _parse_reset_time(text)
+        if reset_at:
+            extra["rate_limit_state"] = {"limited": True, "reset_at": reset_at, "source_msg": text[:100]}
+        return "rate_or_session_limit", extra
+
     policy = _load_lifecycle_policy().get("ask_failure_classification", {})
     for rule in policy.get("patterns", []):
         needles = [str(x).lower() for x in rule.get("match_any", [])]
@@ -1221,8 +1291,30 @@ def _ask_health_precheck(peer_id: str, ai_root: Path | None) -> None:
         return
     status, data = _peer_effective_health(peer_id)
     availability = data.get("availability", {})
+    
+    rls = availability.get("rate_limit_state")
+    if availability.get("gate_open") is False and isinstance(rls, dict) and rls.get("limited"):
+        reset_str = rls.get("reset_at")
+        if reset_str:
+            try:
+                from datetime import datetime
+                reset_dt = datetime.fromisoformat(reset_str)
+                now = datetime.now(reset_dt.tzinfo) if reset_dt.tzinfo else datetime.now()
+                if now >= reset_dt:
+                    availability["gate_open"] = True
+                    availability["rate_limit_state"] = "ok"
+                    _write_peer_health(peer_id, data, ai_root)
+            except ValueError:
+                pass
+
     if status == "RED" or availability.get("gate_open") is False:
         reason = data.get("session_health", {}).get("last_failure_reason") or "health_gate_closed"
+        
+        if availability.get("gate_open") is False and isinstance(rls, dict) and rls.get("limited"):
+            reset_at = rls.get("reset_at", "unknown time")
+            print(f"[HUB:GATE] {peer_id} rate-limited until {reset_at}")
+            sys.exit(0)
+            
         print(f"[HUB:SKIP] {peer_id} health blocked | status={status} reason={reason}", file=sys.stderr)
         sys.exit(2)
 
@@ -1303,7 +1395,16 @@ def _record_ask_failure(
     _, data = _read_peer_health(peer_id, health_dir)
     sh = data.setdefault("session_health", {})
     prev_failure_reason = sh.get("last_failure_reason")  # capture before overwrite for auto-promote check
-    failures = int(sh.get("consecutive_failures", 0)) + 1
+    
+    is_transient = reason in _TRANSIENT_REASONS
+    if is_transient:
+        failures = int(sh.get("consecutive_failures", 0))
+        trans_fails = int(sh.get("transient_failures", 0)) + 1
+        sh["transient_failures"] = trans_fails
+    else:
+        failures = int(sh.get("consecutive_failures", 0)) + 1
+        sh["transient_failures"] = 0
+        
     sh["consecutive_failures"] = failures
     sh["last_failure_reason"] = reason
     sh["last_failure_detail"] = detail.strip()[:500]
@@ -1315,11 +1416,13 @@ def _record_ask_failure(
     ctx = data.setdefault("context_health", {})
     lifecycle = _load_lifecycle_policy().get("health_lifecycle", {})
     critical_reasons = set(lifecycle.get("critical_reasons", ["sandbox_spawn_eperm", "rate_or_session_limit", "cli_not_found"]))
+    critical_reasons.difference_update(_TRANSIENT_REASONS)
+    
     failure_warn = int(lifecycle.get("failure_warn", 3))
     failure_error = int(lifecycle.get("failure_error", 5))
-    if reason in critical_reasons or failures >= failure_error:
+    if reason in critical_reasons or (not is_transient and failures >= failure_error):
         ctx["status"] = "RED"
-    elif failures >= failure_warn:
+    elif not is_transient and failures >= failure_warn:
         ctx["status"] = "YELLOW"
     ctx["checked_at"] = datetime.now().strftime("%Y%m%dT%H%M%S")
     availability = data.setdefault("availability", {})
@@ -1328,21 +1431,32 @@ def _record_ask_failure(
         availability["last_invocation_duration_ms"] = elapsed * 1000
     if extra:
         availability.update(extra)
+        
+    if is_transient:
+        availability["gate_open"] = False
+        rls = availability.get("rate_limit_state", {})
+        if not isinstance(rls, dict) or not rls.get("limited") or not rls.get("reset_at"):
+            from datetime import timedelta
+            backoff_sec = min(300, 2 ** trans_fails)
+            reset_dt = datetime.fromisoformat(_now()) + timedelta(seconds=backoff_sec)
+            availability["rate_limit_state"] = {"limited": True, "reset_at": reset_dt.isoformat(), "source_msg": detail[:100]}
+            
     if reason in critical_reasons:
         availability["gate_open"] = False
     _write_peer_health(peer_id, data, ai_root, health_dir)
 
     # ── Error Visibility Integration ──────────────────────────
-    severity = "error" if ctx.get("status") == "RED" else "warn"
-    action_report_error(ai_root, peer_id, reason, detail, severity)
+    if not is_transient:
+        severity = "error" if ctx.get("status") == "RED" else "warn"
+        action_report_error(ai_root, peer_id, reason, detail, severity)
 
-    logger = _get_logger()
-    if logger:
-        logger.log_error(error_type=reason, tier=severity.upper(), peer=peer_id, message=detail)
+        logger = _get_logger()
+        if logger:
+            logger.log_error(error_type=reason, tier=severity.upper(), peer=peer_id, message=detail)
 
-    # Auto-promote runtime directive after 2+ consecutive same-reason failures
-    if failures >= 2 and prev_failure_reason == reason and ai_root:
-        _auto_promote_runtime_directive(peer_id, reason, detail, ai_root)
+        # Auto-promote runtime directive after 2+ consecutive same-reason failures
+        if failures >= 2 and prev_failure_reason == reason and ai_root:
+            _auto_promote_runtime_directive(peer_id, reason, detail, ai_root)
 
 
 def _build_ask_query_with_context(ai_root: Path | None, query: str, to_peer: str | None = None) -> str:
@@ -2462,6 +2576,11 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                 if ai_root:
                     _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=elapsed, failure_reason=reason)
                 _update_pty_thread(f"failed ({reason})")
+                if reason in _TRANSIENT_REASONS:
+                    rls = extra.get("rate_limit_state", {})
+                    reset_at = rls.get("reset_at", "unknown time") if isinstance(rls, dict) else "unknown time"
+                    print(f"\n[HUB:GATE] {to} rate-limited until {reset_at}")
+                    sys.exit(0)
                 print(f"[HUB:ERROR] {requested_to} exited {ec_label}", file=sys.stderr)
                 sys.exit(1)
 
@@ -2751,6 +2870,11 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                     lease_status = "failed"
                     _record_ask_failure(health_peer, reason, clean_err or output, elapsed, ai_root, extra)
                     _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, False, reason)
+                    if reason in _TRANSIENT_REASONS:
+                        rls = extra.get("rate_limit_state", {})
+                        reset_at = rls.get("reset_at", "unknown time") if isinstance(rls, dict) else "unknown time"
+                        print(f"[HUB:GATE] {to} rate-limited until {reset_at}")
+                        sys.exit(0)
                     print(f"[HUB:ERROR] {requested_to} exited {proc.returncode}\n{clean_err}", file=sys.stderr)
                     sys.exit(proc.returncode)
             else:
@@ -2759,6 +2883,11 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                 reason, extra = _classify_ask_failure(clean_err_r + "\n" + output)
                 _record_ask_failure(health_peer, reason, clean_err_r, elapsed, ai_root, extra)
                 _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, False, reason)
+                if reason in _TRANSIENT_REASONS:
+                    rls = extra.get("rate_limit_state", {})
+                    reset_at = rls.get("reset_at", "unknown time") if isinstance(rls, dict) else "unknown time"
+                    print(f"[HUB:GATE] {to} rate-limited until {reset_at}")
+                    sys.exit(0)
                 sys.exit(proc.returncode)
 
         elif proc.returncode != 0:
@@ -2769,6 +2898,11 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, False, reason)
             if ai_root:
                 _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=elapsed, failure_reason=reason)
+            if reason in _TRANSIENT_REASONS:
+                rls = extra.get("rate_limit_state", {})
+                reset_at = rls.get("reset_at", "unknown time") if isinstance(rls, dict) else "unknown time"
+                print(f"[HUB:GATE] {to} rate-limited until {reset_at}")
+                sys.exit(0)
             print(f"[HUB:ERROR] {requested_to} exited {proc.returncode}\n{clean_err}", file=sys.stderr)
             sys.exit(1)
         elif not output.strip():
@@ -2837,6 +2971,11 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         _append_ask_history(ai_root, to, saved_query_file_path, output_file, None, False, reason)
         if ai_root:
             _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=None, failure_reason=reason)
+        if reason in _TRANSIENT_REASONS:
+            rls = extra.get("rate_limit_state", {})
+            reset_at = rls.get("reset_at", "unknown time") if isinstance(rls, dict) else "unknown time"
+            print(f"[HUB:GATE] {to} rate-limited until {reset_at}")
+            sys.exit(0)
         print(f"[HUB:ERROR] ask 실패: {e}", file=sys.stderr)
         sys.exit(1)
     finally:
