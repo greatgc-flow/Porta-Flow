@@ -1886,7 +1886,7 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
         print(f"[HUB:ERROR] pywinpty not installed (required for {node_id})", file=sys.stderr)
         sys.exit(1)
 
-    heartbeat_sec, _lease_timeout_sec, zombie_timeout_sec = _lease_cfg()
+    heartbeat_sec, _lease_timeout_sec, zombie_timeout_sec = _lease_cfg(node_id)
     lease = int(_runtime_cfg().get("pty_lease_sec", 300) or 300)
 
     # CONDITION-3: the bounded get() slice MUST be <= heartbeat (so lease renewal
@@ -1929,7 +1929,7 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
 
     chunks: list[str] = []
     t0 = time.monotonic()
-    deadline = t0 + (timeout_sec if timeout_sec > 0 else lease)
+    deadline = t0 + (timeout_sec if timeout_sec > 0 else float("inf"))
     last_renew = t0
     last_activity = t0  # any chunk resets the silent-zombie clock
     timed_out = False
@@ -2292,13 +2292,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
     exe_name = node.get("invoke", to)
 
     if not timeout_sec or timeout_sec <= 0:
-        try:
-            if requires_pty:
-                timeout_sec = int(_runtime_cfg().get("pty_lease_sec", 300) or 300)
-            else:
-                timeout_sec = 0  # unlimited; heartbeat loop monitors for dead processes
-        except Exception:
-            timeout_sec = 0
+        timeout_sec = 0  # unlimited; heartbeat loop monitors for dead processes
 
     _lease_sweep(ai_root)
     _ask_health_precheck(health_peer, ai_root)
@@ -2770,10 +2764,10 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
 
                 _lease_renew(ai_root, to, lease_timeout_sec)
                 if _silent_beats >= _MAX_SILENT_HEARTBEATS:
-                    # Process alive but producing no output for lease_timeout_sec total — treat as zombie.
+                    # Process alive but producing no output for zombie_timeout_sec total — treat as zombie.
                     lease_status = "timeout"
                     _kill_process_tree(proc)
-                    raise subprocess.TimeoutExpired(cmd, lease_timeout_sec)
+                    raise subprocess.TimeoutExpired(cmd, zombie_timeout_sec)
 
         elapsed = int(time.monotonic() - t0)
         lease_status = "closed"
@@ -2967,14 +2961,15 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             print(output, end="")
         else:
             print(f"[HUB] REPLY {to} | chars={len(output)} | elapsed={elapsed}s\n{output.strip()}")
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
         elapsed = int(time.monotonic() - t0)
         lease_status = "timeout"
-        detail = f"ask timeout after {timeout_sec}s"
-        _record_ask_failure(health_peer, "timeout", detail, timeout_sec, ai_root)
-        _append_ask_history(ai_root, to, saved_query_file_path, output_file, timeout_sec, False, "timeout")
+        reported_timeout = exc.timeout if getattr(exc, 'timeout', None) else timeout_sec
+        detail = f"ask timeout after {reported_timeout}s"
+        _record_ask_failure(health_peer, "timeout", detail, reported_timeout, ai_root)
+        _append_ask_history(ai_root, to, saved_query_file_path, output_file, reported_timeout, False, "timeout")
         if ai_root:
-            _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=timeout_sec, failure_reason="timeout")
+            _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=reported_timeout, failure_reason="timeout")
         print(f"[HUB:ERROR] {detail}", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
@@ -3161,12 +3156,13 @@ def action_consensus_vote(ai_root: Path, round_id: str, voter: str, vote_val: st
         print(f"[HUB] VOTE {round_id} | voter={voter} {vote_val} | {cast}/{total}")
         
         mid_round_closed = False
+        quarantined_voters = []
         for v in data["voters"]:
             if votes.get(v) is None:
                 st, _ = _peer_effective_health(v, ai_root=ai_root)
                 if st in ("RED", "STALE"):
                     mid_round_closed = True
-                    break
+                    quarantined_voters.append(v)
         
         if cast == total or total < 2 or mid_round_closed:
             has_disagree = any(v is not None and v["vote"] == "disagree" for v in votes.values())
@@ -3176,9 +3172,23 @@ def action_consensus_vote(ai_root: Path, round_id: str, voter: str, vote_val: st
             proposer = data.get("proposed_by", "")
             non_proposer_agrees = sum(1 for v_name, v_dict in votes.items() if v_dict is not None and v_dict["vote"] == "agree" and v_name != proposer)
             
+            # Supermajority check: all active (non-quarantined) voters agree
+            active_voters = [v for v in data["voters"] if v not in quarantined_voters]
+            active_all_agree = len(active_voters) >= 2 and all(
+                votes.get(v) is not None and votes[v]["vote"] == "agree" for v in active_voters
+            )
+            active_non_proposer_agrees = sum(1 for v in active_voters if votes.get(v) is not None and votes[v]["vote"] == "agree" and v != proposer)
+            
             if total < 2:
                 data["status"] = "escalated"
                 data["outcome"] = "human_gate"
+            elif mid_round_closed and active_all_agree and active_non_proposer_agrees > 0:
+                # Supermajority: all healthy voters agree, quarantined voter(s) auto-abstained
+                for qv in quarantined_voters:
+                    votes[qv] = {"vote": "abstain", "reason": f"auto-abstain (quarantined at vote time)", "ts": _now()}
+                data["votes"] = votes
+                data["status"] = "finalized"
+                data["outcome"] = "supermajority"
             elif mid_round_closed:
                 data["status"] = "escalated"
                 data["outcome"] = "human_gate"
@@ -3246,10 +3256,12 @@ def action_consensus_check(ai_root: Path, round_id: str | None) -> None:
 
 
 def action_consensus_sweep(ai_root: Path, timeout_minutes: int = 30) -> None:
-    """Auto-escalate stalled voting rounds older than timeout_minutes."""
+    """Auto-escalate stalled voting rounds; auto-finalize supermajority when quarantined voters block."""
     consensus_dir = ai_root / "consensus"
     if not consensus_dir.exists(): return
     now = datetime.now()
+    cfg = _load_protocol_cfg()
+    auto_abstain_min = cfg.get("consensus", {}).get("offline_auto_abstain_minutes", timeout_minutes)
     swept = 0
     for f in sorted(consensus_dir.glob("*.json")):
         r = _read_json(f)
@@ -3260,6 +3272,56 @@ def action_consensus_sweep(ai_root: Path, timeout_minutes: int = 30) -> None:
             age_minutes = (now - proposed_at).total_seconds() / 60
         except Exception:
             age_minutes = 0
+        
+        # Check for quarantined voters who haven't voted
+        votes = r.get("votes", {})
+        quarantined_pending = []
+        for v in r.get("voters", []):
+            if votes.get(v) is None:
+                st, _ = _peer_effective_health(v, ai_root=ai_root)
+                if st in ("RED", "STALE"):
+                    quarantined_pending.append(v)
+        
+        # Auto-abstain quarantined voters after offline_auto_abstain_minutes
+        if quarantined_pending and age_minutes >= auto_abstain_min:
+            with _get_lock(ai_root, f"consensus_{r['round_id']}"):
+                r = _read_json(f)
+                if r.get("status") != "voting": continue
+                votes = r.get("votes", {})
+                for qv in quarantined_pending:
+                    if votes.get(qv) is None:
+                        votes[qv] = {"vote": "abstain", "reason": f"auto-abstain (offline >{auto_abstain_min}m, quarantined)", "ts": _now()}
+                r["votes"] = votes
+                
+                # Re-evaluate: can we finalize now?
+                proposer = r.get("proposed_by", "")
+                active_voters = [v for v in r["voters"] if v not in quarantined_pending]
+                active_all_agree = len(active_voters) >= 2 and all(
+                    votes.get(v) is not None and votes[v]["vote"] == "agree" for v in active_voters
+                )
+                active_non_proposer_agrees = sum(1 for v in active_voters if votes.get(v) is not None and votes[v]["vote"] == "agree" and v != proposer)
+                has_disagree = any(v is not None and v.get("vote") == "disagree" for v in votes.values())
+                
+                if has_disagree:
+                    r["status"] = "escalated"
+                    r["outcome"] = "human_gate"
+                elif active_all_agree and active_non_proposer_agrees > 0:
+                    r["status"] = "finalized"
+                    r["outcome"] = "supermajority"
+                else:
+                    r["status"] = "escalated"
+                    r["outcome"] = "human_gate"
+                r["outcome_at"] = _now()
+                _write_json(f, r)
+            _log_p2p("DECISION", f"ID={r['round_id']} Status={r['status'].upper()} Outcome={r['outcome']} (auto-abstain sweep, age={age_minutes:.0f}m)", from_node="SYSTEM")
+            print(f"[HUB] SWEEP {r['round_id']} {r['status'].upper()} | {r['outcome']} | quarantined={','.join(quarantined_pending)} | age={age_minutes:.0f}m")
+            _append_consensus_history(ai_root, r["round_id"], r["subject"], f"{r['status'].upper()}({r['outcome']})")
+            if r["status"] == "finalized":
+                _emit_decision_capsule(ai_root, r)
+            swept += 1
+            continue
+        
+        # Original timeout-based escalation
         if age_minutes >= timeout_minutes:
             with _get_lock(ai_root, f"consensus_{r['round_id']}"):
                 r = _read_json(f)
@@ -3915,14 +3977,26 @@ def _guard_action(ai_root: Path, action: str, force_tier0: bool = False, origin:
         print(f"[HUB:BLOCK] {detail}", file=sys.stderr)
         sys.exit(code)
 
-    if origin == "terminal":
+    # PRO-19 enforcement: terminal/router peers cannot mutate governance state
+    # System-automated actions are exempt (sweep, health actions invoked by hub itself)
+    _SYSTEM_EXEMPT_ACTIONS = {"consensus-sweep", "health-sweep", "health-update", "health-check",
+                               "health-precheck", "transient-scan", "lease-sweep", "lesson-sweep",
+                               "update-signatures", "init-session", "end-session", "context-fill",
+                               "context-hash", "context-ack", "peer-recover", "peer-quarantine"}
+    if origin == "terminal" and action not in _SYSTEM_EXEMPT_ACTIONS:
         if _is_mutating_action(action):
-            print(f"[HUB:WOULD-BLOCK] terminal-origin mutating action '{action}'", file=sys.stderr)
+            _log_p2p("BLOCK", f"PRO-19: terminal-origin mutating action '{action}' rejected. Use --force-tier0 for Tier-0 human override.", from_node="GUARD")
+            _block(f"PRO-19: terminal/router cannot execute '{action}'. This is a governance-mutating action. "
+                   f"[ESCALATE] Use --force-tier0 if you are exercising Tier-0 human authority (INV-03).")
         if action == "ask" and target_peer and ("effort" in target_peer.lower() or "deepthink" in target_peer.lower() or "deep" in target_peer.lower()):
-            print(f"[HUB:WOULD-BLOCK] terminal-origin ask to >=effort target '{target_peer}'", file=sys.stderr)
+            _log_p2p("BLOCK", f"PRO-19: terminal-origin ask to >=effort target '{target_peer}' rejected.", from_node="GUARD")
+            _block(f"PRO-19: terminal/router cannot directly invoke '{target_peer}'. "
+                   f"[ESCALATE] Use --force-tier0 for Tier-0 human override.")
         tier_floor = cfg.get("decision_tier_floor", {})
         if tier_floor.get("enabled", False) and _is_mutating_action(action):
-            print(f"[HUB:WOULD-BLOCK] tier-floor violation for action '{action}'", file=sys.stderr)
+            _log_p2p("BLOCK", f"PRO-19/C2: tier-floor violation for action '{action}'", from_node="GUARD")
+            _block(f"PRO-19/C2: action '{action}' requires at least '{tier_floor.get('mutating_hub_actions_min_tier', 'effort')}' profile tier. "
+                   f"[ESCALATE] Use --force-tier0 for Tier-0 human override.")
     try:
         rate_guard = cfg.get("collab_rate_guard", {})
         current = int(_load_protocol_cfg().get("collab_rate", {}).get("current", 0) or 0)
@@ -5173,7 +5247,7 @@ def _leases_path(ai_root: Path) -> Path:
     return ai_root / "leases.json"
 
 
-def _lease_cfg() -> tuple[int, int, int]:
+def _lease_cfg(node_id: str | None = None) -> tuple[int, int, int]:
     """Return (heartbeat_sec, lease_timeout_sec, zombie_timeout_sec) from communication_policy.
 
     zombie_timeout_sec is intentionally separate from lease_timeout_sec:
@@ -5182,7 +5256,17 @@ def _lease_cfg() -> tuple[int, int, int]:
     comm = _load_protocol_cfg().get("communication_policy", {})
     h = max(5, int(comm.get("heartbeat_sec", 30) or 30))
     l = max(h + 30, int(comm.get("lease_timeout_sec", 300) or 300))
-    z = max(h * 2, int(comm.get("zombie_timeout_sec", 600) or 600))
+    z_base = int(comm.get("zombie_timeout_sec", 600) or 600)
+    
+    if node_id:
+        profile_id = _resolve_profile_id(node_id)
+        if profile_id:
+            profile_name = profile_id.split(".")[-1] if "." in profile_id else profile_id
+            profile_map = comm.get("zombie_profile_map", {})
+            if profile_name in profile_map:
+                z_base = int(profile_map[profile_name])
+                
+    z = max(h * 2, z_base)
     return h, l, z
 
 
