@@ -618,6 +618,8 @@
     "mutating_hub_actions": [
       "init-session",
       "end-session",
+      "thread-promote",
+      "update-signatures",
       "send",
       "broadcast",
       "append-log",
@@ -665,13 +667,17 @@
     "recovery_hub_actions": [
       "peer-recover",
       "report-error",
-      "context-ack"
+      "context-ack",
+      "lease-sweep",
+      "alert-raise"
     ],
     "read_only_hub_actions": [
       "ask",
       "ask-all",
       "ask-stream",
       "relay",
+      "ask-coordinator",
+      "lease-status",
       "read",
       "mark-read",
       "check",

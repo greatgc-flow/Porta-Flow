@@ -109,3 +109,25 @@ def test_ask_actions_are_classified_not_unknown():
     for action in ("ask", "ask-all", "ask-stream", "relay"):
         group = hub._action_group(action)
         assert group == "read_only_hub_actions", f"{action} regressed to group={group}"
+
+
+def test_six_actions_classified_and_phase_gated():
+    """Regression: the 6 formerly-unknown actions are classified, and the no_code
+    phase matrix gates them per group (read_only/recovery allowed; mutating blocked).
+    Locks in the phase-gate fix so none silently regresses to requires_classification."""
+    expected = {
+        "ask-coordinator": "read_only_hub_actions",
+        "lease-status": "read_only_hub_actions",
+        "lease-sweep": "recovery_hub_actions",
+        "alert-raise": "recovery_hub_actions",
+        "thread-promote": "mutating_hub_actions",
+        "update-signatures": "mutating_hub_actions",
+    }
+    cfg = hub._operational_guard_cfg()
+    no_code = cfg.get("phase_action_matrix", {}).get("no_code", {})
+    assert no_code.get("read_only_hub_actions") == "allow"
+    assert no_code.get("recovery_hub_actions") == "allow"
+    assert no_code.get("mutating_hub_actions") == "block"
+    for action, group in expected.items():
+        assert hub._action_group(action) == group, f"{action} -> {hub._action_group(action)} != {group}"
+        assert no_code.get(group, "allow") != "requires_classification", f"{action} still gate-blocked"
