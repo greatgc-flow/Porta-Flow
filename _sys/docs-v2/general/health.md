@@ -18,6 +18,7 @@
 ## 2. Health File Location
 
 `_sys/{peer_dir}/health.json` — per-peer, updated by `hub.py health-update`.
+*Note: raw `health.json` reads are an IMPLEMENTATION/AUDIT detail ONLY, NOT the operator primitive.*
 
 ```json
 {
@@ -67,7 +68,8 @@ Preference order: GREEN → YELLOW → (avoid STALE) → RED blocked.
 | Before delegation | `hub.py health-precheck --peer <p>` |
 | Before peer-to-peer ask | Built-in `_ask_health_precheck()` |
 | Session boundary | `hub.py health-sweep` |
-| Operator view | `hub.py health-check` / `hub.py peer-status` |
+| Operator view | `hub.py peer-status` (canonical, non-mutating) |
+| Audit / Maintenance view | `hub.py health-check` (read-only by default, excludes disabled; `--recover` mutates) |
 | Peer exit | `hub.py health-update --peer <p> --status AUTO ...` |
 
 ---
@@ -93,7 +95,8 @@ Preference order: GREEN → YELLOW → (avoid STALE) → RED blocked.
 
 ## 7. Zero-Token Health Rule (INV-08 / PRO-07 / PRO-08)
 
-- Health checks = local `health.json` reads ONLY. Zero model calls.
+- Terminal/operator peer status = `hub.py peer-status` (canonical, non-mutating, orchestration-filtered).
+- Health updates/checks = local `health.json` reads/writes ONLY. Zero model calls. (Raw reads are an IMPLEMENTATION/AUDIT detail).
 - Ask outcome piggyback: every real ask exit code + stderr → auto-classifies health via `_record_ask_success/failure()`
 - NEVER send dedicated model ping to check health
 - NEVER infer health from prose content

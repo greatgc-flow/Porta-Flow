@@ -1,13 +1,13 @@
-# Skill: Health Check
+# Skill: Health Check (Audit/Maintenance)
 
-How any peer reads health status of the collaboration system. Zero-token.
+Raw reads of health files for audit. (For routine checks, use `peer-status`).
 
 ## Commands
 
 ```
-python _sys/core/hub.py health-check             # all peers
-python _sys/core/hub.py health-check --peer gc   # specific peer
-python _sys/core/hub.py peer-status              # full gate + health table
+python _sys/core/hub.py peer-status              # full gate + health table (canonical operator view)
+python _sys/core/hub.py health-check             # all peers (audit/maintenance)
+python _sys/core/hub.py health-check --peer gc   # specific peer (audit/maintenance)
 ```
 
 ## Output Example

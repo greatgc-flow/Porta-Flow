@@ -24,7 +24,7 @@ A **skill** is a parameterized, reusable instruction block that peers can invoke
 |-----------|-----|---------|-----------|
 | `consensus-vote.md` | `consensus-vote` | Cast a vote on an open consensus round | Any peer |
 | `context-fill.md` | `context-fill` | Load session context from handoff.md into prompt | hub.py startup |
-| `health-check.md` | `health-check` | Read and report local health.json status | Any peer |
+| `health-check.md` | `health-check` | Audit/Maintenance raw health read (prefer `peer-status`) | Any peer |
 | `lesson-add.md` | `lesson-add` | Propose a new lesson to active-lessons.jsonl | Any peer |
 | `peer-propose.md` | `peer-propose` | Create a new governance proposal | Any peer |
 | `reflect.md` | `reflect` | Post-task self-assessment (quality, cost, outcome) | Any peer after task |

@@ -18,14 +18,14 @@
 ### Session Start
 ```
 hub.py init-session --agent cc     # (auto-called by claude.bat)
-hub.py health-check                # verify peer status
-hub.py peer-status                 # all peers at a glance
+hub.py peer-status                 # all peers at a glance (canonical status)
 ```
 
 ### Check Peers
 ```
-hub.py health-check                # all peers health summary
+hub.py peer-status                 # all peers at a glance (canonical status)
 hub.py health-precheck --peer gc   # before routing ask to gc
+hub.py health-check                # (Audit/Maintenance only) raw local health reads
 ```
 
 ### Ask a Peer
