@@ -52,6 +52,7 @@ For human onboarding: `user/manual.md`
 | `specific/gc.md` | Gemini CLI: SUSPENDED state | 2026-06-19 |
 | `specific/cx.md` | Codex: dirs, entry point, delta flags | 2026-06-16 |
 | `specific/ag.md` | AntiGravity: ACTIVE (gc replacement) | 2026-06-19 |
+| `specific/statusline_diag_update.md` | Statusline formatting + diag tool notes | 2026-06-24 |
 | **`ops/peer-debate-2026-06-19.md`** | **Final peer/profile architecture, migration, TDD, and benchmarks** | **2026-06-19** |
 | **`ops/automatic-profile-routing-2026-06-20.md`** | **Terminal defaults, automatic profile routing debate, TDD, and benchmark** | **2026-06-20** |
 | `ops/perf-benchmark-2026-06-19.md` | Focused performance baseline | 2026-06-19 |

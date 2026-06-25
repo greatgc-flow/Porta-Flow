@@ -3245,7 +3245,6 @@ def action_consensus_sweep(ai_root: Path, timeout_minutes: int = 30) -> None:
     if not consensus_dir.exists(): return
     now = datetime.now()
     cfg = _load_protocol_cfg()
-    auto_abstain_min = cfg.get("consensus", {}).get("offline_auto_abstain_minutes", timeout_minutes)
     swept = 0
     for f in sorted(consensus_dir.glob("*.json")):
         r = _read_json(f)
