@@ -7,7 +7,7 @@
 Terminal models do ad-hoc filesystem analysis instead of routing to the SSOT tool, and the filesystem actively misleads them:
 1. **Doc framing:** `health.md:20,96` present raw `health.json` as the health primitive ("Health checks = local health.json reads ONLY") — models read it as "I should open the file."
 2. **Tool-affordance gap:** docs list `health-check` and `peer-status` side by side, but `health-check` is UNSAFE as a status view — it iterates `peers.json` (includes disabled gemini) and calls `_peer_effective_health(..., recover=True)` (`hub.py:3373`) which MUTATES stale status on read (it actually changed gemini health during cx's verification). `peer-status` iterates orchestration roots, filters disabled, and is non-mutating (`hub.py:3479-3497`).
-3. **Mirror duplication:** the same peer has multiple contradictory `health.json` files (canonical `_sys/{claude,antigravity,codex}/` vs legacy `_sys/{ag,gc,ag.deepthink}/`, root `_sys/health.json`, `_sys/gemini/`).
+3. **Mirror duplication:** the same peer has multiple contradictory `health.json` files (canonical `_sys/{claude,antigravity,codex}/` vs legacy `_sys/{ag,gc,ag.deepthink}/`, a root-level `health.json`, `_sys/gemini/`).
 4. **Naming split:** `lifecycle_policy.json identity.node_to_peer` OMITS gc → `hub.py health-update --peer gc` resolves to `_sys/gc/health.json`; `diag.py` uses `aliases[0]` as a dir (convention, not schema). `peers.json.node_ids/sys_subdir` already has the correct map (`_common.py:45-66`).
 
 ## CONSENSUS (signed by cx + ag)
@@ -23,7 +23,7 @@ Terminal models do ad-hoc filesystem analysis instead of routing to the SSOT too
 **Terminal command contract (canonical reads):** peer status -> `hub.py peer-status`; room/session -> `hub.py status`; routability -> `hub.py health-precheck --peer <id>`; models -> `hub.py model-status`; parity -> `hub.py profile-validate`; leases/locks/tasks/roles -> `lease-status`/`lock-status`/`task-status`/`role-status`. Terminal reads raw files ONLY when the task is explicitly "audit raw state/config" or the canonical command is missing/broken — and must say so.
 
 ## Phased plan (signed)
-- **Phase A — mechanical safe-now (needs user OK; per-file re-verify):** delete gitignored legacy `_sys/{ag,gc,ag.deepthink,mock_peer}/health.json` + `_sys/health.json` (no code refs — cx verified). KEEP `_sys/gemini/health.json` until Phase B removes its readers/writers. Add the `test_no_stray_health_files` validation test to lock the state.
+- **Phase A — mechanical safe-now (needs user OK; per-file re-verify):** delete gitignored legacy `_sys/{ag,gc,ag.deepthink,mock_peer}/health.json` + the root-level `health.json` (no code refs — cx verified). KEEP `_sys/gemini/health.json` until Phase B removes its readers/writers. Add the `test_no_stray_health_files` validation test to lock the state.
 - **Phase B — PRO-12 hub/code via TDD (tests first):** resolver + refactor callers; remove `lifecycle_policy.node_to_peer`; strip hardcoded gemini from `ai_check.py`/`_common.py`; delete `_sys/gemini/health.json`; `health-check` non-recovering/orchestration-filtered default; update `test_contracts.py` (DIR-003) + dispatch-coverage per the standard-capability consensus.
 - **Phase C — docs/directives:** update `health.md`, `user/manual.md`, skills docs (terminal status = `peer-status`; raw = audit-only); restore/remove `specific/gc.md` (missing, referenced at `health.md:126`); add the terminal command contract to terminal-frame/system-prompt docs (NOT user-directives.md).
 
