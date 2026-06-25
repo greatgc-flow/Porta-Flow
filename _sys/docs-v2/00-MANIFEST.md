@@ -64,6 +64,7 @@ For human onboarding: `user/manual.md`
 | `ops/conventions.md` | Coding conventions, shell rules, script safety, testing policy | 2026-06-21 |
 | `ops/consistency-audit-2026-06-24.md` | Health/timeout/comms/turn/governance-loop consistency audit (vertical/horizontal); H-1+D-1 keystone | 2026-06-24 |
 | `ops/per-profile-health-b1-design.md` | B1/H-3 per-profile health design (banked, deferred); cleanup + timeout follow-ups | 2026-06-25 |
+| `ops/standard-capability-consensus-2026-06-25.md` | Standard/terminal capability + bounded escalation + same-peer fallback — cx/ag consensus (deferred impl) | 2026-06-25 |
 | `ops/logging.md` | IPC history · console capture · per-node detail · rolling policy · 5-Whys | 2026-06-18 |
 | `ops/skills.md` | Hub skill catalog, invocation, registration | 2026-06-18 |
 | `ops/schemas.md` | JSON schema reference: protocol.json, peers.json, model-registry, health.json | 2026-06-18 |
