@@ -86,6 +86,8 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
 if sys.stderr.encoding and sys.stderr.encoding.lower() not in ("utf-8", "utf8"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
+# Distinct exit code for soft-skip scenarios (e.g. rate-limit / gate-closed with no answer)
+SOFT_SKIP_EXIT = 7
 
 # ─────────────────────────────────────────────────────────────
 # .ai/ 프로젝트 루트 탐색
@@ -1312,8 +1314,8 @@ def _ask_health_precheck(peer_id: str, ai_root: Path | None) -> None:
         
         if availability.get("gate_open") is False and isinstance(rls, dict) and rls.get("limited"):
             reset_at = rls.get("reset_at", "unknown time")
-            print(f"[HUB:GATE] {peer_id} rate-limited until {reset_at}")
-            sys.exit(0)
+            print(f"[HUB:SOFT-SKIP] {peer_id} rate-limited until {reset_at}")
+            sys.exit(SOFT_SKIP_EXIT)
             
         print(f"[HUB:SKIP] {peer_id} health blocked | status={status} reason={reason}", file=sys.stderr)
         sys.exit(2)
@@ -2587,8 +2589,8 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                 if reason in _TRANSIENT_REASONS:
                     rls = extra.get("rate_limit_state", {})
                     reset_at = rls.get("reset_at", "unknown time") if isinstance(rls, dict) else "unknown time"
-                    print(f"\n[HUB:GATE] {to} rate-limited until {reset_at}")
-                    sys.exit(0)
+                    print(f"\n[HUB:SOFT-SKIP] {to} rate-limited until {reset_at}")
+                    sys.exit(SOFT_SKIP_EXIT)
                 print(f"[HUB:ERROR] {requested_to} exited {ec_label}", file=sys.stderr)
                 sys.exit(1)
 

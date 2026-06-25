@@ -161,3 +161,38 @@ class TestHubTransient:
             
         finally:
             hub._peer_sys_dir = original_peer_sys_dir
+
+    def test_soft_skip_returns_distinct_exit_code(self, tmp_path, capsys):
+        import hub
+        ai_root = tmp_path / ".ai"
+        ai_root.mkdir()
+        health_dir = ai_root / ".health"
+        health_dir.mkdir()
+        
+        original_peer_sys_dir = getattr(hub, "_peer_sys_dir", None)
+        try:
+            if original_peer_sys_dir:
+                hub._peer_sys_dir = lambda *a, **k: health_dir
+                
+            peer_id = "rl_peer"
+            from hub import _write_peer_health, _ask_health_precheck
+            
+            _write_peer_health(peer_id, {
+                "availability": {
+                    "gate_open": False,
+                    "rate_limit_state": {
+                        "limited": True,
+                        "reset_at": "9999-12-31T23:59:59"
+                    }
+                }
+            }, ai_root, health_dir)
+            
+            with pytest.raises(SystemExit) as exc:
+                _ask_health_precheck(peer_id, ai_root)
+                
+            assert exc.value.code == hub.SOFT_SKIP_EXIT
+            out, err = capsys.readouterr()
+            assert "[HUB:SOFT-SKIP]" in out
+        finally:
+            if original_peer_sys_dir:
+                hub._peer_sys_dir = original_peer_sys_dir
