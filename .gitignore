@@ -216,3 +216,6 @@ __pycache__/
 *.log
 *.tmp
 *.bak
+
+# Test sandbox run-logs (E2 — were tracked + dirtied every test run)
+_sys/tests/_sys/data/logs/*.jsonl
