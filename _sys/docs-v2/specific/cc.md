@@ -1,95 +1,52 @@
 # Specific — cc (Claude Code)
-> Delta from general/*. Load after general/. Status: ACTIVE.
+> Delta-only from general/*. Status: ACTIVE.
 
 ---
 
-## Directory Layout
-
+## Directory Layout & Key Files
 ```
 _sys/claude/
 ├── config/
 │   ├── CLAUDE.md           ← global user preferences (loaded every session)
-│   ├── settings.json       ← Claude Code CLI settings
+│   ├── settings.json       ← CLI settings
 │   ├── plans/              ← planning documents
 │   ├── projects/P--/memory/MEMORY.md  ← persistent memory index
 │   ├── sessions/           ← session snapshots
 │   └── history.jsonl       ← command history
-├── health.json             ← peer health (GREEN/YELLOW/RED)
-├── agent/                  ← sub-agent definitions
-└── project/                ← project-level config
+├── health.json             ← peer health
+└── agent/                  ← sub-agent definitions
 ```
+- **Project Config:** `P:\CLAUDE.md` (consumed by Claude Code CLI at startup).
 
----
-
-## Permission Flags (delta from general/permissions.md)
-
+## Permission Flags
 ```
 claude -p {query} --dangerously-skip-permissions
 ```
 
-This is the current DIR-002 adapter mapping. It does not define governance
-equality; all active peers have equal vote and role rights independently of CLI
-flag syntax.
-
 ## Runtime Profiles
-
-`cc.standard`, `cc.effort`, and `cc.deepthink` are generated from the nested
-profiles in `orchestration.json`. The terminal and root default use
-`cc.standard`; hub root asks may automatically select a higher profile.
-
-The current account was verified by minimal JSON invocations on 2026-06-20:
-
 | Profile | Model | Effort | CLI context observed |
 |---|---|---|---:|
 | `cc.standard` | `claude-haiku-4-5-20251001` | low | 200k |
 | `cc.effort` | `claude-sonnet-4-6` | high | 200k |
 | `cc.deepthink` | `claude-opus-4-8` | max | 1M |
 
-Claude Fable 5 is the newest generally available Anthropic model and the CLI
-recognizes the `fable`/`claude-fable-5` selector. It is not available to the
-current account, so it is recorded in `model-registry.json` but is not routed.
-Claude Code does not expose a zero-token model catalog command; availability
-must be rechecked with a minimal invocation when profiles or account access
-change.
+*(Note: Claude Fable 5 is recognized via `fable`/`claude-fable-5` but not routed if unavailable to the account. Claude Code lacks a zero-token catalog command).*
 
-## Context and Collaboration
-
-cc receives the same versioned room references and durable handoff contract as
-every peer. Claude-local memory is not automatically shared with other peers.
-
----
+## Session & State
+- **No session reuse:** Fresh session per invocation (cc is the primary human interface peer).
+- **Local Memory:** Claude-local memory is not automatically shared with other peers.
 
 ## Gate & Entry
+- **Gate script:** `_sys/claude/claude-gate.bat`
+- **Status check:** `claude-status.bat`
 
-- Gate script: `_sys/claude/claude-gate.bat`
-- Status check: `claude-status.bat`
-- Context: `P:\CLAUDE.md` (project root) + `_sys/claude/config/CLAUDE.md` (global)
-- No session reuse — fresh session per invocation (cc is the human interface peer)
+## Update Protocol & Health
+- `config/CLAUDE.md` — update via `ctx-end --global` or manual edit.
+- `config/projects/*/memory/` — auto-managed by cc memory system.
+- `health.json` — ONLY via `hub.py health-update --peer cc`.
+- **Auto-Remediation (INV-15/16):** cc cannot be auto-restarted silently by SelfHealer Tier-0/1. On RED state: SelfHealer logs the event and escalates to Human Gate.
 
----
-
-## Key Files
-
-| File | Role |
-|------|------|
-| `_sys/claude/health.json` | Health manifest |
-| `_sys/claude/config/CLAUDE.md` | Global preferences (all projects) |
-| `_sys/claude/config/projects/P--/memory/MEMORY.md` | Persistent memory index |
-| `P:\CLAUDE.md` | Project-level config (consumed by Claude Code CLI at startup) |
-
----
-
-## Update Protocol
-
-- `config/CLAUDE.md` — update via `ctx-end --global` or manual edit
-- `config/projects/*/memory/` — auto-managed by cc memory system
-- `health.json` — ONLY via `hub.py health-update --peer cc`
-
----
-
-## Health & Auto-Remediation
-
-- INV-15 triggers SelfHealer when `consecutive_failures ≥ protocol.json["health"]["failure_error"]`.
-- cc is the **primary human interface node** and cannot be auto-restarted by SelfHealer Tier-0/1 without explicit human approval.
-- On cc RED state: SelfHealer logs the event, escalates to Human Gate (INV-16). Do NOT auto-recover cc silently.
-- See `general/learning.md §4` (Self-Care & Autonomy Bounds; SelfHealer = observe/propose only).
+## Context and Collaboration
+*(Delta from general/protocol.md + general/learning.md.)*
+- **Primary human-interface terminal:** cc most often holds the thin-terminal role (GAP-1/PRO-19) — routes/relays, does not self-analyze once a worker is selected.
+- **Local memory is private:** cc's `projects/*/memory/` is NOT auto-propagated to peers; durable cross-peer knowledge must go through the lesson/directive loop (general/learning.md), not cc-local memory.

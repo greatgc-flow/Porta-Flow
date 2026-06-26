@@ -54,7 +54,6 @@ For navigation by domain: `MOC.md`. For human onboarding: `user/manual.md`.
 | `specific/cx.md` | living | Codex delta (dirs, entry point, flags) | 2026-06-16 |
 | `specific/ag.md` | living | AntiGravity delta (ACTIVE, PTY, stateless-home) | 2026-06-19 |
 | `specific/gc.md` | living | Gemini — SUSPENDED TOMBSTONE | 2026-06-25 |
-| `specific/statusline_diag_update.md` | living | Statusline formatting + diag notes (NOT a peer delta — pending merge into ops/logging + user/manual, then archive) | 2026-06-24 |
 | `ops/governance.md` | living | Garbage/, retention, proposal lifecycle (§5), Doc-as-Code (§6) | 2026-06-18 |
 | `ops/conventions.md` | living | Coding conventions, shell rules, script safety, testing policy | 2026-06-26 |
 | `ops/logging.md` | living | IPC history · console capture · per-node detail · rolling policy · 5-Whys | 2026-06-26 |
@@ -76,6 +75,7 @@ For navigation by domain: `MOC.md`. For human onboarding: `user/manual.md`.
 
 ### Archived (`_sys/docs/history/`) — superseded/historical, not loaded
 general (merged into pillars): `consensus`,`communication`,`tradeoffs` → protocol.md; `resource-governance` → routing.md; `session`,`health`,`token-management` → lifecycle.md; `self-evolution`,`feedback-loop`,`directives`,`knowledge` → learning.md; `master-plan`,`master-refactor-v5` → dropped (5-Whys).
+specific: `statusline_diag_update` → merged into ops/logging.md §12 + user/manual.md.
 ops (dated/superseded): `peer-debate-2026-06-19`,`automatic-profile-routing-2026-06-20`,`perf-benchmark-2026-06-19(+full)`,`consistency-audit-2026-06-24`,`TDD_PLAN_HUB_V42`,`REMAINING_ACTIONS`,`remaining-items`.
 
 ---

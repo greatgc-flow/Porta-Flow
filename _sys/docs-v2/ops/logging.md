@@ -399,3 +399,13 @@ Debug log retention: 3 days (shorter than normal — typically high volume).
 ---
 
 _v1.0 completed 2026-06-18. Covers full log taxonomy (MECE), per-node/model detail capture, IPC send/receive history, 5-Whys root cause integration, rolling policy, and virtuous feedback loop connection to routing.md §6–§7._
+
+---
+
+## 12. Statusline JSON Pipeline & Diagnostics
+
+*Note: Live peer status (tokens, quotas) bypasses `health.json` to avoid SSD wear during continuous streaming. (Merged 2026-06-26 from the former specific/statusline_diag_update.md.)*
+
+- **JSON Pipeline**: Native binaries (`agy`, `cc`) stream status JSON to stdout/stdin. Python wrappers intercept this, and bash adapters (`statusline-command.sh`) tee it to live dumps (`_sys/cli/ag_stdin.log`, `_sys/claude/config/status_input.log`).
+- **Unified Processing**: `_sys/ai/common/statusline/statusline-unified.sh` parses this JSON (`jq`), dynamically converts UTC/UNIX reset times to Local OS Time (`date -d`), and appends reasoning effort.
+- **`diag` Command**: `_sys/cli/diag.bat` provides a global diagnostic dashboard. It reads the live JSON logs directly for `ag` and `cc`. For `cx` (which lacks JSON), it queries `_sys/codex/config/state_5.sqlite` natively (`?mode=ro`). Gate and quarantine status fall back to `peer-status` (canonical).

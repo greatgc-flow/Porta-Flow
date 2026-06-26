@@ -24,8 +24,9 @@ hub.py peer-status                 # all peers at a glance (canonical status)
 ### Check Peers
 ```
 hub.py peer-status                 # all peers at a glance (canonical status)
-hub.py health-precheck --peer gc   # before routing ask to gc
+hub.py health-precheck --peer ag   # before routing ask to a peer
 hub.py health-check                # (Audit/Maintenance only) raw local health reads
+_sys\cli\diag.bat                  # live diagnostic dashboard (tokens, 5H/7D quotas, cost)
 ```
 
 ### Ask a Peer
