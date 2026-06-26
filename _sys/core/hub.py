@@ -2403,7 +2403,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
     
     tier = "standard"
     if profile_decision:
-        tier = profile_decision.get("tier", "standard")
+        tier = profile_decision.get("selected_profile", "standard")
     elif "effort" in to:
         tier = "effort"
     elif "deepthink" in to or "-deep" in to:

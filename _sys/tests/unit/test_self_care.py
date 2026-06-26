@@ -26,7 +26,7 @@ def mock_env(tmp_path):
     sys_dir.mkdir()
     archive_dir = tmp_path / "_archive"
     archive_dir.mkdir()
-    
+
     # Mock health.json
     health_file = sys_dir / "health.json"
     health_data = {
@@ -35,7 +35,7 @@ def mock_env(tmp_path):
         "checks": {"portability": "OK", "deps": "OK"}
     }
     health_file.write_text(json.dumps(health_data), encoding="utf-8")
-    
+
     # Mock runtime-directives.jsonl (for Cleanup test)
     directives_file = sys_dir / "runtime-directives.jsonl"
     now = time.time()
@@ -46,7 +46,7 @@ def mock_env(tmp_path):
     with open(directives_file, "w", encoding="utf-8") as f:
         for d in directives:
             f.write(json.dumps(d) + "\n")
-            
+
     return {
         "root": tmp_path,
         "sys": sys_dir,
@@ -64,10 +64,10 @@ class TestSelfCare:
         from self_care import SelfCare
         sc = SelfCare(sys_dir=mock_env["sys"])
         sc.observe()
-        
+
         assert sc.state["health"]["status"] == "GREEN"
-        # Only valid directives should be kept in state after observation? 
-        # Or all are loaded and cleanup() filters? 
+        # Only valid directives should be kept in state after observation?
+        # Or all are loaded and cleanup() filters?
         # The prompt says cleanup removes entries. So observe loads all.
         assert len(sc.state["directives"]) == 2
 
@@ -78,7 +78,7 @@ class TestSelfCare:
             mock_run.return_value = MagicMock(returncode=0, stdout="Status: OK")
             sc = SelfCare(sys_dir=mock_env["sys"])
             sc.validate()
-            
+
             # Verify virtualizer.py --status call
             args, kwargs = mock_run.call_args
             cmd = " ".join(args[0])
@@ -91,10 +91,10 @@ class TestSelfCare:
         sc = SelfCare(sys_dir=mock_env["sys"])
         sc.observe() # Load 2
         sc.cleanup() # Sweep 1
-        
+
         assert len(sc.state["directives"]) == 1
         assert sc.state["directives"][0]["id"] == "DIR-VALID"
-        
+
         # Verify file persistence
         content = mock_env["directives"].read_text(encoding="utf-8")
         assert "DIR-EXPIRED" not in content
@@ -107,7 +107,7 @@ class TestSelfCare:
             mock_run.return_value = MagicMock(returncode=0, stdout="Findings: High saturation in core/")
             sc = SelfCare(sys_dir=mock_env["sys"])
             sc.scan()
-            
+
             args, kwargs = mock_run.call_args
             cmd = " ".join(args[0])
             assert "saturation_scan.py" in cmd
@@ -120,11 +120,60 @@ class TestSelfCare:
             sc = SelfCare(sys_dir=mock_env["sys"])
             sc.state["scan_findings"] = "Saturation detected"
             sc.propose()
-            
+
             args, kwargs = mock_run.call_args
             cmd = " ".join(args[0])
             assert "hub.py" in cmd
             assert "proposal-add" in cmd
+
+    def test_propose_uses_subject_flag(self, mock_env):
+        """A-01: self_care propose uses --subject instead of --title."""
+        from self_care import SelfCare
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            sc = SelfCare(sys_dir=mock_env["sys"])
+            sc.state["scan_findings"] = "Saturation detected"
+            sc.propose()
+
+            args = mock_run.call_args[0][0]
+            assert "--subject" in args, "propose must use --subject"
+            assert "--title" not in args, "propose must not use --title"
+
+    def test_lesson_graduation_uses_subject_flag(self, mock_env):
+        """A-01: self_care lesson_graduation uses --subject instead of --title."""
+        from self_care import SelfCare
+
+        # Setup mock environment for lesson graduation
+        gov_path = mock_env["sys"] / "ai" / "governance_params.json"
+        gov_path.parent.mkdir(parents=True, exist_ok=True)
+        gov_path.write_text(json.dumps({"lesson_graduation_auto_propose": True}), encoding="utf-8")
+
+        knowledge_dir = mock_env["sys"] / "ai" / "knowledge" / "general"
+        knowledge_dir.mkdir(parents=True, exist_ok=True)
+        lessons_path = knowledge_dir / "active-lessons.jsonl"
+
+        # Write a mock lesson that meets the threshold
+        # Use ISO8601 with Z to ensure it parses correctly and is considered recent
+        lesson = {
+            "id": "L-123",
+            "status": "active",
+            "title": "Test Lesson",
+            "source_refs": [
+                {"id": "1", "type": "debate", "ts": "2026-06-25T12:00:00Z"},
+                {"id": "2", "type": "debate", "ts": "2026-06-25T12:00:00Z"},
+                {"id": "3", "type": "debate", "ts": "2026-06-25T12:00:00Z"}
+            ]
+        }
+        lessons_path.write_text(json.dumps(lesson) + "\n", encoding="utf-8")
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            sc = SelfCare(sys_dir=mock_env["sys"])
+            sc.lesson_graduation()
+
+            args = mock_run.call_args[0][0]
+            assert "--subject" in args, "lesson_graduation must use --subject"
+            assert "--title" not in args, "lesson_graduation must not use --title"
 
     def test_sync_calls_sync_docs_dry_run(self, mock_env):
         """Step 6: Sync invokes sync_docs.py --dry-run."""
@@ -133,7 +182,7 @@ class TestSelfCare:
             mock_run.return_value = MagicMock(returncode=0)
             sc = SelfCare(sys_dir=mock_env["sys"])
             sc.sync()
-            
+
             args, kwargs = mock_run.call_args
             cmd = " ".join(args[0])
             assert "sync_docs.py" in cmd
@@ -145,7 +194,7 @@ class TestSelfCare:
         sc = SelfCare(sys_dir=mock_env["sys"], archive_dir=mock_env["archive"])
         sc.state["steps_completed"] = ["observe", "validate"]
         sc.record(trigger="manual")
-        
+
         log_file = mock_env["log"]
         assert log_file.exists()
         log_data = json.loads(log_file.read_text(encoding="utf-8").strip())
@@ -156,12 +205,12 @@ class TestSelfCare:
         """Failures in individual steps do not stop the execution of others."""
         from self_care import SelfCare
         sc = SelfCare(sys_dir=mock_env["sys"], archive_dir=mock_env["archive"])
-        
+
         # Inject failure in cleanup
         with patch.object(SelfCare, "cleanup", side_effect=Exception("Cleanup error")):
             with patch("subprocess.run", return_value=MagicMock(returncode=0)):
                 sc.run(trigger="test")
-        
+
         # Even if cleanup failed, record() should have run
         assert mock_env["log"].exists()
         log_data = json.loads(mock_env["log"].read_text(encoding="utf-8").strip())
@@ -172,7 +221,7 @@ class TestSelfCare:
         from self_care import SelfCare
         sc = SelfCare(sys_dir=mock_env["sys"], archive_dir=mock_env["archive"])
         sc.record(trigger="commit_interval")
-        
+
         log_data = json.loads(mock_env["log"].read_text(encoding="utf-8").strip())
         assert log_data["trigger"] == "commit_interval"
 
@@ -191,7 +240,7 @@ class TestSelfCare:
     def test_protocol_session_step_args_accepted(self, mock_env):
         """P0.4: Check that self_care.py argparse accepts args defined in protocol.json schedule."""
         from self_care import main
-        
+
         # Test observe step args
         with patch("sys.argv", ["self_care.py", "observe"]):
             with patch("self_care.SelfCare.observe") as mock_observe:
@@ -201,7 +250,7 @@ class TestSelfCare:
                     except SystemExit as e:
                         assert e.code == 0 or e.code is None
                     mock_observe.assert_called_once()
-                    
+
         # Test lesson graduation step args
         with patch("sys.argv", ["self_care.py", "--lesson-grad-only"]):
             with patch("self_care.SelfCare.lesson_graduation") as mock_lesson_grad:

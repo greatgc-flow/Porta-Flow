@@ -142,7 +142,7 @@ class SelfCare:
             hub = self.sys_dir / "core" / "hub.py"
             subprocess.run(
                 [sys.executable, str(hub), "proposal-add",
-                 "--title", "Auto: Saturation detected",
+                 "--subject", "Auto: Saturation detected",
                  "--rationale", self.state["scan_findings"][:200]],
                 capture_output=True, text=True
             )
@@ -220,7 +220,7 @@ class SelfCare:
             )
             subprocess.run(
                 [sys.executable, str(hub), "proposal-add",
-                 "--title", f"Lesson graduation: {lid} → {target_doc}",
+                 "--subject", f"Lesson graduation: {lid} → {target_doc}",
                  "--rationale", rationale[:500]],
                 capture_output=True, text=True,
             )
