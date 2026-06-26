@@ -59,8 +59,8 @@ Documented in `ops/governance.md §6` as planned. Until it exists, INV-19 and co
 - `runtime-directives.jsonl` corrects behavior with TTL. `active-lessons.jsonl` accumulates lessons.
 - **Missing:** No automated trigger promotes a high-frequency lesson from `active-lessons.jsonl` into a permanent `docs-v2` rule or `10-invariants.md` entry.
 - **Risk:** Directives expire → lessons bloat context without being synthesized into SSOT architecture. Root fixes remain implicit, not structural.
-**Current state:** DocsSyncer (self-evolution.md §2.2) handles `consensus_finalize` → docs-v2 sync. But there is no lesson-frequency threshold check that triggers a promotion proposal.
-**Resolution:** Implement **Semantic Vector Triage & Automated Doc-as-Code Graduation** in Phase 6 of `self-evolution.md §5`.
+**Current state:** DocsSyncer (learning.md §4) handles `consensus_finalize` → docs-v2 sync. But there is no lesson-frequency threshold check that triggers a promotion proposal.
+**Resolution:** Implement **Semantic Vector Triage & Automated Doc-as-Code Graduation** in the Ask Transaction roadmap (learning.md §5).
 1. **Semantic Clustering**: `self_care.py` calculates embeddings for each new lesson and clusters them by semantic similarity, rather than naive frequency counting.
 2. **Density Threshold**: When a semantic cluster reaches a density threshold (e.g., ≥3 related lessons in 7 days), the system identifies the most relevant `docs-v2` file via cosine similarity.
 3. **Automated Patch Generation**: `self_care.py` automatically spawns an agent to generate a `[PROPOSAL]` diff that refactors the target document to structurally address the root cause (5-Whys application).

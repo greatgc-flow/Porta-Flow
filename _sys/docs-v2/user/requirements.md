@@ -257,7 +257,7 @@
 | # | Gap | Status | Resolved in |
 |---|-----|--------|-------------|
 | 1 | Model-level routing matrix | ✅ DONE | routing.md §6 + orchestration.json nested profiles |
-| 2 | Self-care cycle event triggers + procedure | ✅ DONE | self-evolution.md §4 + self_care.py |
+| 2 | Self-care cycle event triggers + procedure | ✅ DONE | learning.md §4 + self_care.py |
 | 3 | Audit checklist (perspective-based) | ✅ DONE | audit-checklist.md §H |
 | 4 | Trade-off parameter registry | ✅ DONE | general/protocol.md §2 |
 | 5 | Plan-Do-See as standalone procedure | ✅ DONE | protocol.md §7 |

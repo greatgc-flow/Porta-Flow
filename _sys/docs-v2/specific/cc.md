@@ -92,4 +92,4 @@ every peer. Claude-local memory is not automatically shared with other peers.
 - INV-15 triggers SelfHealer when `consecutive_failures ≥ protocol.json["health"]["failure_error"]`.
 - cc is the **primary human interface node** and cannot be auto-restarted by SelfHealer Tier-0/1 without explicit human approval.
 - On cc RED state: SelfHealer logs the event, escalates to Human Gate (INV-16). Do NOT auto-recover cc silently.
-- See `general/self-evolution.md §2.1` for full SelfHealer tier description.
+- See `general/learning.md §4` (Self-Care & Autonomy Bounds; SelfHealer = observe/propose only).

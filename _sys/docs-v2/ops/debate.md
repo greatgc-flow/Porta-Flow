@@ -108,5 +108,5 @@ Finding severity:
 ## §17 — User Directives in Debate Context
 
 User Directives (`_sys/ai/user-directives.md`) are Tier 1.5 — above operational Tier 2 rules.
-They are auto-injected into all peer asks (see `general/directives.md`).
+They are auto-injected into all peer asks (see `general/learning.md §2`).
 Debate may NOT override User Directives. If conflict: escalate to Human (Tier 0).
