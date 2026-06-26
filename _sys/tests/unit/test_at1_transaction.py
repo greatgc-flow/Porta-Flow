@@ -1,0 +1,233 @@
+import pytest
+import sys
+from pathlib import Path
+from unittest.mock import patch, MagicMock
+
+# The module to test
+from _sys.core import hub
+
+def test_at1_lease_closed_on_failure(tmp_path):
+    """A subprocess ask that raises/exits nonzero still closes its lease."""
+    ai_root = tmp_path / ".ai"
+    ai_root.mkdir()
+    hub.ensure_ai_dir(ai_root)
+    
+    with patch("_sys.core.hub.subprocess.Popen") as mock_popen, \
+         patch("_sys.core.hub._lease_close") as mock_lease_close, \
+         patch("_sys.core.hub._kill_process_tree") as mock_kill, \
+         patch("_sys.core.hub._record_ask_failure") as mock_record_failure, \
+         patch("_sys.core.hub._append_ask_history"):
+        
+        # Setup mock process that fails
+        mock_proc = MagicMock()
+        mock_proc.pid = 12345
+        mock_proc.returncode = 1
+        mock_proc.communicate.return_value = (b"", b"Error!")
+        mock_proc.poll.return_value = 1
+        mock_popen.return_value = mock_proc
+        
+        with pytest.raises(SystemExit) as exc:
+            hub.action_ask(
+                to="cc",
+                query="test",
+                query_file=None,
+                timeout_sec=10,
+                ai_root=ai_root,
+                quiet=True,
+                output_file=None,
+                include_context=False,
+                session_policy="auto",
+                explicit_scope=None,
+                _depth=0,
+                origin="test"
+            )
+        
+        from unittest.mock import ANY
+        assert exc.value.code != 0
+        # Ensure lease was closed even on exit, with whatever profile id it resolved to
+        mock_lease_close.assert_called_with(ai_root, ANY, 12345, "failed")
+        # A process that already EXITED (returncode set) must NOT be re-reaped —
+        # the finally only reaps still-running processes (returncode is None).
+        mock_kill.assert_not_called()
+
+def test_at1_process_tree_reaped_on_timeout(tmp_path):
+    """A PTY (or subprocess) ask that times out reaps the child tree."""
+    ai_root = tmp_path / ".ai"
+    ai_root.mkdir()
+    hub.ensure_ai_dir(ai_root)
+    
+    with patch("_sys.core.hub.subprocess.Popen") as mock_popen, \
+         patch("_sys.core.hub._kill_process_tree") as mock_kill, \
+         patch("_sys.core.hub._record_ask_failure"), \
+         patch("_sys.core.hub._append_ask_history"), \
+         patch("_sys.core.hub._lease_close"):
+        
+        # Setup mock process that times out immediately
+        mock_proc = MagicMock()
+        mock_proc.pid = 999
+        import subprocess
+        mock_proc.communicate.side_effect = subprocess.TimeoutExpired(cmd=["test"], timeout=1)
+        mock_proc.poll.return_value = None
+        # Still-running after timeout → returncode is None → finally MUST reap it.
+        mock_proc.returncode = None
+        mock_popen.return_value = mock_proc
+        
+        with pytest.raises(SystemExit) as exc:
+            hub.action_ask(
+                to="cc",
+                query="test timeout",
+                query_file=None,
+                timeout_sec=1,
+                ai_root=ai_root,
+                quiet=True,
+                output_file=None,
+                include_context=False,
+                session_policy="auto",
+                explicit_scope=None,
+                _depth=0,
+                origin="test"
+            )
+        
+        assert exc.value.code != 0
+        mock_kill.assert_called_with(mock_proc)
+
+
+def test_at1_health_written_before_exit(tmp_path):
+    """On failure, health write must happen before function exits."""
+    ai_root = tmp_path / ".ai"
+    ai_root.mkdir()
+    hub.ensure_ai_dir(ai_root)
+    
+    with patch("_sys.core.hub.subprocess.Popen") as mock_popen, \
+         patch("_sys.core.hub._record_ask_failure") as mock_record_failure, \
+         patch("_sys.core.hub._kill_process_tree") as mock_kill, \
+         patch("_sys.core.hub._append_ask_history"), \
+         patch("_sys.core.hub._lease_close"):
+        
+        # Setup mock process that raises an exception
+        mock_popen.side_effect = PermissionError("Cannot execute")
+        
+        with pytest.raises(SystemExit) as exc:
+            hub.action_ask(
+                to="cc",
+                query="test failure",
+                query_file=None,
+                timeout_sec=10,
+                ai_root=ai_root,
+                quiet=True,
+                output_file=None,
+                include_context=False,
+                session_policy="auto",
+                explicit_scope=None,
+                _depth=0,
+                origin="test"
+            )
+        
+        assert exc.value.code != 0
+        # Health record must be called
+        mock_record_failure.assert_called()
+
+
+def test_at1_pty_success_not_reaped(tmp_path):
+    """A PTY ask (to="ag") that returns a result successfully does NOT call _kill_process_tree."""
+    ai_root = tmp_path / ".ai"
+    ai_root.mkdir()
+    hub.ensure_ai_dir(ai_root)
+
+    with patch("_sys.core.hub._ask_with_pty") as mock_ask, \
+         patch("_sys.core.hub._kill_process_tree") as mock_kill, \
+         patch("_sys.core.hub._record_ask_success"), \
+         patch("_sys.core.hub._append_ask_history"), \
+         patch("_sys.core.hub._lease_close") as mock_lease_close, \
+         patch("_sys.core.hub._runtime_cfg", return_value={"ag": {"requires_pty": True}}):
+        
+        from _sys.core.hub import _PtyAskResult
+        mock_ask.return_value = _PtyAskResult(
+            text="success", elapsed=1, exit_code=0, timed_out=False,
+            timeout_kind=None, pid=54321, transport_error=None
+        )
+
+        hub.action_ask(
+            to="ag",
+            query="test",
+            query_file=None,
+            timeout_sec=10,
+            ai_root=ai_root,
+            quiet=True,
+            output_file=None,
+            include_context=False,
+            session_policy="auto",
+            explicit_scope=None,
+            _depth=0,
+            origin="test"
+        )
+        
+        mock_kill.assert_not_called()
+
+
+def test_at1_terminal_timeout_not_permanent_red(tmp_path):
+    """after a terminal-timeout failure record, a subsequent success clears RED"""
+    ai_root = tmp_path / ".ai"
+    ai_root.mkdir()
+    hub.ensure_ai_dir(ai_root)
+    
+    cc_dir = tmp_path / "cc"
+    cc_dir.mkdir()
+    
+    with patch("_sys.core.hub.subprocess.Popen") as mock_popen, \
+         patch("_sys.core.hub._kill_process_tree"), \
+         patch("_sys.core.hub._append_ask_history"), \
+         patch("_sys.core.hub._lease_close"), \
+         patch("_sys.core.hub._load_orchestration", return_value={"hub_nodes": [{"type": "peer", "node_id": "cc", "enabled": True}]}), \
+         patch("_sys.core.hub._peer_sys_dir", return_value=cc_dir):
+        
+        import subprocess
+        mock_proc = MagicMock()
+        mock_proc.pid = 999
+        mock_proc.communicate.side_effect = subprocess.TimeoutExpired(cmd=["test"], timeout=1)
+        mock_proc.poll.return_value = None
+        mock_proc.returncode = None
+        mock_popen.return_value = mock_proc
+        
+        with pytest.raises(SystemExit):
+            hub.action_ask(
+                to="cc",
+                query="test timeout red",
+                query_file=None,
+                timeout_sec=1,
+                ai_root=ai_root,
+                quiet=True,
+                output_file=None,
+                include_context=False,
+                session_policy="auto",
+                explicit_scope=None,
+                _depth=0,
+                origin="test"
+            )
+            
+    import json
+    health_file = cc_dir / "health.json"
+    data = json.loads(health_file.read_text())
+    
+    assert data.get("context_health", {}).get("status") != "RED"
+    assert data.get("session_health", {}).get("transient_failures", 0) > 0
+
+
+def test_at1_terminal_timeout_does_not_close_gate(tmp_path):
+    """consensus-snapshot neutrality: a terminal_timeout must NOT close gate_open
+    (the peer is presumed healthy; the hub killed it for its own deadline). Closing
+    the gate would drop the peer from the consensus gate-OPEN quorum snapshot."""
+    from _sys.core import hub
+    ai_root = tmp_path / ".ai"
+    ai_root.mkdir()
+    health_dir = tmp_path / "health"
+    health_dir.mkdir()
+
+    # Record a terminal_timeout failure directly.
+    hub._record_ask_failure("cc", "terminal_timeout", "hub deadline", 5, ai_root, health_dir=health_dir)
+
+    data = hub._read_json(health_dir / "health.json") if (health_dir / "health.json").exists() else {}
+    avail = data.get("availability", {})
+    # gate must remain open (not False) and status must not be RED.
+    assert avail.get("gate_open") is not False, "terminal_timeout wrongly closed the gate (quorum impact)"
+    assert data.get("context_health", {}).get("status") != "RED", "terminal_timeout wrongly RED-ed the peer"

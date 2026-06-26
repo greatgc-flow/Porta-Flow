@@ -1172,7 +1172,7 @@ def _decode_output(data: bytes) -> str:
     return data.decode("utf-8", errors="replace").replace("\r\n", "\n")
 
 
-_TRANSIENT_REASONS = {"rate_or_session_limit", "transient_network"}
+_TRANSIENT_REASONS = {"rate_or_session_limit", "transient_network", "terminal_timeout"}
 
 def _parse_reset_time(text: str) -> str | None:
     import re
@@ -1437,7 +1437,11 @@ def _record_ask_failure(
     if extra:
         availability.update(extra)
         
-    if is_transient:
+    # terminal_timeout is transient for RED-stickiness (no permanent RED, auto-clears),
+    # but the peer is presumed healthy — the hub killed it for ITS OWN deadline — so it
+    # must NOT close the gate. Closing the gate would drop the peer from the consensus
+    # gate-OPEN snapshot (quorum), which is wrong for a terminal-initiated timeout.
+    if is_transient and reason != "terminal_timeout":
         availability["gate_open"] = False
         rls = availability.get("rate_limit_state", {})
         if not isinstance(rls, dict) or not rls.get("limited") or not rls.get("reset_at"):
@@ -1994,6 +1998,7 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
             break
 
     if timed_out:
+        _kill_process_tree(pid)
         try:
             p.terminate(force=True)
         except Exception:
@@ -2555,7 +2560,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             # output-file failure → success.
             if result.timed_out:
                 lease_status = "timeout"
-                reason = "timeout"
+                reason = "terminal_timeout"
                 detail = f"ask timeout after {elapsed}s (kind={result.timeout_kind})"
                 _record_ask_failure(health_peer, reason, detail, elapsed, ai_root)
                 _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, False, reason)
@@ -2690,6 +2695,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         except BaseException as exc:
             lease_status = "failed"
             _update_pty_thread(f"failed ({type(exc).__name__})")
+            _record_ask_failure(health_peer, "fatal_error", f"unexpected crash: {type(exc).__name__}", None, ai_root)
             raise
         finally:
             # CONDITION-2: close the lease EXACTLY ONCE using result.pid.
@@ -2746,7 +2752,6 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 lease_status = "timeout"
-                _kill_process_tree(proc)
                 raise subprocess.TimeoutExpired(cmd, timeout_sec)
             try:
                 raw_out, raw_err = proc.communicate(input=input_bytes, timeout=min(heartbeat_sec, remaining))
@@ -2771,7 +2776,6 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                 if _silent_beats >= _MAX_SILENT_HEARTBEATS:
                     # Process alive but producing no output for zombie_timeout_sec total — treat as zombie.
                     lease_status = "timeout"
-                    _kill_process_tree(proc)
                     raise subprocess.TimeoutExpired(cmd, zombie_timeout_sec)
 
         elapsed = int(time.monotonic() - t0)
@@ -2842,7 +2846,6 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                     retry_input = query.encode("utf-8") if fresh_use_stdin else None
                     raw_out, raw_err = proc.communicate(input=retry_input, timeout=timeout_sec if timeout_sec > 0 else None)
                 except subprocess.TimeoutExpired:
-                    _kill_process_tree(proc)
                     raise
                 elapsed = int(time.monotonic() - t0)
                 raw_text = _strip_ansi(_decode_output(raw_out))
@@ -2971,10 +2974,10 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         lease_status = "timeout"
         reported_timeout = exc.timeout if getattr(exc, 'timeout', None) else timeout_sec
         detail = f"ask timeout after {reported_timeout}s"
-        _record_ask_failure(health_peer, "timeout", detail, reported_timeout, ai_root)
-        _append_ask_history(ai_root, to, saved_query_file_path, output_file, reported_timeout, False, "timeout")
+        _record_ask_failure(health_peer, "terminal_timeout", detail, reported_timeout, ai_root)
+        _append_ask_history(ai_root, to, saved_query_file_path, output_file, reported_timeout, False, "terminal_timeout")
         if ai_root:
-            _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=reported_timeout, failure_reason="timeout")
+            _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=reported_timeout, failure_reason="terminal_timeout")
         print(f"[HUB:ERROR] {detail}", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
@@ -2992,8 +2995,15 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             sys.exit(0)
         print(f"[HUB:ERROR] ask 실패: {e}", file=sys.stderr)
         sys.exit(1)
+    except BaseException as exc:
+        if not isinstance(exc, SystemExit):
+            lease_status = "failed"
+            _record_ask_failure(health_peer, "fatal_error", f"interrupted: {type(exc).__name__}", None, ai_root)
+        raise
     finally:
         pid = proc.pid if proc is not None else -1
+        if proc is not None and proc.returncode is None:
+            _kill_process_tree(proc)
         _lease_close(ai_root, to, pid, lease_status)
 
 
@@ -5292,26 +5302,31 @@ def _lease_close(ai_root: Path | None, peer_id: str, pid: int, status: str) -> N
             _write_json(_leases_path(ai_root), data)
 
 
-def _kill_process_tree(proc: "subprocess.Popen") -> None:
+def _kill_process_tree(proc) -> None:
     """Kill process tree (children first, then parent). Windows-safe."""
+    if proc is None: return
+    pid = proc if isinstance(proc, int) else proc.pid
+    if pid is None or pid < 0: return
     try:
-        parent = psutil.Process(proc.pid)
-        children = parent.children(recursive=True)
-        for child in children:
+        if psutil is not None:
+            parent = psutil.Process(pid)
+            children = parent.children(recursive=True)
+            for child in children:
+                try:
+                    child.kill()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
             try:
-                child.kill()
+                parent.kill()
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
-        try:
-            parent.kill()
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            pass
-    except (psutil.NoSuchProcess, psutil.AccessDenied, Exception):
-        pass
-    try:
-        proc.communicate(timeout=5)
     except Exception:
         pass
+    if not isinstance(proc, int):
+        try:
+            proc.communicate(timeout=5)
+        except Exception:
+            pass
 
 
 def _lease_sweep(ai_root: Path | None) -> None:
