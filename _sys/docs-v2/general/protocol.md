@@ -136,7 +136,7 @@ If local records conflict and no rule resolves → fail closed (ask/escalate).
 
 ### 4.1 COLLAB_RATE — Collaboration Depth
 Zero-token local operations (observe/validate/classify) are **exempt** from COLLAB_RATE at all levels.
-> **Always zero-token (explicit list):** reading `health.json`, `handoff.md`, `mailbox.json`, `runtime-directives.jsonl`, `user-directives.md` — regardless of COLLAB_RATE. See `general/session.md §7`.
+> **Always zero-token (explicit list):** reading `health.json`, `handoff.md`, `mailbox.json`, `runtime-directives.jsonl`, `user-directives.md` — regardless of COLLAB_RATE. See `general/lifecycle.md §7`.
 
 *(Values for these modes are referenced in `protocol.json["collab_rate"]["current"]`)*
 

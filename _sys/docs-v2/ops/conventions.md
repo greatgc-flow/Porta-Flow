@@ -227,7 +227,7 @@ When gc should be prioritized as an analysis tool (large corpus, cross-repo scan
 Collaboration health check → **Axis H** (`_sys/checks/check-health.bat`). Token budget: See §3-4-D.
 
 ## §3-9 — Session Transition Triggers
-Collaboration transition timing by COLLAB_RATE level → See **`_sys/docs-v2/general/protocol.md`** (COLLAB_RATE table) and **`_sys/docs-v2/general/session.md`** (session decision tree).
+Collaboration transition timing by COLLAB_RATE level → See **`_sys/docs-v2/general/protocol.md`** (COLLAB_RATE table) and **`_sys/docs-v2/general/lifecycle.md`** (session decision tree).
 
 ## 4. Folder/File Naming Rules
 
@@ -246,7 +246,7 @@ Format: `tools/{tool-name}/{executable}.exe`
 Example: `tools/ripgrep/rg.exe`, `tools/jq/jq.exe`
 
 ## 5. Session Context and State Update Rules
-→ Session context: `_sys/docs-v2/general/session.md` (startup contract, handoff, resume rules).
+→ Session context: `_sys/docs-v2/general/lifecycle.md` (startup contract, handoff, resume rules).
 → Per-peer config delta: `_sys/docs-v2/specific/cc.md` (cc), `_sys/docs-v2/specific/ag.md` (ag).
 → State changes must go through `hub.py update-status`.
 
