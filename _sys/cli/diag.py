@@ -11,6 +11,53 @@ PORTABLE_ROOT = SYS_DIR.parent
 sys.path.insert(0, str(SYS_DIR / "core"))
 from hub_peer import resolve_peer_sys_dir
 
+
+def _codex_rate_limits():
+    """Query the codex app-server (initialize -> account/rateLimits/read) for live
+    5h/weekly rate-limit reset times. Codex does not persist these locally; they are
+    fetched from the API. Returns the rateLimits dict or None."""
+    msgs = (
+        '{"jsonrpc":"2.0","id":0,"method":"initialize","params":'
+        '{"clientInfo":{"name":"diag","version":"1.0"},"apiVersion":"v2"}}\n'
+        '{"jsonrpc":"2.0","id":1,"method":"account/rateLimits/read","params":{}}\n'
+    )
+    import time, shutil
+    codex_exe = shutil.which("codex") or shutil.which("codex.cmd")
+    if not codex_exe:
+        cand = SYS_DIR / "env" / "nodejs" / "npm-global" / "codex.cmd"
+        codex_exe = str(cand) if cand.exists() else None
+    if not codex_exe:
+        return None
+    proc = None
+    try:
+        proc = subprocess.Popen([codex_exe, "app-server"], stdin=subprocess.PIPE,
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        proc.stdin.write(msgs)
+        proc.stdin.flush()
+        # app-server is a daemon (doesn't exit on EOF) — read lines until the id=1
+        # response arrives, then terminate, instead of waiting for process exit.
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            line = proc.stdout.readline()
+            if not line:
+                break
+            try:
+                obj = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            if obj.get("id") == 1 and isinstance(obj.get("result"), dict):
+                return obj["result"].get("rateLimits")
+    except Exception:
+        pass
+    finally:
+        if proc and proc.poll() is None:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+    return None
+
+
 def main():
     print("="*60)
     print(" 🛠️  Antigravity Collaboration Environment Diagnostics ")
@@ -95,8 +142,9 @@ def main():
             ctx = data["context_window"]
             ctx_window = ctx.get("context_window_size", "Unknown")
             session_tokens = ctx.get("total_input_tokens", 0) + ctx.get("total_output_tokens", 0)
-            if session_tokens == 0 and "current_usage" in ctx:
-                session_tokens = ctx["current_usage"].get("input_tokens", 0) + ctx["current_usage"].get("output_tokens", 0)
+            cur_usage = ctx.get("current_usage")
+            if session_tokens == 0 and isinstance(cur_usage, dict):
+                session_tokens = cur_usage.get("input_tokens", 0) + cur_usage.get("output_tokens", 0)
         elif "context_used_tokens" in data:
             session_tokens = data["context_used_tokens"]
             ctx_window = data.get("context_total_tokens", "Unknown")
@@ -161,6 +209,19 @@ def main():
         print(f"  - Context: {session_tokens} / {ctx_window} tokens")
         if peer == "cx" and 'total_cx_tokens' in locals() and total_cx_tokens > 0:
             print(f"  - Total Historical Tokens: {total_cx_tokens:,}")
+        if peer == "cx":
+            rl = _codex_rate_limits()
+            if rl:
+                from datetime import datetime
+                prim, sec = rl.get("primary") or {}, rl.get("secondary") or {}
+                if prim.get("resetsAt"):
+                    rst = datetime.fromtimestamp(prim["resetsAt"]).strftime("%H:%M")
+                    print(f"  - 5H Quota: {prim.get('usedPercent', 0)}% Used (Resets at {rst})")
+                if sec.get("resetsAt"):
+                    rst = datetime.fromtimestamp(sec["resetsAt"]).strftime("%m/%d %H:%M")
+                    print(f"  - 7D Quota: {sec.get('usedPercent', 0)}% Used (Resets on {rst})")
+            else:
+                print("  - 5H/7D Quota: (codex app-server unavailable)")
             
         # Quota
         def format_reset(val, fmt="%Y-%m-%d %H:%M:%S"):
