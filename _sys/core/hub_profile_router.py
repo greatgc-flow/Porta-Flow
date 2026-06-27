@@ -175,16 +175,23 @@ def _eligible_profile(
     root: dict,
     requested: str,
     profile_order: list[str],
-) -> tuple[str, str | None]:
+    health: dict | None = None,
+) -> tuple[str | None, str | None]:
+    avail = health.get("availability", {}) if health else {}
+    if avail.get("gate_open") is False:
+        return None, None
+    health_profiles = avail.get("profiles", {})
     profiles = root.get("profiles", {})
     start = profile_order.index(requested)
     for index in range(start, -1, -1):
         candidate = profile_order[index]
         profile = profiles.get(candidate, {})
+        h_prof = health_profiles.get(candidate, {})
         if (
             profile
             and profile.get("enabled") is not False
             and profile.get("routing_state") != "blocked"
+            and h_prof.get("gate_open") is not False
         ):
             return candidate, requested if candidate != requested else None
     raise ProfileRoutingError(
@@ -200,6 +207,7 @@ def select_profile_node(
     routing_config: dict,
     consecutive_failures: int = 0,
     consecutive_failure_reason: str | None = None,
+    health: dict | None = None,
 ) -> ProfileDecision:
     """Select a profile for a root target without invoking a model."""
     config = _config(routing_config)
@@ -212,6 +220,12 @@ def select_profile_node(
     root = _root_map(orchestration)[root_id]
 
     if explicit and explicit_profile:
+        avail = health.get("availability", {}) if health else {}
+        if avail.get("gate_open") is False:
+            raise ProfileRoutingError(f"peer '{root_id}' is completely unavailable")
+        h_prof = avail.get("profiles", {}).get(explicit_profile, {})
+        if h_prof.get("gate_open") is False:
+            raise ProfileRoutingError(f"explicit profile '{explicit_profile}' is currently unavailable")
         return ProfileDecision(
             root_peer=root_id,
             node_id=f"{root_id}.{explicit_profile}",
@@ -254,7 +268,9 @@ def select_profile_node(
             promoted = True
             signals.append("failure_promotion")
 
-    selected, fallback_from = _eligible_profile(root, requested, profile_order)
+    selected, fallback_from = _eligible_profile(root, requested, profile_order, health)
+    if not selected:
+        raise ProfileRoutingError(f"no eligible profile found for peer '{root_id}'")
     if fallback_from:
         signals.append(f"fallback_from:{fallback_from}")
     return ProfileDecision(
