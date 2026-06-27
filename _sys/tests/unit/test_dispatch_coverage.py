@@ -14,7 +14,7 @@ _TESTS_DIR = Path(__file__).resolve().parent
 # Actions known to lack direct test coverage as of 2026-06-25 (P1/M4 baseline).
 # RULE: this set may only get SMALLER. Do NOT add to it — write a test instead.
 KNOWN_UNTESTED = {
-    "append-handoff", "approval-request", "assign-role", "check-gate", "discover",
+    "approval-request", "assign-role", "check-gate", "discover",
     "file-lock", "file-unlock", "leader-yield", "lesson-inject", "lessons-list",
     "lock-status", "profile-validate", "proposal-list", "release-role", "role-status",
     "task-failover", "task-status", "thread-react",

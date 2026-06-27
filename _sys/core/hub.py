@@ -1277,7 +1277,7 @@ def _ask_health_precheck(peer_id: str, ai_root: Path | None) -> None:
         return
     status, data = _peer_effective_health(peer_id)
     availability = data.get("availability", {})
-    
+    changed = False
     rls = availability.get("rate_limit_state")
     if availability.get("gate_open") is False and isinstance(rls, dict) and rls.get("limited"):
         reset_str = rls.get("reset_at")
@@ -1289,9 +1289,28 @@ def _ask_health_precheck(peer_id: str, ai_root: Path | None) -> None:
                 if now >= reset_dt:
                     availability["gate_open"] = True
                     availability["rate_limit_state"] = "ok"
-                    _write_peer_health(peer_id, data, ai_root)
+                    changed = True
             except ValueError:
                 pass
+
+    for p_key, p_data in availability.get("profiles", {}).items():
+        p_rls = p_data.get("rate_limit_state")
+        if p_data.get("gate_open") is False and isinstance(p_rls, dict) and p_rls.get("limited"):
+            reset_str = p_rls.get("reset_at")
+            if reset_str:
+                try:
+                    from datetime import datetime
+                    reset_dt = datetime.fromisoformat(reset_str)
+                    now = datetime.now(reset_dt.tzinfo) if reset_dt.tzinfo else datetime.now()
+                    if now >= reset_dt:
+                        p_data["gate_open"] = True
+                        p_data["rate_limit_state"] = "ok"
+                        changed = True
+                except ValueError:
+                    pass
+
+    if changed:
+        _write_peer_health(peer_id, data, ai_root)
 
     gate_open = availability.get("gate_open") is not False
     if gate_open:
@@ -1481,14 +1500,21 @@ def _record_ask_failure(
     # but the peer is presumed healthy — the hub killed it for ITS OWN deadline — so it
     # must NOT close the gate. Closing the gate would drop the peer from the consensus
     # gate-OPEN snapshot (quorum), which is wrong for a terminal-initiated timeout.
+    close_target_gate = False
     if is_transient and reason != "terminal_timeout":
+        close_target_gate = True
+    elif is_profile_scoped and reason == "model_error":
+        close_target_gate = True
+
+    if close_target_gate:
         target_avail["gate_open"] = False
-        rls = target_avail.get("rate_limit_state", {})
-        if not isinstance(rls, dict) or not rls.get("limited") or not rls.get("reset_at"):
-            from datetime import timedelta
-            backoff_sec = min(300, 2 ** trans_fails)
-            reset_dt = datetime.fromisoformat(_now()) + timedelta(seconds=backoff_sec)
-            target_avail["rate_limit_state"] = {"limited": True, "reset_at": reset_dt.isoformat(), "source_msg": detail[:100]}
+        if is_transient:
+            rls = target_avail.get("rate_limit_state", {})
+            if not isinstance(rls, dict) or not rls.get("limited") or not rls.get("reset_at"):
+                from datetime import timedelta
+                backoff_sec = min(300, 2 ** trans_fails)
+                reset_dt = datetime.fromisoformat(_now()) + timedelta(seconds=backoff_sec)
+                target_avail["rate_limit_state"] = {"limited": True, "reset_at": reset_dt.isoformat(), "source_msg": detail[:100]}
             
     if reason in critical_reasons:
         availability["gate_open"] = False
@@ -1498,11 +1524,17 @@ def _record_ask_failure(
     # ── Error Visibility Integration ──────────────────────────
     if not is_transient:
         severity = "error" if ctx.get("status") == "RED" else "warn"
-        action_report_error(ai_root, peer_id, reason, detail, severity)
+        try:
+            action_report_error(ai_root, peer_id, reason, detail, severity)
+        except SystemExit:
+            pass
 
         logger = _get_logger()
         if logger:
-            logger.log_error(error_type=reason, tier=severity.upper(), peer=peer_id, message=detail)
+            try:
+                logger.log_error(error_type=reason, tier=severity.upper(), peer=peer_id, message=detail)
+            except SystemExit:
+                pass
 
         # Auto-promote runtime directive after 2+ consecutive same-reason failures
         if failures >= 2 and prev_failure_reason == reason and ai_root:
@@ -1844,6 +1876,9 @@ def action_peer_recover(ai_root: Path, peer_id: str, reason: str) -> None:
     availability.pop("sandbox_blocked", None)
     availability.pop("workspace_not_trusted", None)
     availability.pop("retry_hint", None)
+    for p_key, p_data in availability.get("profiles", {}).items():
+        p_data["gate_open"] = True
+        p_data.pop("rate_limit_state", None)
     _write_peer_health(peer_id, data, ai_root)
     _append_handoff_item(ai_root, "RECENT_COMPLETED", f"{_now()} {peer_id}: recovered ({reason or 'manual'})")
     print(f"[HUB] PEER-RECOVER {peer_id} | reason={reason or 'manual'}")
@@ -2313,7 +2348,8 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             # "no eligible profile". Defer to the health precheck so a health-blocked peer
             # exits with the canonical health-gate code (2), not a generic routing error (1).
             # If the peer is actually healthy, precheck returns and this is a real routing fail.
-            _ask_health_precheck(to, ai_root)
+            root_to = to.split(".")[0]
+            _ask_health_precheck(root_to, ai_root)
             print(f"[HUB:ERROR] profile routing failed: {exc}", file=sys.stderr)
             sys.exit(1)
         raise

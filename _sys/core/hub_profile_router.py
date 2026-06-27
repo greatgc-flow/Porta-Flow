@@ -187,11 +187,27 @@ def _eligible_profile(
         candidate = profile_order[index]
         profile = profiles.get(candidate, {})
         h_prof = health_profiles.get(candidate, {})
+        
+        gate_open = h_prof.get("gate_open") is not False
+        if not gate_open:
+            p_rls = h_prof.get("rate_limit_state")
+            if isinstance(p_rls, dict) and p_rls.get("limited"):
+                reset_str = p_rls.get("reset_at")
+                if reset_str:
+                    try:
+                        from datetime import datetime
+                        reset_dt = datetime.fromisoformat(reset_str)
+                        now = datetime.now(reset_dt.tzinfo) if reset_dt.tzinfo else datetime.now()
+                        if now >= reset_dt:
+                            gate_open = True
+                    except ValueError:
+                        pass
+                        
         if (
             profile
             and profile.get("enabled") is not False
             and profile.get("routing_state") != "blocked"
-            and h_prof.get("gate_open") is not False
+            and gate_open
         ):
             return candidate, requested if candidate != requested else None
     raise ProfileRoutingError(

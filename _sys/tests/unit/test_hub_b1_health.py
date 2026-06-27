@@ -85,16 +85,15 @@ class TestHubB1Health:
             }
         }))
         
-        with pytest.raises(SystemExit):
-            _record_ask_failure(
-                peer_id=peer_id,
-                reason="cli_not_found",
-                detail="HTTP 401",
-                elapsed=100,
-                ai_root=ai_root,
-                health_dir=health_dir,
-                profile_key="deepthink"
-            )
+        _record_ask_failure(
+            peer_id=peer_id,
+            reason="cli_not_found",
+            detail="HTTP 401",
+            elapsed=100,
+            ai_root=ai_root,
+            health_dir=health_dir,
+            profile_key="deepthink"
+        )
         
         health = json.loads(health_dir.joinpath("health.json").read_text())
         assert health["availability"]["gate_open"] is False
@@ -109,6 +108,110 @@ class TestHubB1Health:
         profile_order = ["standard", "effort", "deepthink"]
         selected, _ = _eligible_profile(root_node, "deepthink", profile_order, health)
         assert selected is None
+
+    def test_b1_profile_rate_limit_recovers(self, tmp_path):
+        """profile deepthink rate-limited with reset_at in the PAST -> eligibility check treats deepthink as OPEN."""
+        from hub import _ask_health_precheck
+        ai_root = tmp_path / ".ai"
+        ai_root.mkdir()
+        health_dir = tmp_path / "health"
+        health_dir.mkdir()
+        
+        # Write state with a past reset_at for profile deepthink
+        from datetime import datetime, timedelta
+        past_dt = datetime.now() - timedelta(minutes=5)
+        health_dir.joinpath("health.json").write_text(json.dumps({
+            "peer_id": "ag",
+            "availability": {
+                "gate_open": True,
+                "profiles": {
+                    "deepthink": {
+                        "gate_open": False,
+                        "rate_limit_state": {
+                            "limited": True,
+                            "reset_at": past_dt.isoformat()
+                        }
+                    }
+                }
+            }
+        }))
+        
+        from unittest.mock import patch
+        with patch("hub._peer_effective_health", return_value=("YELLOW", json.loads(health_dir.joinpath("health.json").read_text()))), \
+             patch("hub._write_peer_health") as mock_write, \
+             patch("hub._load_orchestration", return_value={"hub_nodes": [{"node_id": "ag", "profiles": {"deepthink": {"enabled": True}}}]}):
+            _ask_health_precheck("ag", ai_root)
+            
+            # The precheck should have opened the profile's gate
+            assert mock_write.called
+            written_data = mock_write.call_args[0][1]
+            assert written_data["availability"]["profiles"]["deepthink"]["gate_open"] is True
+            assert written_data["availability"]["profiles"]["deepthink"]["rate_limit_state"] == "ok"
+
+    def test_b1_model_error_closes_profile(self, tmp_path):
+        """_record_ask_failure(reason='model_error', profile_key='deepthink') closes profiles.deepthink.gate_open=False while root gate_open stays True."""
+        ai_root = tmp_path / ".ai"
+        ai_root.mkdir()
+        health_dir = tmp_path / "health"
+        health_dir.mkdir()
+        peer_id = "ag"
+        health_dir.joinpath("health.json").write_text(json.dumps({
+            "peer_id": peer_id,
+            "availability": {
+                "gate_open": True,
+                "profiles": {
+                    "deepthink": {"gate_open": True}
+                }
+            }
+        }))
+        
+        _record_ask_failure(
+            peer_id=peer_id,
+            reason="model_error",
+            detail="some context window error",
+            elapsed=10,
+            ai_root=ai_root,
+            health_dir=health_dir,
+            profile_key="deepthink"
+        )
+        
+        health = json.loads(health_dir.joinpath("health.json").read_text())
+        assert health["availability"]["gate_open"] is True
+        assert health["availability"]["profiles"]["deepthink"]["gate_open"] is False
+
+    def test_b1_peer_recover_clears_profiles(self, tmp_path):
+        """after peer-recover, all profile gates are open again."""
+        from hub import action_peer_recover
+        ai_root = tmp_path / ".ai"
+        ai_root.mkdir()
+        health_dir = tmp_path / "health"
+        health_dir.mkdir()
+        peer_id = "ag"
+        
+        # setup blocked profile and blocked root
+        health_dir.joinpath("health.json").write_text(json.dumps({
+            "peer_id": peer_id,
+            "availability": {
+                "gate_open": False,
+                "profiles": {
+                    "deepthink": {
+                        "gate_open": False,
+                        "rate_limit_state": {"limited": True, "reset_at": "2099"}
+                    }
+                }
+            }
+        }))
+        
+        from unittest.mock import patch
+        with patch("hub._read_peer_health", return_value=(health_dir.joinpath("health.json"), json.loads(health_dir.joinpath("health.json").read_text()))), \
+             patch("hub._write_peer_health") as mock_write, \
+             patch("hub._append_handoff_item"), patch("builtins.print"):
+            action_peer_recover(ai_root, peer_id, "test_recover")
+            
+            written_data = mock_write.call_args[0][1]
+            assert written_data["availability"]["gate_open"] is True
+            assert written_data["availability"]["profiles"]["deepthink"]["gate_open"] is True
+            assert "rate_limit_state" not in written_data["availability"]["profiles"]["deepthink"] or written_data["availability"]["profiles"]["deepthink"]["rate_limit_state"] == "ok"
 
     def test_b1_healthy_peer_aggregation(self, tmp_path):
         """_healthy_peer("cc") is True when deepthink closed but effort open."""

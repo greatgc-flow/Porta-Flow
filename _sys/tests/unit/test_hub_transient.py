@@ -112,8 +112,7 @@ class TestHubTransient:
         assert data.get("session_health", {}).get("consecutive_failures", 0) == 1
         
         # For critical_reasons e.g. cli_not_found
-        with pytest.raises(SystemExit):
-            _record_ask_failure(peer_id, "cli_not_found", "no cli", 1, ai_root, health_dir=health_dir)
+        _record_ask_failure(peer_id, "cli_not_found", "no cli", 1, ai_root, health_dir=health_dir)
         _, data2 = _read_peer_health(peer_id, health_dir)
         assert data2.get("context_health", {}).get("status") == "RED"
         assert data2.get("availability", {}).get("gate_open") is False
