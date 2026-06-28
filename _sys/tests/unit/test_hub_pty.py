@@ -354,7 +354,6 @@ def test_action_ask_staging_oversized_prompt(monkeypatch, tmp_path):
     
     # Create a very long query (>24,000 chars)
     query = "A" * 25000
-    digest = hashlib.sha256(query.encode("utf-8")).hexdigest()
     
     ai_root = tmp_path / ".ai"
     ai_root.mkdir()
@@ -367,11 +366,14 @@ def test_action_ask_staging_oversized_prompt(monkeypatch, tmp_path):
         staged_files = list((ai_root / "ipc").glob("*-ag-prompt.txt"))
         assert len(staged_files) == 1
         staged_file_path = staged_files[0]
-        assert staged_file_path.read_text(encoding="utf-8") == query
+        staged_payload = staged_file_path.read_text(encoding="utf-8")
+        assert "USER_QUERY_RAW:\n" + query in staged_payload
+        digest = hashlib.sha256(staged_payload.encode("utf-8")).hexdigest()
         
         # The cmd should have been replaced with the pointer_prompt command
         assert any("[IPC PAYLOAD FILE]" in arg for arg in cmd)
         assert any(digest in arg for arg in cmd)
+
         
         return hub._PtyAskResult(text="ok", elapsed=1, exit_code=0, timed_out=False, timeout_kind=None, pid=123)
         

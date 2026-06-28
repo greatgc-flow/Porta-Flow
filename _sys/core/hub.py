@@ -1549,7 +1549,71 @@ def _record_ask_failure(
             _auto_promote_runtime_directive(peer_id, reason, detail, ai_root)
 
 
+def _terminal_context_references(ai_root: Path | None) -> list[str]:
+    if ai_root is None:
+        return ["ai_root=none"]
+    state = _read_json(ai_root / "state.json")
+    room_id = state.get("room_id")
+    refs = [
+        f"ai_state={ai_root / 'state.json'}",
+        "user_directives=_sys/ai/user-directives.md",
+        "runtime_directives=_sys/ai/runtime-directives.jsonl",
+    ]
+    if room_id:
+        refs.append(f"handoff={ai_root / 'sessions' / str(room_id) / 'handoff.md'}")
+    else:
+        refs.append("handoff=none")
+    return refs
+
+
+def _build_terminal_relay_frame(
+    *,
+    user_query_raw: str,
+    requested_to: str,
+    selected_to: str,
+    profile_decision: dict | None,
+    ai_root: Path | None,
+) -> str:
+    selected_profile = None
+    if "." in selected_to:
+        selected_profile = selected_to.split(".", 1)[1]
+    metadata = {
+        "requested_target": requested_to,
+        "selected_target": selected_to,
+        "root_peer": selected_to.split(".", 1)[0],
+        "selected_profile": selected_profile,
+        "explicit_profile": False,
+        "classifier_triggered": False,
+        "fallback_from": None,
+    }
+    if profile_decision:
+        metadata.update({
+            "root_peer": profile_decision.get("root_peer") or metadata["root_peer"],
+            "selected_profile": profile_decision.get("selected_profile"),
+            "explicit_profile": bool(profile_decision.get("explicit")),
+            "classifier_triggered": bool(profile_decision.get("classifier_triggered")),
+            "fallback_from": profile_decision.get("fallback_from"),
+        })
+
+    lines = [
+        "[TERMINAL RELAY FRAME]",
+        "ROLE: thin_router",
+        "INSTRUCTIONS: Relay only; preserve USER_QUERY_RAW.",
+        "",
+        "USER_QUERY_RAW:",
+        user_query_raw,
+        "",
+        "ROUTING_METADATA:",
+        json.dumps(metadata, ensure_ascii=False, sort_keys=True),
+        "",
+        "CONTEXT_REFERENCES:",
+    ]
+    lines.extend(f"- {ref}" for ref in _terminal_context_references(ai_root))
+    return "\n".join(lines)
+
+
 def _build_ask_query_with_context(ai_root: Path | None, query: str, to_peer: str | None = None) -> str:
+
     if ai_root is None:
         return query
     state = _read_json(ai_root / "state.json")
@@ -2345,9 +2409,11 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             qf.unlink(missing_ok=True)
 
     requested_to = to
+    user_query_raw = query
     profile_decision: dict | None = None
     try:
-        to, profile_decision = _select_ask_profile(to, query)
+        to, profile_decision = _select_ask_profile(to, user_query_raw)
+
     except Exception as exc:
         if _PROFILE_ROUTER_AVAILABLE and isinstance(
             exc, hub_profile_router.ProfileRoutingError
@@ -2366,7 +2432,9 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         _guard_action(ai_root, "ask", force_tier0=False, origin=origin, target_peer=to)
 
     profile_key = profile_decision.get("selected_profile") if profile_decision else None
+    explicit_profile = bool(profile_decision and profile_decision.get("explicit"))
     if profile_decision:
+
         if profile_decision.get("fallback_from"):
             # format requires <peer>.<fallback_from> -> <peer>.<selected>
             fallback_from = profile_decision["fallback_from"]
@@ -2419,8 +2487,17 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
 
     _lease_sweep(ai_root)
     _ask_health_precheck(health_peer, ai_root)
+    if origin == "terminal":
+        query = _build_terminal_relay_frame(
+            user_query_raw=user_query_raw,
+            requested_to=requested_to,
+            selected_to=to,
+            profile_decision=profile_decision,
+            ai_root=ai_root,
+        )
     if include_context:
         query = _build_ask_query_with_context(ai_root, query, to_peer=to)
+
 
     # ── ContextGate check ──────────────────────────────────────
     if _CONTEXT_GATE_AVAILABLE and _ContextGate is not None:
@@ -2444,6 +2521,12 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                 print(f"[ContextGate] context {util:.0%} full → prune applied", file=sys.stderr)
             elif action == "failover":
                 failover_model = gate_result.get("failover_model", "gc")
+                if explicit_profile:
+                    print(
+                        f"[HUB:ERROR] explicit profile immutable; ContextGate requested failover from {to} to {failover_model}",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
                 # Prevent immediate loop if failover_model is same as current (via ID or alias)
                 if failover_model == to or failover_model == original_to:
                     # If we already tried to failover and it's the same, don't try again

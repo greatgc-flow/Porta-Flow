@@ -267,7 +267,9 @@ class TestAsk:
         sent = mock_proc.communicate.call_args.kwargs["input"].decode("utf-8")
         assert "Room ID: room-test" in sent
         assert "keep context" in sent
-        assert "[USER QUERY]\nhello" in sent
+        assert "[USER QUERY]\n[TERMINAL RELAY FRAME]" in sent
+        assert "USER_QUERY_RAW:\nhello" in sent
+
 
         health = json.loads((peer_dir / "health.json").read_text("utf-8"))
         assert health["session_health"]["consecutive_failures"] == 0
