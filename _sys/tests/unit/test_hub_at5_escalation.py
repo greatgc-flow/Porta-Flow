@@ -316,8 +316,9 @@ def test_depth_ceiling_blocks_runtime_escalation(monkeypatch, tmp_path, capsys):
         ai_root,
         quiet=True,
         include_context=False,
-        _depth=hub.RUNTIME_ESCALATION_DEPTH_CEILING,
+        _escalation_depth=hub.RUNTIME_ESCALATION_DEPTH_CEILING,
     )
+
 
     captured = capsys.readouterr()
     assert select_calls == ["cx"]
@@ -410,3 +411,78 @@ def test_top_tier_marker_has_no_escalation_target(monkeypatch, tmp_path, capsys)
     assert len(popen_calls) == 1
     assert "cx-deepthink" in popen_calls[0]["cmd"]
     assert "[HUB:ESCALATE]" not in captured.err
+
+
+def test_runtime_escalation_reaches_deepthink_after_recursive_dotted_target(monkeypatch, tmp_path, capsys):
+    ai_root = _ai_root(tmp_path)
+    _patch_common(monkeypatch)
+    select_calls = _patch_selector(
+        monkeypatch,
+        {
+            "cx": ("cx.standard", False),
+            "cx.effort": ("cx.effort", True),
+            "cx.deepthink": ("cx.deepthink", True),
+        },
+    )
+    popen_calls = []
+    monkeypatch.setattr(
+        hub.subprocess,
+        "Popen",
+        _mock_popen_sequence(
+            popen_calls,
+            [
+                {"stdout": "standard requests [ESCALATE]\n", "returncode": 0},
+                {"stdout": "effort requests [ESCALATE]\n", "returncode": 0},
+                {"stdout": "deepthink settled\n", "returncode": 0},
+            ],
+        ),
+    )
+
+    hub.action_ask("cx", "review this", None, 30, ai_root, quiet=True, include_context=False)
+
+    captured = capsys.readouterr()
+    assert select_calls == ["cx", "cx.effort", "cx.deepthink"]
+    assert len(popen_calls) == 3
+    assert "cx-standard" in popen_calls[0]["cmd"]
+    assert "cx-effort" in popen_calls[1]["cmd"]
+    assert "cx-deepthink" in popen_calls[2]["cmd"]
+    assert "[HUB:ESCALATE] cx.standard -> cx.effort" in captured.err
+    assert "[HUB:ESCALATE] cx.effort -> cx.deepthink" in captured.err
+
+
+def test_direct_output_file_write_failure_does_not_escalate(monkeypatch, tmp_path, capsys):
+    ai_root = _ai_root(tmp_path)
+    _patch_common(monkeypatch)
+    select_calls = _patch_selector(monkeypatch, {"cx": ("cx.standard", False)})
+    bad_output_path = tmp_path / "bad-output"
+    bad_output_path.mkdir()
+    monkeypatch.setattr(hub, "_portable_state_path", lambda base, output_file: bad_output_path)
+    popen_calls = []
+    monkeypatch.setattr(
+        hub.subprocess,
+        "Popen",
+        _mock_popen_sequence(
+            popen_calls,
+            [{"stdout": "successful output requests [ESCALATE]\n", "returncode": 0}],
+        ),
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        hub.action_ask(
+            "cx",
+            "review this",
+            None,
+            30,
+            ai_root,
+            quiet=True,
+            output_file="reply.txt",
+            include_context=False,
+        )
+
+    captured = capsys.readouterr()
+    assert exc.value.code == 1
+    assert select_calls == ["cx"]
+    assert len(popen_calls) == 1
+    assert "failed to write output file" in captured.err
+    assert "[HUB:ESCALATE]" not in captured.err
+

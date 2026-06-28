@@ -399,3 +399,36 @@ def test_classifier_uses_raw_query_and_frame_has_no_terminal_analysis(monkeypatc
 
     assert seen_queries == [raw_subprocess, raw_pty]
 
+
+def test_context_gate_failover_explicit_profile_is_immutable(monkeypatch, tmp_path, capsys):
+    ai_root = _ai_root(tmp_path)
+    _patch_common(monkeypatch)
+
+    class FailoverGate:
+        def check(self, query, model_id):
+            return {
+                "action": "failover",
+                "failover_model": "cx.effort",
+                "ratio": 0.91,
+            }
+
+    monkeypatch.setattr(hub, "_CONTEXT_GATE_AVAILABLE", True, raising=False)
+    monkeypatch.setattr(hub, "_ContextGate", FailoverGate, raising=False)
+    monkeypatch.setattr(
+        hub,
+        "_select_ask_profile",
+        lambda target, query: ("cx.standard", _decision("cx", "standard", explicit=True, classifier=False)),
+    )
+    monkeypatch.setattr(
+        hub.subprocess,
+        "Popen",
+        lambda *a, **k: pytest.fail("explicit ContextGate failover must not spawn subprocess"),
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        hub.action_ask("cx.standard", "Show status.", None, 30, ai_root, quiet=True, include_context=False)
+
+    assert exc.value.code == 1
+    assert "[HUB:ERROR] explicit profile immutable" in capsys.readouterr().err
+
+

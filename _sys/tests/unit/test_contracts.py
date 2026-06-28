@@ -75,7 +75,13 @@ class TestActionAskContract:
         assert p["include_context"].default is True
         assert p["session_policy"].default == "auto"
         assert p["explicit_scope"].default is None
+        assert p["_depth"].default == 0
+        assert p["_escalation_depth"].default == 0
         assert p["origin"].default == "terminal"
+        params = list(p.keys())
+        assert params.index("_escalation_depth") == params.index("_depth") + 1
+        assert params.index("origin") == params.index("_escalation_depth") + 1
+
 
 
 class TestGuardActionContract:

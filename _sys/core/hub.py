@@ -2415,8 +2415,9 @@ def _is_ephemeral_query_file(path: Path) -> bool:
     )
 
 
-def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, origin: str = "terminal") -> None:
+def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal") -> None:
     if _depth > RUNTIME_ESCALATION_DEPTH_CEILING:
+
         print(f"[ERROR] action_ask: maximum failover depth reached for {to}", file=sys.stderr)
         sys.exit(1)
 
@@ -2573,7 +2574,8 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                 else:
                     print(f"[ContextGate] context {gate_result.get('ratio', 0):.0%} full → failover to {failover_model}", file=sys.stderr)
                     # Recursive failover call with increased depth and disabled context inclusion
-                    return action_ask(failover_model, query, None, timeout_sec, ai_root, quiet, output_file, include_context=False, session_policy=session_policy, explicit_scope=explicit_scope, _depth=_depth + 1, origin=origin)
+                    return action_ask(failover_model, query, None, timeout_sec, ai_root, quiet, output_file, include_context=False, session_policy=session_policy, explicit_scope=explicit_scope, _depth=_depth + 1, _escalation_depth=_escalation_depth, origin=origin)
+
             elif action == "reject":
                 msg = gate_result.get("message", "context limit exceeded")
                 if _HUB_ERROR_AVAILABLE and _HubError is not None:
@@ -2898,8 +2900,8 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             escalation_target = (
                 _runtime_escalation_target(to)
                 if (
-                    not explicit_profile
-                    and _depth < RUNTIME_ESCALATION_DEPTH_CEILING
+                    (not explicit_profile or _escalation_depth > 0)
+                    and _escalation_depth < RUNTIME_ESCALATION_DEPTH_CEILING
                     and _parsed_final_requests_escalation(output)
                 )
                 else None
@@ -2910,7 +2912,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                     escalation_target, user_query_raw, None, timeout_sec, ai_root,
                     quiet, output_file, include_context=include_context,
                     session_policy=session_policy, explicit_scope=explicit_scope,
-                    _depth=_depth + 1, origin=origin,
+                    _depth=_depth, _escalation_depth=_escalation_depth + 1, origin=origin,
                 )
 
             # ── success: exit 0 + nonempty output + ok output-file ─────
@@ -3068,6 +3070,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
 
         # ── Output Parsing (Adapter-based) ────────────────────────
         output = adapter.parse_output(raw_text, node) if adapter else raw_text
+        out_path = None
 
         # ── Session resume failure → fallback to fresh ─────────
         if proc.returncode != 0 and is_resume_attempt and scope_key:
@@ -3195,11 +3198,30 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             print(f"[HUB:ERROR] {detail}", file=sys.stderr)
             sys.exit(1)
         else:
+            # output-file write failure is classified BEFORE escalation so a
+            # doomed-output ask is never promoted (matches PTY ordering).
+            if output_file:
+                try:
+                    base = ai_root if ai_root else Path.cwd()
+                    out_path = _portable_state_path(base, output_file)
+                    out_path.parent.mkdir(parents=True, exist_ok=True)
+                    out_path.write_text(output, encoding="utf-8")
+                except Exception as exc:
+                    reason = "output_write_error"
+                    detail = f"failed to write output file: {exc}"
+                    lease_status = "failed"
+                    _record_ask_failure(health_peer, reason, detail, elapsed, ai_root, profile_key=profile_key)
+                    _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, False, reason)
+                    if ai_root:
+                        _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=elapsed, failure_reason=reason)
+                    print(f"[HUB:ERROR] {detail}", file=sys.stderr)
+                    sys.exit(1)
+
             escalation_target = (
                 _runtime_escalation_target(to)
                 if (
-                    not explicit_profile
-                    and _depth < RUNTIME_ESCALATION_DEPTH_CEILING
+                    (not explicit_profile or _escalation_depth > 0)
+                    and _escalation_depth < RUNTIME_ESCALATION_DEPTH_CEILING
                     and _parsed_final_requests_escalation(output)
                 )
                 else None
@@ -3210,8 +3232,9 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                     escalation_target, user_query_raw, None, timeout_sec, ai_root,
                     quiet, output_file, include_context=include_context,
                     session_policy=session_policy, explicit_scope=explicit_scope,
-                    _depth=_depth + 1, origin=origin,
+                    _depth=_depth, _escalation_depth=_escalation_depth + 1, origin=origin,
                 )
+
 
             _record_ask_success(health_peer, elapsed, ai_root, profile_key=profile_key)
             _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, True, None)
@@ -3227,16 +3250,17 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                     _log_p2p("SESSION", f"{health_peer} session stored scope={scope_key} id={resolved_session_id[:8]}...", to_node=health_peer)
 
         if output_file:
-            try:
-                base = ai_root if ai_root else Path.cwd()
-                out_path = _portable_state_path(base, output_file)
-                out_path.parent.mkdir(parents=True, exist_ok=True)
-                out_path.write_text(output, encoding="utf-8")
-                if not quiet:
-                    print(f"[HUB] REPLY {to} | chars={len(output)} | elapsed={elapsed}s | output={out_path}")
-            except Exception as e:
-                print(f"[HUB:ERROR] failed to write output file: {e}", file=sys.stderr)
-                sys.exit(1)
+            if out_path is None:
+                try:
+                    base = ai_root if ai_root else Path.cwd()
+                    out_path = _portable_state_path(base, output_file)
+                    out_path.parent.mkdir(parents=True, exist_ok=True)
+                    out_path.write_text(output, encoding="utf-8")
+                except Exception as e:
+                    print(f"[HUB:ERROR] failed to write output file: {e}", file=sys.stderr)
+                    sys.exit(1)
+            if not quiet:
+                print(f"[HUB] REPLY {to} | chars={len(output)} | elapsed={elapsed}s | output={out_path}")
         elif quiet:
             print(output, end="")
         else:
