@@ -89,6 +89,10 @@ if sys.stderr.encoding and sys.stderr.encoding.lower() not in ("utf-8", "utf8"):
 # Distinct exit code for soft-skip scenarios (e.g. rate-limit / gate-closed with no answer)
 SOFT_SKIP_EXIT = 7
 
+# Runtime [ESCALATE] recursion ceiling for successful parsed ask outputs.
+RUNTIME_ESCALATION_DEPTH_CEILING = 2
+
+
 # ─────────────────────────────────────────────────────────────
 # .ai/ 프로젝트 루트 탐색
 # ─────────────────────────────────────────────────────────────
@@ -171,8 +175,42 @@ def _resolve_profile_id(node_id: str) -> str | None:
     return None
 
 
+def _parsed_final_requests_escalation(parsed_output: str) -> bool:
+    """Detect an [ESCALATE] marker only after adapter final-output parsing."""
+    return "[ESCALATE]" in parsed_output
+
+
+def _runtime_escalation_target(selected_to: str) -> str | None:
+    """Return the next profile tier for a selected runtime node, if routable."""
+    if not _HUB_PEER_AVAILABLE:
+        return None
+    orch = _load_orchestration()
+    normalized = hub_peer.normalize_orchestration(orch)
+    canonical = hub_peer.resolve_node_id(selected_to, orch=normalized) or selected_to
+    nodes = {
+        node.get("node_id"): node
+        for node in normalized.get("hub_nodes", [])
+        if node.get("node_id")
+    }
+    node = nodes.get(canonical, {})
+    root_peer = node.get("parent_node") or node.get("peer") or canonical.split(".", 1)[0]
+    profile_id = _resolve_profile_id(canonical) or canonical
+    current_profile = profile_id.split(".", 1)[1] if "." in profile_id else node.get("profile_name")
+    profile_order = orch.get("profile_contract", {}).get(
+        "required_profiles", ["standard", "effort", "deepthink"]
+    )
+    if current_profile not in profile_order:
+        return None
+    next_index = profile_order.index(current_profile) + 1
+    if next_index >= len(profile_order):
+        return None
+    target = f"{root_peer}.{profile_order[next_index]}"
+    return target if is_routable(target, orch=normalized) else None
+
+
 
 def _select_ask_profile(to: str, query: str) -> tuple[str, dict | None]:
+
     """Resolve a root peer ask to a profile node using zero-token policy."""
     if not (_HUB_PEER_AVAILABLE and _PROFILE_ROUTER_AVAILABLE):
         return to, None
@@ -2378,9 +2416,10 @@ def _is_ephemeral_query_file(path: Path) -> bool:
 
 
 def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, origin: str = "terminal") -> None:
-    if _depth > 2:
+    if _depth > RUNTIME_ESCALATION_DEPTH_CEILING:
         print(f"[ERROR] action_ask: maximum failover depth reached for {to}", file=sys.stderr)
         sys.exit(1)
+
     
     saved_query_file_path = query_file
     ipc_protocol_version: int | None = None
@@ -2856,6 +2895,24 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                     print(f"[HUB:ERROR] {detail}", file=sys.stderr)
                     sys.exit(1)
 
+            escalation_target = (
+                _runtime_escalation_target(to)
+                if (
+                    not explicit_profile
+                    and _depth < RUNTIME_ESCALATION_DEPTH_CEILING
+                    and _parsed_final_requests_escalation(output)
+                )
+                else None
+            )
+            if escalation_target:
+                print(f"[HUB:ESCALATE] {to} -> {escalation_target}", file=sys.stderr)
+                return action_ask(
+                    escalation_target, user_query_raw, None, timeout_sec, ai_root,
+                    quiet, output_file, include_context=include_context,
+                    session_policy=session_policy, explicit_scope=explicit_scope,
+                    _depth=_depth + 1, origin=origin,
+                )
+
             # ── success: exit 0 + nonempty output + ok output-file ─────
             lease_status = "closed"
             _record_ask_success(health_peer, elapsed, ai_root, profile_key=profile_key)
@@ -3138,8 +3195,27 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             print(f"[HUB:ERROR] {detail}", file=sys.stderr)
             sys.exit(1)
         else:
+            escalation_target = (
+                _runtime_escalation_target(to)
+                if (
+                    not explicit_profile
+                    and _depth < RUNTIME_ESCALATION_DEPTH_CEILING
+                    and _parsed_final_requests_escalation(output)
+                )
+                else None
+            )
+            if escalation_target:
+                print(f"[HUB:ESCALATE] {to} -> {escalation_target}", file=sys.stderr)
+                return action_ask(
+                    escalation_target, user_query_raw, None, timeout_sec, ai_root,
+                    quiet, output_file, include_context=include_context,
+                    session_policy=session_policy, explicit_scope=explicit_scope,
+                    _depth=_depth + 1, origin=origin,
+                )
+
             _record_ask_success(health_peer, elapsed, ai_root, profile_key=profile_key)
             _append_ask_history(ai_root, to, saved_query_file_path, output_file, elapsed, True, None)
+
             if ai_root:
                 _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="success", latency_sec=elapsed)
 
