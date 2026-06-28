@@ -112,6 +112,7 @@ _sys/antigravity/ipc-config/
 
 # Codex runtime data in config/ (tracked: CODEX.md)
 _sys/codex/config/.codex/
+_sys/codex/config/.sandbox-bin/
 _sys/codex/config/history/
 _sys/codex/config/sessions/
 _sys/codex/config/tmp/
