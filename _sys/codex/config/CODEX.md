@@ -29,8 +29,15 @@ Do NOT position yourself as big-picture architect (cc) or large-doc analyst (gc)
 
 ## Invocation
 
-This peer is invoked non-interactively via stdin:
+Invoked non-interactively by the hub (`CodexAdapter`). The orchestration template
+`{query}` is realized as `-` with the prompt delivered via **stdin**:
 ```
-codex exec - -s workspace-write
+codex exec - --json --ignore-rules -c sandbox="workspace-write"
 ```
-Do not require interactive TUI. Use `--json` for machine-parseable output.
+Session resume (when a hub session exists):
+```
+codex exec resume <session_id> - --json --ignore-rules -c sandbox="workspace-write"
+```
+Use `-c sandbox="workspace-write"` for sandboxing: `-s workspace-write` is valid for
+fresh `exec` but **rejected by `exec resume`**. Do not require interactive TUI;
+`--json` gives machine-parseable output.

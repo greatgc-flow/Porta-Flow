@@ -16,8 +16,8 @@ models, permissions, and roles are defined in `_sys/ai/orchestration.json`.
 
 - **Launch:** Hub `ask --to ag` invokes the native `_sys\tools\agy\agy.exe` DIRECTLY via `AgyAdapter`. This bypasses `agy.bat` to avoid context-fill contamination. (`agy_entry.py` / `agy.bat` are used for INTERACTIVE launch only).
 - **Arguments:** `ag` is PTY-only, inline `-p {query}` (agy ignores stdin); `--print-timeout 60m`.
-- **Session Mode:** `session_mode: none` — no hub-managed session reuse; hub never sends `-c`/`--continue`/`--conversation`.
-- **Environment:** IPC `ag` calls run against a conversation/implicit-CLEAN stateless home (`ipc-config`, seeded from `config/`) so each ask is stateless. The interactive `config/` home (durable conversations/implicit) remains untouched.
+- **Session Mode:** `session_mode: reuse` (orchestration.json SSOT). The hub DOES pass `--conversation <id>` (`AgyAdapter.build_session_cmd`).
+- **Effectively stateless IPC:** even with `reuse`, the hub repoints `AGY_CONFIG_HOME`/`GEMINI_DIR` to a CLEAN `ipc-config` home (empty `conversations/` + `implicit/`, seeded from `config/`) for every ask, so the `--conversation <id>` resolves to no prior history. `ag` does not inherit prior interactive room context — collaboration context must travel in the ask envelope. The interactive `config/` home (durable conversations/implicit) remains untouched.
 
 ## Profile Defaults
 
