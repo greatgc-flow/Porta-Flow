@@ -1646,3 +1646,34 @@ class TestSandboxSpawnDenial:
 
     def test_sandbox_spawn_denied_is_transient_reason(self):
         assert "sandbox_spawn_denied" in hub._TRANSIENT_REASONS
+
+
+# ── Unified (general) session persistence — path-agnostic ───────────────────────
+
+class TestStoreSessionFromResult:
+    def test_persists_adapter_resolved_id(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(hub, "_set_active_session", lambda *a, **k: calls.append(a))
+        monkeypatch.setattr(hub, "_log_p2p", lambda *a, **k: None)
+
+        class A:
+            def extract_session_id(self, raw, node, cmd_id):
+                return "resolved-1"
+
+        hub._store_session_from_result(A(), {}, "raw", "cmd-1", "room:ag.effort",
+                                       "ag", "ask-x", None, "fp")
+        assert calls, "should persist when adapter resolves an id"
+        assert calls[0][2] == "resolved-1"  # session_id positional arg
+
+    def test_noop_when_no_scope_or_no_id(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(hub, "_set_active_session", lambda *a, **k: calls.append(a))
+        monkeypatch.setattr(hub, "_log_p2p", lambda *a, **k: None)
+
+        class NoId:
+            def extract_session_id(self, raw, node, cmd_id):
+                return None
+
+        hub._store_session_from_result(NoId(), {}, "raw", "cmd", "room:x", "cx", "ask", None, "fp")
+        hub._store_session_from_result(NoId(), {}, "raw", "cmd", None, "cx", "ask", None, "fp")
+        assert not calls

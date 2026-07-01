@@ -659,8 +659,15 @@ class AgyAdapter(BaseAdapter):
         # Inject --conversation flag if not present
         if "--conversation" not in cmd:
             cmd.extend(["--conversation", effective_id])
-            
+
         return SessionInvocation(cmd, use_stdin, effective_id)
+
+    def extract_session_id(
+        self, stdout: str, node: dict[str, Any], command_session_id: str | None
+    ) -> str | None:
+        """ag reuses the conversation id we passed via --conversation (persisted in
+        the durable agy home), so persist that command id for the next resume."""
+        return command_session_id
 
     def context_policy(self, node: dict[str, Any]) -> ContextPolicy:
         """ag IPC context delta (A6): the agy model is context-fragile — it

@@ -107,6 +107,12 @@ class TestAgyAdapter:
         result = self.adapter.parse_output(raw, self.node)
         assert "This is the answer" in result
 
+    def test_extract_session_id_returns_command_id(self):
+        # ag persists the --conversation id we pass (durable home), so the general
+        # reuse lifecycle must surface command_session_id from AgyAdapter.
+        assert self.adapter.extract_session_id("any out", self.node, "conv-abc") == "conv-abc"
+        assert self.adapter.extract_session_id("out", self.node, None) is None
+
 
 # ?? CodexAdapter ??????????????????????????????????????????????????????????????
 

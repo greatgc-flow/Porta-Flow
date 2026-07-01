@@ -2657,6 +2657,20 @@ def _set_active_session(peer_id: str, scope_key: str, session_id: str, ask_id: s
     _save_session_state(peer_id, data, ai_root)
 
 
+def _store_session_from_result(adapter, node, raw_text, command_session_id, scope_key,
+                               health_peer, ask_id, ai_root, fingerprint) -> None:
+    """General (path-agnostic) session persistence: resolve the adapter's session
+    id from the ask output and store it for reuse. Called by BOTH the non-PTY and
+    PTY ask paths so every reuse-capable peer (cc/cx/ag) shares one lifecycle;
+    the per-CLI specifics stay in each adapter's extract_session_id."""
+    if not (scope_key and adapter):
+        return
+    resolved = adapter.extract_session_id(raw_text, node, command_session_id)
+    if resolved:
+        _set_active_session(health_peer, scope_key, resolved, ask_id, ai_root, fingerprint=fingerprint)
+        _log_p2p("SESSION", f"{health_peer} session stored scope={scope_key} id={resolved[:8]}...", to_node=health_peer)
+
+
 def _retire_session(peer_id: str, scope_key: str, reason: str, ai_root: Path | None = None) -> None:
     data = _load_session_state(peer_id)
     entry = data.get("active", {}).pop(scope_key, None)
@@ -3242,6 +3256,11 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
 
             # ── success: exit 0 + nonempty output + ok output-file ─────
             lease_status = "closed"
+            # Session persistence — same general lifecycle as the non-PTY path so
+            # PTY peers (ag) reuse sessions too (previously the PTY path skipped this).
+            if use_session:
+                _store_session_from_result(adapter, node, raw_pty, command_session_id,
+                                           scope_key, health_peer, ask_id, ai_root, current_fp)
             _record_ask_success(health_peer, elapsed, ai_root, profile_key=profile_key)
             _append_ask_history(
                 ai_root, to, saved_query_file_path, output_file, elapsed, True, None
@@ -3574,12 +3593,10 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             if ai_root:
                 _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="success", latency_sec=elapsed)
 
-            # ── Session state update on success (adapter-resolved) ─
-            if use_session and scope_key and proc.returncode == 0:
-                resolved_session_id = adapter.extract_session_id(raw_text, node, command_session_id)
-                if resolved_session_id:
-                    _set_active_session(health_peer, scope_key, resolved_session_id, ask_id, ai_root, fingerprint=current_fp)
-                    _log_p2p("SESSION", f"{health_peer} session stored scope={scope_key} id={resolved_session_id[:8]}...", to_node=health_peer)
+            # ── Session state update on success (general, path-agnostic) ─
+            if use_session and proc.returncode == 0:
+                _store_session_from_result(adapter, node, raw_text, command_session_id,
+                                           scope_key, health_peer, ask_id, ai_root, current_fp)
 
         if output_file:
             if out_path is None:
