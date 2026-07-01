@@ -465,8 +465,9 @@
     "zombie_profile_map": {
       "standard": 600,
       "effort": 600,
-      "deepthink": 7200
+      "deepthink": 900
     },
+    "_note_zombie_profile_map": "Silence (no-output) window per profile. Peer comms are UNLIMITED in total time and content — ANY output chunk resets this clock, so a peer that keeps streaming is never killed. The window only catches a HANG (zero progress). deepthink=900s (15m): streaming reasoning models never idle that long mid-work, so 15m of silence = hung (was 7200s, which let a stalled deepthink hang ~2h).",
     "startup_timeout_sec": 90,
     "_note_startup_timeout": "Pre-first-output stall window. Until a peer emits its first stdout chunk, silence is bounded by this (fast-fail cold stalls); after first output the zombie window applies."
   },
