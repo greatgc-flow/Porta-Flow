@@ -463,7 +463,7 @@ deepthink asks still stall on the codex skill re-sync; short focused asks answer
 | **D2** | cx context wrong | Source from the **newest thread `rollout_path` JSONL** `event_msg/token_count`: occupancy = `last_token_usage.total_tokens` over `model_context_window` (capacity). sqlite `tokens_used` is cumulative — never occupancy. Parse resiliently (tolerate a truncated final line). | 3 |
 | **D6** | Sandbox EPERM (cx, also ag/cc) | Centralize into a **shared core spawn helper** that traps `PermissionError`/`WinError 5`, retries **exactly once**, then degrades with a clear error. Generalizes the existing `SandboxRenameDeniedError` (rename) to spawn. | 4 |
 | **D4** | Pacing UX | Show **numeric value + emoji** (e.g. `🟢 45%`), not emoji only. | 5 |
-| **D3** | ag dual gemini+claude | **Do both**: surface both quota families AND add separate `ag.gemini-*` / `ag.claude-*` profiles so routing can target model family deliberately (Gemini=large-context, Claude=precision). Governed config (orchestration.json) — needs its own consensus/TDD. | 5 |
+| **D3** | ag dual gemini+claude | Surface both pools: **DONE** (diag shows G/3P buckets). Mechanism for *using* both: **Option C (dynamic model arg)** — see §14.1; static-profile routing DEFERRED behind ag model-string enumeration. | 5 |
 | **D7** | Refactor diag.py (~800 lines) | Split into a `diag/` package (`collectors.py` / `normalizers.py` / `render.py`) — **LAST**, only after D0-D6 land and are proven, to avoid regression churn. | 6 |
 | **D5** | Pacing → traffic routing | **Advisory only; dynamic routing weights DEFERRED.** Feeding live quota into `routing-config.json` weights risks thundering-herd/nondeterminism. diag surfaces headroom; coordinator/human chooses fallback. | deferred |
 
@@ -471,3 +471,32 @@ Invariant guards agreed: JSONL parsing resilient to truncated tail (D2); `null`�
 preserved; alerts stay deterministic & multi-valued; core spawn helper must not change
 `_lease_cfg`/public contracts without updating `test_contracts.py`; D7 refactor gated on
 D0-D6 stability.
+
+### 14.1 D3 mechanism decision (2026-07-01)
+
+Feasibility investigation refined the high-level "do both" into a concrete mechanism
+choice. Three options were weighed:
+
+- **A** — new static `ag.claude-*` profiles in orchestration.json. **Rejected**: breaks
+  the `profile_contract.required_profiles = {standard, effort, deepthink}` invariant.
+- **B** — a second antigravity-backed peer node (e.g. `ax`) whose 3 profiles map to
+  Claude. Viable but heavy topology (new voter/routing/parity surface).
+- **C — dynamic model arg (SELECTED).** `protocol.json model_profiles.dynamic_model_arg_supported`
+  is already true; the hub can pass `--model "<claude>"` to `ag` at ask time to draw on
+  the 3p/Claude pool, with **no governed profile/topology churn** and **no unverified
+  model strings baked into config**.
+
+Status:
+- **"Surface both pools" — DONE.** `diag` already renders ag's `G-5H/G-7D/3P-5H/3P-7D`
+  buckets (`_AG_QUOTA_LABELS`); the 3p/Claude pool is visible and currently ~100% free.
+- **"Use both families" — mechanism decided (C); routing enablement DEFERRED** behind a
+  feasibility gate: it requires ag to enumerate the exact non-interactive Claude model
+  strings (`agy --model "<X>"`) and a concrete routing need before adding a hub `--model`
+  passthrough for ag IPC. No governed change made now (that is precisely why C is safe to
+  record without full peer ratification).
+- Ratification: cc-selected; **ag's full design reply was pending** (deepthink,
+  long-running) and **cx** was unavailable (deepthink skill-resync stall) at record time —
+  to be folded in when ag responds. Since C mutates no governed config, recording it is a
+  design note, not a governed edit.
+- Rationale echoes D5: prefer advisory/explicit over baking dynamic model routing into
+  governed config prematurely.
