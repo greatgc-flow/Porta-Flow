@@ -301,19 +301,25 @@ def test_ask_uses_project_root_as_cwd(ai_dir):
 
 
 def test_new_topic_clears_sessions(ai_dir):
-    """new-topic clears active sessions for all peers."""
+    """new-topic clears active sessions for ALL reuse peers — incl. ag (2026-07-02:
+    ag was omitted from the clear loop, leaking context across topics once ag began
+    reusing sessions)."""
     hub._set_active_session("cx", "room-test", "uuid-cx", "ask-1", ai_dir)
     hub._set_active_session("cc", "room-test", "uuid-cc", "ask-2", ai_dir)
+    hub._set_active_session("ag", "room-test", "uuid-ag", "ask-3", ai_dir)
     hub.action_new_topic(ai_dir, "new subject")
     assert hub._get_active_session("cx", "room-test") is None
     assert hub._get_active_session("cc", "room-test") is None
+    assert hub._get_active_session("ag", "room-test") is None  # ag must be cleared too
 
 
 def test_clear_room_clears_sessions(ai_dir):
-    """clear-room clears active sessions for all peers."""
+    """clear-room clears active sessions for ALL reuse peers — incl. ag."""
     hub._set_active_session("cx", "room-test", "uuid-cx", "ask-1", ai_dir)
+    hub._set_active_session("ag", "room-test", "uuid-ag", "ask-2", ai_dir)
     hub.action_clear_room(ai_dir, "clean slate")
     assert hub._get_active_session("cx", "room-test") is None
+    assert hub._get_active_session("ag", "room-test") is None  # ag must be cleared too
 
 
 # ── adapter session_fingerprint (stability / flag-hashing) ─────
