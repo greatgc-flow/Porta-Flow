@@ -110,6 +110,10 @@ _sys/antigravity/config/bin/agentapi.bat
 # IPC stateless home (A6): seeded auth/settings + per-call-emptied durable state.
 # Entirely runtime-generated — never tracked.
 _sys/antigravity/ipc-config/
+# Local skill install (large, runtime-managed) + scratch + runtime state
+_sys/antigravity/config/scratch/
+_sys/antigravity/config/skills/
+_sys/antigravity/config/jetski_state.pbtxt
 
 # Codex runtime data in config/ (tracked: CODEX.md)
 _sys/codex/config/.codex/
@@ -148,6 +152,7 @@ _sys/ai/.lock/
 /plans/
 
 # Deprecated: ratio/collab settings moved to _sys/ai/config.json
+_sys/ai/config.json
 _sys/gemini/config.json
 
 # Old version archives (moved to _sys/docs/Remains — not tracked)
