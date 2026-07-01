@@ -16,12 +16,12 @@ models, permissions, and roles are defined in `_sys/ai/orchestration.json`.
 
 - **Launch:** Hub `ask --to ag` invokes the native `_sys\tools\agy\agy.exe` DIRECTLY via `AgyAdapter`. This bypasses `agy.bat` to avoid context-fill contamination. (`agy_entry.py` / `agy.bat` are used for INTERACTIVE launch only).
 - **Arguments:** `ag` is PTY-only, inline `-p {query}` (agy ignores stdin); `--print-timeout 60m`.
-- **No session reuse under `-p` (VERIFIED 2026-07-02):** agy assigns its OWN
-  conversation id (the `conversations/*.db` name) and IGNORES an injected
-  `--conversation <uuid>`, and does not expose that id to `-p`/`status.json`. So each
-  IPC `-p` ask is effectively fresh; `AgyAdapter.extract_session_id` returns `None`
-  (persists nothing). (agy -p works via the hub's winpty console — a console is
-  required; it only hangs in a headless no-console harness. cc/cx do reuse.)
+- **Session reuse WORKS (VERIFIED end-to-end 2026-07-02):** agy owns its conversation
+  id (the `conversations/<id>.db` filename; not stdout). Hub CREATE omits
+  `--conversation`; `extract_session_id` captures the newest `conversations/<id>.db`
+  stem; RESUME injects `--conversation <that-id>`. A 2-ask probe recalled the codeword.
+  (Requires a console — provided by the hub's winpty; only a headless no-console harness
+  hangs. cc/cx also reuse.)
 - **Durable home (verified 2026-07-01):** ag uses the durable `AGY_CONFIG_HOME=config` home. There is **no** clean/stateless `ipc-config` home — `ipc_stateless_home` is not configured (earlier design, inactive).
 
 ## Profile Defaults

@@ -166,16 +166,23 @@ def test_build_session_cmd_cx_resume():
 
 
 def test_build_session_cmd_ag_fresh():
+    # CREATE (no prior id): must NOT inject --conversation — agy mints its own id
+    # (ignoring an injected uuid); the hub captures it afterward from conversations/<id>.db.
     node = _configured_node("ag")
     with patch("hub_peer.uuid.uuid4", return_value="generated-uuid"):
-        invocation = hub_peer.get_adapter(node).build_session_cmd(
-            node, "test"
-        )
+        invocation = hub_peer.get_adapter(node).build_session_cmd(node, "test")
     assert invocation.cmd[0].lower().endswith("agy.exe") or invocation.cmd[0] == "agy"
-    assert "--conversation" in invocation.cmd
-    assert "generated-uuid" in invocation.cmd
+    assert "--conversation" not in invocation.cmd
     assert invocation.use_stdin is False
-    assert invocation.session_id == "generated-uuid"
+
+
+def test_build_session_cmd_ag_resume_injects_real_id():
+    # RESUME: inject the captured real agy conversation id.
+    node = _configured_node("ag")
+    invocation = hub_peer.get_adapter(node).build_session_cmd(node, "test", session_id="real-id-7")
+    assert "--conversation" in invocation.cmd
+    assert invocation.cmd[invocation.cmd.index("--conversation") + 1] == "real-id-7"
+    assert invocation.session_id == "real-id-7"
 
 
 def test_build_session_cmd_ag_resume():

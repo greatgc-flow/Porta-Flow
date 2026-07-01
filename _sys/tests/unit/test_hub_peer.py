@@ -123,13 +123,28 @@ class TestAgyAdapter:
         result = self.adapter.parse_output(raw, self.node)
         assert "This is the answer" in result
 
-    def test_extract_session_id_returns_none(self):
-        # VERIFIED 2026-07-02: agy assigns its OWN conversation id (the *.db name)
-        # and IGNORES an injected --conversation <uuid>; it does not expose that id
-        # to -p output/status. So there is no reusable id — extract must return None
-        # (no false session persisted) rather than the ignored command id.
-        assert self.adapter.extract_session_id("any out", self.node, "conv-abc") is None
-        assert self.adapter.extract_session_id("out", self.node, None) is None
+    def test_extract_session_id_is_newest_conversation_db(self, tmp_path, monkeypatch):
+        # agy owns the id: it's the newest conversations/<id>.db filename (per ag,
+        # 2026-07-02) — NOT stdout, NOT the injected command id.
+        import time as _t
+        conv = tmp_path / "conversations"; conv.mkdir()
+        (conv / "old-abc.db").write_bytes(b"x"); _t.sleep(0.02)
+        (conv / "new-xyz.db").write_bytes(b"y")
+        monkeypatch.setattr(hub_peer, "_agy_conversations_dir", lambda: conv)
+        assert self.adapter.extract_session_id("out", self.node, "ignored") == "new-xyz"
+
+    def test_extract_session_id_none_when_no_db(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(hub_peer, "_agy_conversations_dir", lambda: tmp_path / "nope")
+        assert self.adapter.extract_session_id("out", self.node, "x") is None
+
+    def test_build_create_omits_conversation_resume_injects_it(self):
+        # create (no id): let agy mint its own id -> do NOT inject a bogus --conversation
+        inv_c = self.adapter.build_session_cmd(self.node, "hi", session_id=None)
+        assert "--conversation" not in inv_c.cmd
+        # resume: inject the captured real id
+        inv_r = self.adapter.build_session_cmd(self.node, "hi", session_id="real-9")
+        assert "--conversation" in inv_r.cmd
+        assert inv_r.cmd[inv_r.cmd.index("--conversation") + 1] == "real-9"
 
 
 # ?? CodexAdapter ??????????????????????????????????????????????????????????????

@@ -20,18 +20,17 @@ agy --dangerously-skip-permissions -p {query} --print-timeout 60m
   state, so IPC asks are isolated by an explicit scoped `--conversation
   <room:ag.profile>` id (`AgyAdapter`), which pins the conversation instead of
   wiping the home. (Empirically a fresh scope does not inherit prior context.)
-- **No session reuse under `-p` (VERIFIED 2026-07-02):** ag does NOT resume in the
-  IPC path. Direct CLI tests showed agy **assigns its own conversation id** (the
-  `conversations/*.db` name) and **ignores an injected `--conversation <uuid>`**; that
-  real id is not surfaced to `-p` output or `status.json` (only in `brain/`/`log/`).
-  So the injected uuid isn't reusable — `AgyAdapter.extract_session_id` returns
-  `None` (the general lifecycle persists nothing for ag). Collaboration context must
-  travel in the ask envelope. (cc/cx DO reuse.)
+- **Session reuse — WORKS (VERIFIED end-to-end 2026-07-02):** agy owns its
+  conversation id (the `conversations/<id>.db` filename; NOT stdout — confirmed by ag).
+  So: CREATE turn omits `--conversation` (agy mints its own id) →
+  `AgyAdapter.extract_session_id` captures the **newest `conversations/<id>.db` stem** →
+  RESUME turn injects `--conversation <that-id>`. A 2-ask hub probe reused the same id
+  and recalled the codeword. Caveat: "newest .db" assumes serialized ag asks (lease) +
+  no concurrent interactive churn of the durable home.
   - **Console requirement (not slowness):** agy needs a console — fine via the hub's
-    winpty (short asks ~13–26 s) and interactively; it only hangs in a headless
-    no-console harness. An earlier "agy -p multi-minute" note was that artifact and is
-    retracted. Reuse is implementable if we capture agy's REAL id (revisit) — see
-    `ops/peer-cli-reference.md §3`.
+    winpty (short asks ~13–26 s) and interactively; it only hangs in a **headless
+    no-console harness** (an earlier "agy -p multi-minute" note was that artifact,
+    retracted). `--dangerously-skip-permissions`/stdout-redirect are NOT factors.
 
 ## Runtime Profiles
 | Profile | Runtime model |

@@ -636,6 +636,12 @@ class CodexAdapter(BaseAdapter):
 _AGY_OSC_RE = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
 _AGY_CSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 # Continuation/conversation flags the hub must never send to ag. session_mode
+def _agy_conversations_dir() -> Path:
+    """agy's durable conversation store (id = <id>.db filename). Module-level so
+    tests can monkeypatch it."""
+    return _SYS_DIR / "antigravity" / "config" / "conversations"
+
+
 class AgyAdapter(BaseAdapter):
     """Adapter for ag (Antigravity / agy CLI — Gemini successor)."""
 
@@ -660,24 +666,33 @@ class AgyAdapter(BaseAdapter):
     ) -> SessionInvocation:
         effective_id = session_id or str(uuid.uuid4())
         cmd, use_stdin = self.build_cmd(node, query, session_id)
-        
-        # Inject --conversation flag if not present
-        if "--conversation" not in cmd:
-            cmd.extend(["--conversation", effective_id])
+
+        # RESUME only: inject agy's real (captured) conversation id. On CREATE
+        # (session_id is None) let agy mint its own id — we capture it afterward in
+        # extract_session_id (agy ignores an injected made-up id anyway).
+        if session_id and "--conversation" not in cmd:
+            cmd.extend(["--conversation", session_id])
 
         return SessionInvocation(cmd, use_stdin, effective_id)
 
     def extract_session_id(
         self, stdout: str, node: dict[str, Any], command_session_id: str | None
     ) -> str | None:
-        """No reusable session id for ag under `-p`. VERIFIED 2026-07-02: agy
-        assigns its OWN conversation id (the conversations/*.db name) and ignores
-        an injected `--conversation <uuid>`; it does not surface that id to -p
-        output or status.json. Returning None keeps the general lifecycle honest
-        (no false 'session stored') instead of persisting an id agy won't resume.
-        (agy runs fine via the hub's winpty console; capturing agy's real id to
-        enable reuse is a possible future improvement — see peer-cli-reference.md.)"""
-        return None
+        """agy owns its conversation id (per ag, 2026-07-02): it is NOT on stdout —
+        it is the newest `conversations/<id>.db` filename. Capture that stem so the
+        next ask can resume via `--conversation <id>`. Serialized ag asks (lease)
+        make "newest" the just-written conversation for both create and resume."""
+        conv = _agy_conversations_dir()
+        try:
+            dbs = list(conv.glob("*.db"))
+        except OSError:
+            return None
+        if not dbs:
+            return None
+        try:
+            return max(dbs, key=lambda p: p.stat().st_mtime).stem
+        except OSError:
+            return None
 
     def context_policy(self, node: dict[str, Any]) -> ContextPolicy:
         """ag IPC context delta (A6): the agy model is context-fragile — it
