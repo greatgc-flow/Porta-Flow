@@ -203,6 +203,50 @@ def _codex_rate_limits(deadline_sec=12):
     return None
 
 
+def _parse_rollout_context(path):
+    """Parse a codex thread rollout JSONL for its last `event_msg/token_count`
+    event → (used_tokens, window_tokens). Current occupancy is
+    last_token_usage.total_tokens; model_context_window is capacity (per cx). The
+    last COMPLETE event wins — a truncated final line is tolerated (D2)."""
+    info = None
+    try:
+        for line in Path(path).read_text(encoding="utf-8").splitlines():
+            try:
+                obj = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            payload = obj.get("payload", {})
+            if isinstance(payload, dict) and payload.get("type") == "token_count":
+                info = payload.get("info")
+    except (OSError, ValueError):
+        return (None, None)
+    if not isinstance(info, dict):
+        return (None, None)
+    win = info.get("model_context_window")
+    used = (info.get("last_token_usage") or {}).get("total_tokens")
+    return (used if isinstance(used, (int, float)) else None,
+            win if isinstance(win, (int, float)) else None)
+
+
+def _codex_context():
+    """cx current context occupancy from the newest thread's rollout (D2).
+    Returns (used_tokens, window_tokens) or (None, None)."""
+    db_path = SYS_DIR / "codex" / "config" / "state_5.sqlite"
+    if not db_path.exists():
+        return (None, None)
+    try:
+        import sqlite3
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        row = conn.execute(
+            "SELECT rollout_path FROM threads ORDER BY updated_at DESC LIMIT 1").fetchone()
+        conn.close()
+    except Exception:
+        return (None, None)
+    if not row or not row[0]:
+        return (None, None)
+    return _parse_rollout_context(row[0])
+
+
 EXPENSIVE_SOURCE_TTL_SEC = 60
 _CODEX_RATE_LIMIT_CACHE = {}
 
@@ -295,6 +339,17 @@ def gather_peer(peer, peer_dirs):
     info["empty"] = False
     info["source"] = "live" if data else "health"
 
+    # Source freshness (D1): observed_at = capture time of the source file, plus age.
+    src_file = live_file if (live_file and live_file.exists()) else (
+        health_file if health_file.exists() else None)
+    if src_file:
+        try:
+            mt = src_file.stat().st_mtime
+            info["observed_at"] = datetime.fromtimestamp(mt, tz=timezone.utc).astimezone().isoformat()
+            info["age_sec"] = max(0, int(time.time() - mt))
+        except OSError:
+            pass
+
     # Health / gate
     avail = health_data.get("availability", {})
     info["gate"] = avail.get("gate_open")
@@ -366,12 +421,12 @@ def gather_peer(peer, peer_dirs):
             reset_sec = q.get("reset_in_seconds")
             rem_sec = qmgr.get_remaining_seconds(reset_in_seconds=reset_sec)
             pacing = qmgr.calculate_pacing(used_frac, rem_sec, window_hours)
-            indicator = f" {pacing['indicator']}" if pacing['indicator'] else ""
-            
+
             quotas.append({
                 "label": label, "used_frac": used_frac,
                 "reset": _fmt_reset(q.get("reset_time"), reset_sec),
-                "metric": f"{used_frac * 100:.1f}% used{indicator}",
+                "metric": f"{used_frac * 100:.1f}% used{_fmt_pacing(pacing)}",
+                "pacing_ratio": pacing.get("ratio"), "pacing_status": pacing.get("status"),
             })
     if "rate_limits" in data and isinstance(data["rate_limits"], dict):  # cc
         rl = data["rate_limits"]
@@ -387,12 +442,12 @@ def gather_peer(peer, peer_dirs):
             resets_at = q.get("resets_at") or q.get("reset_at")
             rem_sec = qmgr.get_remaining_seconds(resets_at_iso=resets_at)
             pacing = qmgr.calculate_pacing(used_frac, rem_sec, window_hours)
-            indicator = f" {pacing['indicator']}" if pacing['indicator'] else ""
-            
+
             quotas.append({
                 "label": label, "used_frac": used_frac,
                 "reset": _fmt_reset(resets_at),
-                "metric": f"{float(used):.1f}% used{indicator}",
+                "metric": f"{float(used):.1f}% used{_fmt_pacing(pacing)}",
+                "pacing_ratio": pacing.get("ratio"), "pacing_status": pacing.get("status"),
             })
 
     # Codex: model/tokens/effort from sqlite + live rate limits from app-server
@@ -421,6 +476,15 @@ def gather_peer(peer, peer_dirs):
                 info["empty"] = False
             except Exception as exc:
                 info["errors"].append(f"sqlite_read: {type(exc).__name__}")
+        # cx current context occupancy from the newest rollout token_count (D2).
+        c_used, c_win = _codex_context()
+        if isinstance(c_win, (int, float)) and c_win:
+            info["ctx_window"] = c_win
+            info["ctx_used"] = c_used if isinstance(c_used, (int, float)) else 0
+            info["ctx_known"] = c_used is not None
+            if c_used is not None:
+                info["ctx_pct"] = round(c_used / c_win * 100, 1)
+            info["empty"] = False
         rl = _cached_codex_rate_limits()
         if rl:
             info["source"] = "app-server"
@@ -436,12 +500,12 @@ def gather_peer(peer, peer_dirs):
                 resets_at = q.get("resetsAt")
                 rem_sec = qmgr.get_remaining_seconds(resets_at_iso=resets_at)
                 pacing = qmgr.calculate_pacing(used_frac, rem_sec, window_hours)
-                indicator = f" {pacing['indicator']}" if pacing['indicator'] else ""
-                
+
                 quotas.append({
                     "label": label, "used_frac": used_frac,
                     "reset": _fmt_reset(resets_at),
-                    "metric": f"{float(used):.1f}% used{indicator}",
+                    "metric": f"{float(used):.1f}% used{_fmt_pacing(pacing)}",
+                    "pacing_ratio": pacing.get("ratio"), "pacing_status": pacing.get("status"),
                 })
         elif not quotas:
             info["cx_quota_unavailable"] = True
@@ -590,6 +654,14 @@ def _is_synthetic_peer(name):
     return name not in known
 
 
+def _fmt_pacing(pacing):
+    """Render a pacing dict ({ratio,status,indicator}) as value + emoji (D4),
+    e.g. ' 🟢 1.05x'. Empty when pacing is unknown."""
+    if not pacing or not pacing.get("indicator"):
+        return ""
+    return f" {pacing['indicator']} {pacing['ratio']:.2f}x"
+
+
 def _mask_email(email):
     """Redact an email for telemetry (§5): keep only first local char + domain.
     Returns None for empty, '***' for non-email strings."""
@@ -610,6 +682,9 @@ def _source_meta(kind, observed_at, ttl_sec, confidence):
 # Quota alert thresholds (§7). Context thresholds come from governance_params.json.
 QUOTA_WARN_FRAC = 0.75
 QUOTA_CRIT_FRAC = 0.90
+# Source data older than this is flagged SOURCE_STALE (status logs only refresh when
+# that peer's statusline renders, so an idle peer's quota/context can be stale) (D1).
+STALE_THRESHOLD_SEC = 300
 
 
 def _governance_params():
@@ -635,6 +710,11 @@ def _compute_alerts(record):
     # Collector failures first — visibility over silent masking.
     for err in record.get("errors", []):
         alerts.append(_alert("critical", "DIAG_INTERNAL_ERROR", str(err)))
+
+    age = record.get("raw", {}).get("age_sec")
+    if isinstance(age, (int, float)) and age > STALE_THRESHOLD_SEC:
+        alerts.append(_alert("warn", "SOURCE_STALE",
+                             f"source data {int(age)}s old (> {STALE_THRESHOLD_SEC}s); may be pre-reset"))
 
     ctx = dom.get("context", {})
     util = ctx.get("utilization_pct")
@@ -673,7 +753,9 @@ def normalize_peer(info, now=None):
     record (§4). Every domain carries source provenance; unknown numerics stay
     None (never 0). The raw dict is preserved under "raw" for renderers/drill-down."""
     now = now or datetime.now().astimezone()
-    observed = now.isoformat()
+    # observed_at reflects when the SOURCE data was captured (file mtime), not when
+    # diag ran — otherwise a stale snapshot looks fresh (D1).
+    observed = info.get("observed_at") or now.isoformat()
     raw_src = info.get("source", "none")
     kind = {"live": "live", "app-server": "live", "health": "cached"}.get(raw_src, "unknown")
 

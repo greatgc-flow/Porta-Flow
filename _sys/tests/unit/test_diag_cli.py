@@ -297,6 +297,77 @@ def test_is_synthetic_peer_filters_test_fixtures():
     assert diag._is_synthetic_peer("cc") is False
 
 
+# ── D1: staleness (observed_at = source mtime + SOURCE_STALE) ────────────────────
+
+def test_normalize_uses_source_observed_at_not_now():
+    diag = load_diag()
+    stamp = "2020-01-01T00:00:00+00:00"
+    rec = diag.normalize_peer({
+        "peer": "cc", "source": "live", "ctx_known": True, "ctx_window": 1000,
+        "ctx_used": 10, "ctx_pct": 1.0, "empty": False, "quotas": [], "errors": [],
+        "observed_at": stamp,
+    })
+    assert rec["domains"]["context"]["source"]["observed_at"] == stamp
+
+
+def test_source_stale_alert_fires_on_old_data():
+    diag = load_diag()
+    stale = diag.normalize_peer({
+        "peer": "cc", "source": "live", "ctx_known": True, "ctx_window": 1000,
+        "ctx_used": 10, "ctx_pct": 1.0, "empty": False, "quotas": [], "errors": [],
+        "age_sec": 999999,
+    })
+    fresh = diag.normalize_peer({
+        "peer": "cc", "source": "live", "ctx_known": True, "ctx_window": 1000,
+        "ctx_used": 10, "ctx_pct": 1.0, "empty": False, "quotas": [], "errors": [],
+        "age_sec": 5,
+    })
+    assert "SOURCE_STALE" in {a["code"] for a in stale["alerts"]}
+    assert "SOURCE_STALE" not in {a["code"] for a in fresh["alerts"]}
+
+
+# ── D2: cx context from rollout token_count ─────────────────────────────────────
+
+def test_parse_rollout_context_reads_token_count(tmp_path):
+    diag = load_diag()
+    roll = tmp_path / "r.jsonl"
+    roll.write_text(
+        '{"type":"event_msg","payload":{"type":"token_count","info":'
+        '{"last_token_usage":{"total_tokens":21494},"model_context_window":258400}}}\n',
+        encoding="utf-8",
+    )
+    used, win = diag._parse_rollout_context(roll)
+    assert used == 21494 and win == 258400
+
+
+def test_parse_rollout_context_tolerates_truncated_tail(tmp_path):
+    diag = load_diag()
+    roll = tmp_path / "r.jsonl"
+    roll.write_text(
+        '{"type":"event_msg","payload":{"type":"token_count","info":'
+        '{"last_token_usage":{"total_tokens":100},"model_context_window":1000}}}\n'
+        '{"type":"event_msg","payload":{"type":"token_c',  # truncated final line
+        encoding="utf-8",
+    )
+    used, win = diag._parse_rollout_context(roll)
+    assert used == 100 and win == 1000  # last complete event wins, no raise
+
+
+def test_parse_rollout_context_missing_file_returns_none(tmp_path):
+    diag = load_diag()
+    assert diag._parse_rollout_context(tmp_path / "nope.jsonl") == (None, None)
+
+
+# ── D4: pacing shows value + emoji ──────────────────────────────────────────────
+
+def test_fmt_pacing_includes_ratio_value_with_emoji():
+    diag = load_diag()
+    rendered = diag._fmt_pacing({"ratio": 1.05, "status": "danger", "indicator": "🔥"})
+    assert "1.05x" in rendered          # value, not just emoji
+    assert "🔥" in rendered
+    assert diag._fmt_pacing({"ratio": 0.0, "status": "unknown", "indicator": ""}) == ""
+
+
 # ???? TDD slice 4: alerts (吏?) ????????????????????????????????????????????????????????????????????????????????????????????????????????
 
 def _rec_with(diag, **overrides):
