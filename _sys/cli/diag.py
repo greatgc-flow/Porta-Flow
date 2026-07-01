@@ -130,6 +130,21 @@ def _fmt_reset(value, rel_seconds=None):
 # Live quota source for Codex (no local persistence)
 # --------------------------------------------------------------------------
 
+def _codex_binary():
+    """Resolve the REAL codex CLI, NEVER our `_sys/cli` wrapper.
+
+    `_sys/cli` is first on PATH, so a bare `codex` (incl. Windows `shutil.which`
+    matching `codex.bat` via PATHEXT) resolves to our wrapper, which runs the heavy
+    `codex_entry.py` flow (hub init-session + context-fill + status). That is wrong
+    and slow for a raw app-server RPC — it was the real root of the diag `--json`
+    stall. Prefer the npm-global binary directly."""
+    import shutil
+    cand = SYS_DIR / "env" / "nodejs" / "npm-global" / "codex.cmd"
+    if cand.exists():
+        return str(cand)
+    return shutil.which("codex.cmd")  # real .cmd; our wrapper is codex.bat / codex
+
+
 def _codex_rate_limits(deadline_sec=12):
     """Query the codex app-server (initialize -> account/rateLimits/read) for live
     5h/weekly rate-limit reset times. Codex does not persist these locally.
@@ -138,16 +153,13 @@ def _codex_rate_limits(deadline_sec=12):
     EVEN IF proc.stdout.readline() blocks (the app-server is a daemon and, under a
     denied sandbox, can spawn-EPERM and never emit — which previously hung diag for
     tens of minutes). Returns the rateLimits dict or None."""
-    import threading, queue, shutil
+    import threading, queue
     msgs = (
         '{"jsonrpc":"2.0","id":0,"method":"initialize","params":'
         '{"clientInfo":{"name":"diag","version":"1.0"},"apiVersion":"v2"}}\n'
         '{"jsonrpc":"2.0","id":1,"method":"account/rateLimits/read","params":{}}\n'
     )
-    codex_exe = shutil.which("codex") or shutil.which("codex.cmd")
-    if not codex_exe:
-        cand = SYS_DIR / "env" / "nodejs" / "npm-global" / "codex.cmd"
-        codex_exe = str(cand) if cand.exists() else None
+    codex_exe = _codex_binary()
     if not codex_exe:
         return None
     proc = None

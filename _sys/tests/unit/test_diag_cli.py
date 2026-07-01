@@ -471,3 +471,16 @@ def test_tokens_view_is_null_safe(monkeypatch):
     out = io.StringIO()
     assert diag.main(["--tokens"], stdout=out) == 0  # no crash on nulls
     assert "cx" in out.getvalue().lower()
+
+
+# ── PATH-shadow fix: diag must call the REAL codex, not our _sys/cli wrapper ─────
+
+def test_codex_binary_skips_sys_cli_wrapper():
+    diag = load_diag()
+    exe = diag._codex_binary()
+    assert exe, "should resolve a codex binary"
+    p = str(exe).replace("\\", "/").lower()
+    # our wrapper (_sys/cli/codex[.bat]) runs the heavy codex_entry.py init/context-fill
+    # flow — wrong for a raw app-server RPC. Must resolve the real npm-global binary.
+    assert "/_sys/cli/codex" not in p and "/cli/codex" not in p
+    assert "npm-global" in p and p.endswith("codex.cmd")
