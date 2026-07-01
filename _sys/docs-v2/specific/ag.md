@@ -12,11 +12,20 @@ agy --dangerously-skip-permissions -p {query} --print-timeout 60m
 - **Windows PTY:** `agy` writes to Windows Console API. `requires_pty=true` is mandatory in `orchestration.json` (subprocess.PIPE hangs).
 
 ## Session & State (`session_mode: reuse`)
-- **Durable Store:** `AGY_CONFIG_HOME/conversations/*.db` and `implicit/` are durable. `agy -p` natively auto-continues this ambient state even without a `--conversation` flag.
-- **IPC Stateless Home:** To prevent A6 contamination (hub inheriting prior interactive sessions), `peers.json` declares an `ipc_stateless_home` (`_sys/antigravity/ipc-config/`).
-  - Before IPC asks, hub seeds auth/models (`settings.json`, `installation_id`, `AGY.md`, `keybindings.json`, `status.json`, `usage.json`) from `config/`.
-  - Hub recreates `conversations/` and `implicit/` EMPTY so the ask is stateless.
-  - Temporarily repoints `AGY_CONFIG_HOME` and `GEMINI_DIR` to this directory.
+- **Durable home (verified 2026-07-01):** ag uses the durable config home
+  (`AGY_CONFIG_HOME=config`). There is **no clean/stateless IPC home** —
+  `ipc_stateless_home` is **not** configured in `peers.json` (an earlier design,
+  now inactive; the `_prepare_ipc_stateless_home` code remains but is unused for ag).
+- **A6 isolation via scoped id, not home-wipe:** `agy -p` auto-continues ambient
+  state, so IPC asks are isolated by an explicit scoped `--conversation
+  <room:ag.profile>` id (`AgyAdapter`), which pins the conversation instead of
+  wiping the home. (Empirically a fresh scope does not inherit prior context.)
+- **Reuse lifecycle (unified):** the hub persists + reuses that id via the general
+  path-agnostic `_store_session_from_result` — same lifecycle as cc/cx.
+- **Continuity caveat:** the id is reused, but `agy -p` one-shot mode does **not**
+  currently restore prior conversation history (verified) — effective continuity is
+  limited pending an agy resume/continue mode; collaboration context should still
+  travel in the ask envelope.
 
 ## Runtime Profiles
 | Profile | Runtime model |
@@ -32,15 +41,14 @@ agy --dangerously-skip-permissions -p {query} --print-timeout 60m
 _sys/antigravity/
 ├── config/                 ← INTERACTIVE home (durable; never mutated by hub IPC)
 │   ├── AGY.md              ← session instructions
-│   ├── conversations/      ← durable session .db store
+│   ├── conversations/      ← durable session .db store (used by IPC too)
 │   └── implicit/           ← durable implicit context
-├── ipc-config/             ← STATELESS IPC home (A6; gitignored, runtime-generated)
 └── health.json             ← peer health (runtime-generated)
 ```
 - **Entry:** `_sys/cli/agy.bat` → `agy_entry.py`
-- **Config Env:** `CODEX_HOME`-style env var points to `_sys/antigravity/config/`
+- **Config Env:** `AGY_CONFIG_HOME`/`GEMINI_DIR` → `_sys/antigravity/config/` (durable; IPC uses the same home — no separate `ipc-config`).
 
 ## Context and Collaboration
 *(Delta from general/protocol.md + general/lifecycle.md.)*
 - **PTY transport:** ag is the only PTY peer — liveness is heartbeat-based (zombie timeout), not a hard process deadline; `ag.deepthink` may think silently for long stretches without being a hang.
-- **Stateless IPC:** hub asks run in the stateless `ipc-config/` home, so ag does NOT inherit prior interactive room context unless explicitly seeded; collaboration context must travel in the ask envelope.
+- **IPC isolation via scoped id:** hub asks reuse the durable home but pin a scoped `--conversation <room:ag.profile>` id, so ag does NOT inherit prior interactive room context; collaboration context must travel in the ask envelope. (Actual history restore in `-p` mode is a pending CLI limitation — see Session & State.)
