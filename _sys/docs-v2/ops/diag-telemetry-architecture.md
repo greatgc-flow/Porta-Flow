@@ -341,6 +341,14 @@ Exhaustive review taking over the in-flight cx/ag work. The prior doc-review deb
    `Exceeded skills context budget of 2%. All skill descriptions were removed and
    1363 additional skills were not included` — large per-call overhead that makes cx
    feel slow/stuck before real work starts.
+   - **Clearing the cache is NOT durable:** codex re-syncs all 605 on the next
+     restart (confirmed 2026-07-01). Durable mitigation belongs in codex startup, not
+     a one-off delete.
+   - **cx self-diagnosis + fix (2026-07-01, after recovery):** the exec-path *full
+     skill-cache resync* is what stalls; recommendation is "no-skill / targeted
+     startup + an early heartbeat + a shorter staged timeout" so `codex exec` cannot
+     sit silent long enough to be zombie-killed (a prior cross-review ask hit the
+     600s zombie timeout with zero output).
 2. **Sandbox `spawn EPERM` / `지정된 경로를 찾을 수 없습니다` (path not found).** Codex
    child spawns intermittently fail under the workspace-write sandbox (error-log
    `sandbox_spawn_eperm`, `nonzero_exit`).
