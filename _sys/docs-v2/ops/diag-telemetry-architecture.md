@@ -366,6 +366,13 @@ Exhaustive review taking over the in-flight cx/ag work. The prior doc-review deb
      output the zombie window applies. Turns any future silent stall (any cause)
      into a ~90s fast-fail instead of a 600s zombie wait. See `general/lifecycle.md`
      §17; tests in `test_hub_pty.py`/`test_pty_timeout_h2.py`/`test_contracts.py`.
+   - **Live validation (2026-07-01):** a real `hub ask --to cx` that stalled at
+     startup was fast-failed at exactly **90s** by this guard (not 600s).
+   - **Skill reduction DEFERRED as accepted-benign (ag+cc; cx prior).** No
+     config.toml/env lever selectively disables the marketplace skill sync
+     (`--disable plugins/apps` does not stop it); delete-cache re-syncs and
+     registry edits are fragile — high risk, zero functional gain now that the
+     hang is fixed. The "skills budget 2% exceeded" line is an accepted benign log.
 2. **Sandbox `spawn EPERM` / `지정된 경로를 찾을 수 없습니다` (path not found).** Codex
    child spawns intermittently fail under the workspace-write sandbox (error-log
    `sandbox_spawn_eperm`, `nonzero_exit`).
