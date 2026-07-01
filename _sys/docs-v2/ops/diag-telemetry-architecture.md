@@ -344,11 +344,25 @@ Exhaustive review taking over the in-flight cx/ag work. The prior doc-review deb
    - **Clearing the cache is NOT durable:** codex re-syncs all 605 on the next
      restart (confirmed 2026-07-01). Durable mitigation belongs in codex startup, not
      a one-off delete.
-   - **cx self-diagnosis + fix (2026-07-01, after recovery):** the exec-path *full
-     skill-cache resync* is what stalls; recommendation is "no-skill / targeted
-     startup + an early heartbeat + a shorter staged timeout" so `codex exec` cannot
-     sit silent long enough to be zombie-killed (a prior cross-review ask hit the
-     600s zombie timeout with zero output).
+   - **VERIFIED ROOT CAUSE + FIX (2026-07-01, R:10 ag+cx+cc consensus).** Empirical
+     tests corrected the first hypothesis:
+     - `codex exec --disable plugins --disable apps --disable workspace_dependencies`
+       still logs "skills budget 2% exceeded" and returns fast — the `--disable`
+       flags do NOT stop skill loading (dropped from the plan).
+     - Real cause: `peers.json` `codex.env_vars` was `{}`, so hub IPC never set
+       `CODEX_HOME`. `codex.cmd` then fell back to the host home
+       `C:\Users\GREAT\.codex` (present, 621 skills) instead of portable
+       `_sys/codex/config` — a divergent/cold cache whose first-use re-sync sat
+       silent until the 600s zombie kill.
+     - **Fix applied:** `peers.json codex.env_vars = {"CODEX_HOME": "config"}` (parity
+       with cc `CLAUDE_CONFIG_DIR` / ag `AGY_CONFIG_HOME`); hub resolves it to
+       `_sys/codex/config`. Verified: hub `ask --to cx` now replies in ~8s. Tests:
+       `test_contracts.py::TestPeersJsonContract` (CODEX_HOME + portable-resolve).
+     - Transitional: old host-home sessions won't resume after the pin; hub logs
+       "session resume failed → retrying fresh" (expected, self-heals).
+   - **Deferred (defense-in-depth):** CodexAdapter staged-startup timeout / early
+     heartbeat (ag proposal) — turns any future silent stall into a fast fail
+     regardless of cause. Separate slice.
 2. **Sandbox `spawn EPERM` / `지정된 경로를 찾을 수 없습니다` (path not found).** Codex
    child spawns intermittently fail under the workspace-write sandbox (error-log
    `sandbox_spawn_eperm`, `nonzero_exit`).

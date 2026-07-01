@@ -442,6 +442,30 @@ class TestPeersJsonContract:
                     f"Peer '{peer_id}' sys_subdir not found: _sys/{subdir}"
                 )
 
+    def test_codex_pins_portable_config_home(self, peers_data):
+        """cx must pin CODEX_HOME to its portable config so hub IPC uses the
+        warm portable cache, not the host home (C:\\Users\\...\\.codex). Missing
+        this caused cold-cache skill re-syncs that zombie-killed cx asks."""
+        codex = peers_data["peers"]["codex"]
+        assert codex.get("env_vars", {}).get("CODEX_HOME") == "config", (
+            "codex.env_vars.CODEX_HOME must be 'config' (parity with cc "
+            "CLAUDE_CONFIG_DIR / ag AGY_CONFIG_HOME); hub resolves it to "
+            "_sys/codex/config for IPC."
+        )
+
+    def test_config_home_env_resolves_to_portable_dir(self, peers_data):
+        """The config-home env var each peer declares must resolve under _sys
+        (portable), mirroring hub.py env injection ((peer_subdir / rel).resolve())."""
+        home_keys = {"CLAUDE_CONFIG_DIR", "CODEX_HOME", "AGY_CONFIG_HOME"}
+        for peer_id, cfg in peers_data["peers"].items():
+            subdir = cfg.get("sys_subdir", "")
+            for k, rel in cfg.get("env_vars", {}).items():
+                if k in home_keys and isinstance(rel, str):
+                    resolved = (SYS_DIR / subdir / rel).resolve()
+                    assert str(resolved).startswith(str(SYS_DIR.resolve())), (
+                        f"{peer_id}.{k} must resolve inside _sys, got {resolved}"
+                    )
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 6. runtime-directives.jsonl Schema Contract

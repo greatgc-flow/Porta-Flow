@@ -17,7 +17,11 @@ _sys/codex/
 └── state_5.sqlite          ← state database
 ```
 
-Environment variable: `CODEX_HOME` → `_sys/codex/config/`
+Environment variable: `CODEX_HOME` → `_sys/codex/config/`. Hub IPC pins this via
+`peers.json` `codex.env_vars.CODEX_HOME = "config"` (resolved to `_sys/codex/config`).
+Without the pin, `codex.cmd` falls back to the host home `~/.codex` — non-portable and
+a cold-cache re-sync that can silently stall an ask until the zombie timeout. Interactive
+launch pins the same home via `codex_entry.py`.
 
 ---
 

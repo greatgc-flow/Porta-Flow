@@ -134,7 +134,9 @@
         "glue_file": "CODEX.md",
         "glue_template": "templates/workspace.md"
       },
-      "env_vars": {},
+      "env_vars": {
+        "CODEX_HOME": "config"
+      },
       "local_settings": [],
       "host_app": null,
       "cleanup": {
