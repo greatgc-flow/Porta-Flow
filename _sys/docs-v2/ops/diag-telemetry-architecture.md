@@ -1,5 +1,5 @@
 # Ops - Diag Telemetry Architecture
-> Status: design + initial TDD implementation | Created: 2026-06-30 | Updated: 2026-07-01 | Purpose: MECE telemetry source map and presentation contract for expanding `diag` into a project monitoring dashboard.
+> Status: implemented (slices 1-5 complete) | Created: 2026-06-30 | Updated: 2026-07-01 | Purpose: MECE telemetry source map and presentation contract for expanding `diag` into a project monitoring dashboard.
 > Cross-ref: `ops/logging.md`, `general/lifecycle.md`, `ops/schemas.md`, `_sys/ai/common/statusline/statusline-schema.json`.
 
 ---
@@ -417,27 +417,29 @@ Exhaustive review taking over the in-flight cx/ag work. The prior doc-review deb
 
 ## 13. TDD Entry Checklist (pre-TDD complete)
 
-**Done (tests green — `_sys/tests/unit/test_diag_cli.py`, 16 tests):** CLI skeleton
-(`parse_args`), `--json` one-shot, `--json --watch` NDJSON, `--watch`/`--interval`
-2s floor, expensive-source TTL cache, tz-aware reset formatter; **normalization
-contract (§4)**: `normalize_peer` emits per-domain `source.kind/observed_at/ttl_sec/
-confidence` with `null`≠zero; `collect_snapshot` returns normalized peers; renderers
-consume the preserved `raw` block; expensive quota (cx app-server) uses 60s TTL vs
-5s local; **redaction (§5)**: `_mask_email` keeps only first local char + domain;
-account domain exposes only the masked email; the embedded `raw` passthrough is
-sanitized so no unmasked address reaches JSON/NDJSON.
+**Done — ALL slices complete (tests green — `_sys/tests/unit/test_diag_cli.py`, 26 tests):**
+- **CLI skeleton**: `parse_args`, `--json` one-shot, `--json --watch` NDJSON,
+  `--watch`/`--interval` 2s floor, expensive-source TTL cache, tz-aware reset formatter.
+- **Normalization (§4)**: `normalize_peer` emits per-domain `source.kind/observed_at/
+  ttl_sec/confidence` with `null`≠zero; `collect_snapshot` returns normalized peers;
+  renderers consume the preserved `raw`; cx app-server quota 60s TTL vs 5s local.
+- **Redaction (§5)**: `_mask_email` (first local char + domain); account exposes only
+  the masked email; embedded `raw` sanitized so no unmasked address reaches JSON/NDJSON.
+- **Resilience (§11)**: `collect_snapshot` never raises — a throwing collector degrades
+  to an `unknown` record with the error surfaced (not silent); sqlite failures captured
+  as `sqlite_read`; `_is_synthetic_peer` filters `testpeer`/non-orchestration peers.
+- **Alerts (§7)**: `_compute_alerts` → `CONTEXT_WARN/CRITICAL` (from `governance_params`
+  0.8/0.95), `CTX_UNKNOWN` (suppresses context thresholds, keeps numbers None),
+  `QUOTA_WARN/CRITICAL` (0.75/0.90), `ACCOUNT_UNKNOWN`, `SESSION_UNVERIFIABLE`,
+  `DIAG_INTERNAL_ERROR` (surfaces trapped collector errors — ag's anti-silent-mask). Each
+  record carries `alerts[]`. (`SESSION_STALE` renamed `SESSION_UNVERIFIABLE` per ag — no
+  timestamp source yet; a real staleness check remains future work.)
+- **Detail views (§6.2)**: `--profiles` (matrix from orchestration.json; never inlines
+  `profile_args`), `--accounts` (redacted), `--tokens` (null-safe), `--sessions`,
+  `--project` (`git status --porcelain`, `GIT_OPTIONAL_LOCKS=0`, bounded, no shell,
+  failures → `unknown`). All read-only.
 
-**Remaining TDD slices — write the failing test FIRST, in order:**
-
-1. **Resilience (§11).** Collectors return `unknown` records (not exceptions) on missing
-   files, `spawn EPERM`, and unreadable sqlite; synthetic/test peers filtered from log-derived signals.
-   - Failing test: inject missing path + EPERM + `testpeer` log line → no raise, marked unknown/filtered.
-2. **Alerts (§7).** Deterministic `CONTEXT_WARN/CRITICAL`, `QUOTA_WARN/CRITICAL`,
-   `CTX_UNKNOWN`, `SESSION_STALE`, `ACCOUNT_UNKNOWN` from `governance_params.json`.
-   - Failing test: threshold table drives each alert; `CTX_UNKNOWN` suppresses precise remaining-token claims.
-3. **Detail views (§6.2).** `--profiles/--accounts/--tokens/--sessions/--project` are
-   read-only and honor the resolutions in §12.
-   - Failing test: each flag renders its view read-only; `--profiles` never inlines raw `profile_args`.
+R:10 design consensus: ag+cx ACK (slices 3-5, 2026-07-01). 990 unit green.
 
 **Environment prerequisites — DONE 2026-07-01:** codex `.tmp/plugins` skill bloat
 cleared (605 SKILL.md); 85 `.ai/*.tmp` rename-residue swept; 494 synthetic lines purged

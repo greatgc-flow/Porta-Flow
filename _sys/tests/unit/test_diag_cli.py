@@ -229,3 +229,138 @@ def test_snapshot_json_contains_no_raw_email(monkeypatch):
     out = io.StringIO()
     diag.emit_json_snapshot(out)
     assert "greatgc@gmail.com" not in out.getvalue()
+
+
+# ── TDD slice 3: resilience (§11) ───────────────────────────────────────────────
+
+def test_gather_peer_missing_dir_does_not_raise(tmp_path):
+    diag = load_diag()
+    info = diag.gather_peer("zz", {"zz": tmp_path / "nope"})
+    assert info["empty"] is True
+    assert info["ctx_known"] is False
+
+
+def test_collect_snapshot_survives_collector_exception(monkeypatch):
+    diag = load_diag()
+
+    def boom(peer, dirs):
+        raise RuntimeError("sqlite exploded")
+    monkeypatch.setattr(diag, "gather_peer", boom)
+
+    snap = diag.collect_snapshot()  # must NOT raise even if every collector throws
+    assert snap["peers"], "snapshot should still list peers"
+    assert all(rec.get("errors") for rec in snap["peers"]), (
+        "trapped collector errors must be surfaced, not silent"
+    )
+
+
+def test_is_synthetic_peer_filters_test_fixtures():
+    diag = load_diag()
+    assert diag._is_synthetic_peer("testpeer") is True
+    assert diag._is_synthetic_peer("cx") is False
+    assert diag._is_synthetic_peer("cc") is False
+
+
+# ── TDD slice 4: alerts (§7) ────────────────────────────────────────────────────
+
+def _rec_with(diag, **overrides):
+    base = {
+        "peer": "cc", "source": "live", "gate": True, "quarantined": False,
+        "model": "M", "ctx_used": 100, "ctx_window": 1000, "ctx_pct": 10.0,
+        "ctx_known": True, "cost": 0.1, "agent_state": "idle", "plan_tier": "Pro",
+        "email": "a@b.com", "sessions": 1, "total_tokens": None, "empty": False,
+        "quotas": [], "errors": [],
+    }
+    base.update(overrides)
+    return diag.normalize_peer(base)
+
+
+def _codes(alerts):
+    return {a["code"] for a in alerts}
+
+
+def test_alerts_context_warn_and_critical():
+    diag = load_diag()
+    warn = diag._compute_alerts(_rec_with(diag, ctx_pct=85.0))
+    crit = diag._compute_alerts(_rec_with(diag, ctx_pct=97.0))
+    assert "CONTEXT_WARN" in _codes(warn) and "CONTEXT_CRITICAL" not in _codes(warn)
+    assert "CONTEXT_CRITICAL" in _codes(crit)
+
+
+def test_alerts_ctx_unknown_suppresses_context_thresholds():
+    diag = load_diag()
+    alerts = _codes(diag._compute_alerts(_rec_with(diag, ctx_known=False, ctx_pct=None)))
+    assert "CTX_UNKNOWN" in alerts
+    assert "CONTEXT_WARN" not in alerts and "CONTEXT_CRITICAL" not in alerts
+
+
+def test_alerts_quota_warn_and_critical():
+    diag = load_diag()
+    warn = diag._compute_alerts(_rec_with(diag, quotas=[{"label": "5H", "used_frac": 0.80, "reset": "x", "metric": "m"}]))
+    crit = diag._compute_alerts(_rec_with(diag, quotas=[{"label": "5H", "used_frac": 0.93, "reset": "x", "metric": "m"}]))
+    assert "QUOTA_WARN" in _codes(warn)
+    assert "QUOTA_CRITICAL" in _codes(crit)
+
+
+def test_alerts_account_unknown_and_diag_error():
+    diag = load_diag()
+    acct = diag._compute_alerts(_rec_with(diag, plan_tier=None, email=None))
+    assert "ACCOUNT_UNKNOWN" in _codes(acct)
+    err = diag._compute_alerts(_rec_with(diag, errors=["sqlite_read: OperationalError"]))
+    assert "DIAG_INTERNAL_ERROR" in _codes(err)
+
+
+def test_snapshot_records_carry_alerts_list():
+    diag = load_diag()
+    snap = diag.collect_snapshot()
+    for peer in snap["peers"]:
+        assert isinstance(peer.get("alerts"), list)
+
+
+# ── TDD slice 5: detail views (§6.2) ────────────────────────────────────────────
+
+def test_profiles_view_never_leaks_raw_profile_args():
+    diag = load_diag()
+    out = io.StringIO()
+    assert diag.main(["--profiles"], stdout=out) == 0
+    text = out.getvalue()
+    assert "profile_args" not in text
+    assert "model_reasoning_effort" not in text  # raw adapter arg must not leak
+    # but it should still show real profile facts
+    assert "standard" in text or "deepthink" in text
+
+
+def test_accounts_view_has_no_unmasked_email(monkeypatch):
+    diag = load_diag()
+    rec = diag.normalize_peer({
+        "peer": "ag", "source": "live", "plan_tier": "Google AI Pro",
+        "email": "greatgc@gmail.com", "ctx_known": True, "ctx_window": 1000,
+        "ctx_used": 1, "ctx_pct": 0, "empty": False, "quotas": [], "errors": [],
+    })
+    monkeypatch.setattr(diag, "collect_snapshot", lambda: {"schema_version": 1, "peers": [rec]})
+    out = io.StringIO()
+    assert diag.main(["--accounts"], stdout=out) == 0
+    assert "greatgc@gmail.com" not in out.getvalue()
+
+
+def test_git_project_status_degrades_on_failure(monkeypatch):
+    diag = load_diag()
+
+    def boom(*a, **k):
+        raise OSError("git missing")
+    monkeypatch.setattr(diag.subprocess, "run", boom)
+    status = diag._git_project_status()  # must not raise
+    assert status.get("state") in ("unknown", "clean", "dirty")
+
+
+def test_tokens_view_is_null_safe(monkeypatch):
+    diag = load_diag()
+    rec = diag.normalize_peer({
+        "peer": "cx", "source": "app-server", "cost": None, "total_tokens": None,
+        "ctx_known": False, "ctx_window": 128000, "ctx_used": 0, "ctx_pct": None,
+        "empty": False, "quotas": [], "errors": [],
+    })
+    monkeypatch.setattr(diag, "collect_snapshot", lambda: {"schema_version": 1, "peers": [rec]})
+    out = io.StringIO()
+    assert diag.main(["--tokens"], stdout=out) == 0  # no crash on nulls
+    assert "cx" in out.getvalue().lower()

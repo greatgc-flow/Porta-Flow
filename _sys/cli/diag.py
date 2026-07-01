@@ -238,7 +238,7 @@ def gather_peer(peer, peer_dirs):
         "model": "Unknown", "ctx_used": 0, "ctx_window": "Unknown", "ctx_pct": None,
         "cost": None, "source": "none", "agent_state": None, "plan_tier": None,
         "quotas": [], "sessions": None, "total_tokens": None, "empty": True,
-        "ctx_known": False,
+        "ctx_known": False, "errors": [],
     }
 
     # Live state log (cc/ag publish one; cx is queried live below).
@@ -374,8 +374,8 @@ def gather_peer(peer, peer_dirs):
                     info["total_tokens"] = int(row_sum[0])
                 conn.close()
                 info["empty"] = False
-            except Exception:
-                pass
+            except Exception as exc:
+                info["errors"].append(f"sqlite_read: {type(exc).__name__}")
         rl = _cached_codex_rate_limits()
         if rl:
             info["source"] = "app-server"
@@ -521,6 +521,21 @@ def parse_args(argv=None):
 _LOCAL_TTL_SEC = 5
 
 
+_SYNTHETIC_PEERS = {"testpeer"}
+
+
+def _is_synthetic_peer(name):
+    """True for test-fixture / non-orchestration peers so log-derived signals
+    ignore them (keeps diagnostics honest — see §11.3)."""
+    if not name or name in _SYNTHETIC_PEERS:
+        return True
+    try:
+        known, _ = _discover_peers()
+    except Exception:
+        known = ["ag", "cc", "cx"]
+    return name not in known
+
+
 def _mask_email(email):
     """Redact an email for telemetry (§5): keep only first local char + domain.
     Returns None for empty, '***' for non-email strings."""
@@ -536,6 +551,67 @@ def _mask_email(email):
 def _source_meta(kind, observed_at, ttl_sec, confidence):
     """Normalized source-provenance block (§4)."""
     return {"kind": kind, "observed_at": observed_at, "ttl_sec": ttl_sec, "confidence": confidence}
+
+
+# Quota alert thresholds (§7). Context thresholds come from governance_params.json.
+QUOTA_WARN_FRAC = 0.75
+QUOTA_CRIT_FRAC = 0.90
+
+
+def _governance_params():
+    try:
+        return json.loads((SYS_DIR / "ai" / "governance_params.json").read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _alert(severity, code, message):
+    return {"severity": severity, "code": code, "message": message}
+
+
+def _compute_alerts(record):
+    """Deterministic alerts (§7) computed from a normalized peer record.
+    CTX_UNKNOWN suppresses context threshold alerts (no precise claims)."""
+    gp = _governance_params()
+    warn_pct = float(gp.get("context_gate_warn_pct", 0.8)) * 100
+    crit_pct = float(gp.get("context_gate_failover_pct", 0.95)) * 100
+    dom = record.get("domains", {})
+    alerts = []
+
+    # Collector failures first — visibility over silent masking.
+    for err in record.get("errors", []):
+        alerts.append(_alert("critical", "DIAG_INTERNAL_ERROR", str(err)))
+
+    ctx = dom.get("context", {})
+    util = ctx.get("utilization_pct")
+    if ctx.get("used_tokens") is None:
+        alerts.append(_alert("warn", "CTX_UNKNOWN",
+                             "current context occupancy unknown; avoid precise remaining-token claims"))
+    elif isinstance(util, (int, float)):
+        if util >= crit_pct:
+            alerts.append(_alert("critical", "CONTEXT_CRITICAL", f"context {util:.0f}% >= {crit_pct:.0f}%"))
+        elif util >= warn_pct:
+            alerts.append(_alert("warn", "CONTEXT_WARN", f"context {util:.0f}% >= {warn_pct:.0f}%"))
+
+    worst = None
+    for bucket in dom.get("quota", {}).get("buckets", []):
+        frac = bucket.get("used_frac")
+        if isinstance(frac, (int, float)):
+            worst = frac if worst is None else max(worst, frac)
+    if worst is not None:
+        if worst >= QUOTA_CRIT_FRAC:
+            alerts.append(_alert("critical", "QUOTA_CRITICAL", f"quota {worst * 100:.0f}% used"))
+        elif worst >= QUOTA_WARN_FRAC:
+            alerts.append(_alert("warn", "QUOTA_WARN", f"quota {worst * 100:.0f}% used"))
+
+    acct = dom.get("account", {})
+    if not acct.get("plan_tier") and not acct.get("email"):
+        alerts.append(_alert("info", "ACCOUNT_UNKNOWN", "account/plan/expiry unavailable"))
+
+    if dom.get("session", {}).get("source", {}).get("confidence") == "unknown":
+        alerts.append(_alert("info", "SESSION_UNVERIFIABLE", "session state could not be verified"))
+
+    return alerts
 
 
 def normalize_peer(info, now=None):
@@ -609,25 +685,37 @@ def normalize_peer(info, now=None):
     if info.get("email"):
         safe_raw["email"] = masked_email
 
-    return {
+    record = {
         "peer": info.get("peer"),
         "model": info.get("model"),
+        "errors": list(info.get("errors", [])),
         "domains": {
             "context": context, "quota": quota, "cost": cost,
             "session": session, "account": account, "health": health,
         },
         "raw": safe_raw,
     }
+    record["alerts"] = _compute_alerts(record)
+    return record
 
 
 def collect_snapshot():
     peers, peer_dirs = _discover_peers()
     now = datetime.now().astimezone()
-    infos = [gather_peer(p, peer_dirs) for p in peers]
+    records = []
+    for p in peers:
+        try:
+            info = gather_peer(p, peer_dirs)
+        except Exception as exc:
+            # Resilience (§11): a broken collector degrades to an unknown record
+            # with the error surfaced (never crashes the whole snapshot).
+            info = {"peer": p, "empty": True, "ctx_known": False, "source": "none",
+                    "errors": [f"collector_error: {type(exc).__name__}: {exc}"]}
+        records.append(normalize_peer(info, now))
     return {
         "schema_version": 1,
         "observed_at": now.isoformat(),
-        "peers": [normalize_peer(i, now) for i in infos],
+        "peers": records,
     }
 
 
@@ -689,6 +777,95 @@ def run_watch(interval=5, json_mode=False, stdout=None, sleep=time.sleep, max_fr
     return 0
 
 
+# --------------------------------------------------------------------------
+# Detail views (§6.2) — all strictly read-only
+# --------------------------------------------------------------------------
+
+def render_profiles(stdout=None):
+    """Generated-profile matrix from orchestration.json. Never inlines raw
+    profile_args / adapter flags (§6.3)."""
+    out = stdout or sys.stdout
+    out.write("PEER.PROFILE           MODEL                      EFFORT   CTX      ROUTING\n")
+    try:
+        orch = json.loads((SYS_DIR / "ai" / "orchestration.json").read_text(encoding="utf-8"))
+    except Exception:
+        out.write("(orchestration.json unavailable)\n")
+        return
+    for node in orch.get("hub_nodes", []):
+        if node.get("type") != "peer" or not node.get("enabled", True):
+            continue
+        pid = node.get("node_id", "?")
+        for pname, prof in (node.get("profiles") or {}).items():
+            model = prof.get("model_id") or prof.get("runtime_model") or "?"
+            effort = str(prof.get("reasoning_effort", "?"))
+            ctx = _short(prof.get("runtime_context_window", "?"))
+            routing = str(prof.get("routing_state", "?"))
+            out.write(f"{pid + '.' + pname:<22} {str(model):<26} {effort:<8} {str(ctx):<8} {routing}\n")
+
+
+def render_accounts(stdout=None):
+    """Redacted account/plan view (§5) — masked email only, never raw ids."""
+    out = stdout or sys.stdout
+    out.write("PEER   PLAN                  EMAIL\n")
+    for p in collect_snapshot()["peers"]:
+        acct = p.get("domains", {}).get("account", {})
+        out.write(f"{str(p.get('peer') or '?'):<6} {str(acct.get('plan_tier') or '-'):<21} "
+                  f"{acct.get('email') or '-'}\n")
+
+
+def render_tokens(stdout=None):
+    """Context / cost / token-history view. Null renders as 'unknown', never 0."""
+    out = stdout or sys.stdout
+    out.write("PEER   COST         CONTEXT             TOTAL_TOKENS\n")
+    for p in collect_snapshot()["peers"]:
+        dom = p.get("domains", {})
+        cost = dom.get("cost", {}).get("total_cost_usd")
+        cost_s = f"${cost:.4f}" if isinstance(cost, (int, float)) else "unknown"
+        ctx = dom.get("context", {})
+        used, win = ctx.get("used_tokens"), ctx.get("window_tokens")
+        used_s = _short(used) if isinstance(used, (int, float)) else "unknown"
+        win_s = _short(win) if isinstance(win, (int, float)) else "?"
+        tot = dom.get("cost", {}).get("total_tokens")
+        tot_s = f"{tot:,}" if isinstance(tot, (int, float)) else "unknown"
+        out.write(f"{str(p.get('peer') or '?'):<6} {cost_s:<12} {used_s + '/' + win_s:<19} {tot_s}\n")
+
+
+def render_sessions(stdout=None):
+    """Session state / continuity view."""
+    out = stdout or sys.stdout
+    out.write("PEER   STATE        SESSIONS_TODAY  DATA\n")
+    for p in collect_snapshot()["peers"]:
+        s = p.get("domains", {}).get("session", {})
+        cnt = s.get("sessions_today")
+        out.write(f"{str(p.get('peer') or '?'):<6} {str(s.get('state') or 'unknown'):<12} "
+                  f"{(cnt if cnt is not None else '-'):<15} {s.get('source', {}).get('kind', '?')}\n")
+
+
+def _git_project_status():
+    """Read-only git working-tree summary. Bounded, no shell, no network,
+    GIT_OPTIONAL_LOCKS=0 (never writes index). Degrades to 'unknown' on failure."""
+    env = {**os.environ, "GIT_OPTIONAL_LOCKS": "0"}
+    try:
+        r = subprocess.run(["git", "-C", str(PORTABLE_ROOT), "status", "--porcelain"],
+                           capture_output=True, text=True, timeout=10, env=env)
+        if r.returncode != 0:
+            return {"state": "unknown"}
+        changed = len([ln for ln in r.stdout.splitlines() if ln.strip()])
+        return {"state": "dirty" if changed else "clean", "changed": changed}
+    except Exception:
+        return {"state": "unknown"}
+
+
+def render_project(stdout=None):
+    out = stdout or sys.stdout
+    st = _git_project_status()
+    out.write("[PROJECT]\n")
+    line = f" git working tree: {st.get('state')}"
+    if st.get("changed") is not None:
+        line += f" ({st['changed']} changed)"
+    out.write(line + "\n")
+
+
 def main(argv=None, stdout=None):
     args = parse_args(argv)
     out = stdout or sys.stdout
@@ -697,6 +874,16 @@ def main(argv=None, stdout=None):
     if args.json_mode:
         emit_json_snapshot(out)
         return 0
+    if args.profiles:
+        render_profiles(out); return 0
+    if args.accounts:
+        render_accounts(out); return 0
+    if args.tokens:
+        render_tokens(out); return 0
+    if args.sessions:
+        render_sessions(out); return 0
+    if args.project:
+        render_project(out); return 0
     render_dashboard(out)
     return 0
 
