@@ -177,3 +177,55 @@ def test_collect_snapshot_peers_are_normalized():
     for peer in snap["peers"]:
         assert "domains" in peer
         assert "context" in peer["domains"]
+
+
+# ── TDD slice 2: redaction (§5) ─────────────────────────────────────────────────
+
+def test_mask_email_hides_local_part_keeps_domain():
+    diag = load_diag()
+    masked = diag._mask_email("greatgc@gmail.com")
+    assert "greatgc" not in masked
+    assert masked.endswith("@gmail.com")
+    assert masked != "greatgc@gmail.com"
+
+
+def test_mask_email_handles_missing_or_malformed():
+    diag = load_diag()
+    assert diag._mask_email(None) is None
+    assert diag._mask_email("") in (None, "")
+    # non-email string must not be echoed back verbatim as if valid
+    assert diag._mask_email("notanemail") == "***"
+
+
+def test_normalize_account_exposes_only_masked_email():
+    diag = load_diag()
+    info = {
+        "peer": "ag", "source": "live", "gate": True, "quarantined": False,
+        "model": "Gemini", "ctx_used": 0, "ctx_window": 1000000, "ctx_pct": 0,
+        "ctx_known": True, "cost": None, "agent_state": "idle",
+        "plan_tier": "Google AI Pro", "email": "greatgc@gmail.com",
+        "sessions": None, "total_tokens": None, "empty": False, "quotas": [],
+    }
+    rec = diag.normalize_peer(info)
+    acct = rec["domains"]["account"]
+    assert acct.get("email") == "g***@gmail.com" or "greatgc" not in str(acct.get("email"))
+    # the whole record must never carry the raw address anywhere
+    import json as _j
+    assert "greatgc@gmail.com" not in _j.dumps(rec)
+
+
+def test_snapshot_json_contains_no_raw_email(monkeypatch):
+    diag = load_diag()
+    raw_info = {
+        "peer": "ag", "source": "live", "gate": True, "quarantined": False,
+        "model": "Gemini", "ctx_used": 0, "ctx_window": 1000000, "ctx_pct": 0,
+        "ctx_known": True, "cost": None, "agent_state": "idle",
+        "plan_tier": "Google AI Pro", "email": "greatgc@gmail.com",
+        "sessions": None, "total_tokens": None, "empty": False, "quotas": [],
+    }
+    rec = diag.normalize_peer(dict(raw_info))
+    monkeypatch.setattr(diag, "collect_snapshot",
+                        lambda: {"schema_version": 1, "peers": [rec]})
+    out = io.StringIO()
+    diag.emit_json_snapshot(out)
+    assert "greatgc@gmail.com" not in out.getvalue()

@@ -410,25 +410,25 @@ Exhaustive review taking over the in-flight cx/ag work. The prior doc-review deb
 
 ## 13. TDD Entry Checklist (pre-TDD complete)
 
-**Done (tests green — `_sys/tests/unit/test_diag_cli.py`, 10 tests):** CLI skeleton
+**Done (tests green — `_sys/tests/unit/test_diag_cli.py`, 16 tests):** CLI skeleton
 (`parse_args`), `--json` one-shot, `--json --watch` NDJSON, `--watch`/`--interval`
-2s floor, expensive-source TTL cache, tz-aware reset formatter, **normalization
-contract (§4): `normalize_peer` emits per-domain `source.kind/observed_at/ttl_sec/
+2s floor, expensive-source TTL cache, tz-aware reset formatter; **normalization
+contract (§4)**: `normalize_peer` emits per-domain `source.kind/observed_at/ttl_sec/
 confidence` with `null`≠zero; `collect_snapshot` returns normalized peers; renderers
 consume the preserved `raw` block; expensive quota (cx app-server) uses 60s TTL vs
-5s local.**
+5s local; **redaction (§5)**: `_mask_email` keeps only first local char + domain;
+account domain exposes only the masked email; the embedded `raw` passthrough is
+sanitized so no unmasked address reaches JSON/NDJSON.
 
 **Remaining TDD slices — write the failing test FIRST, in order:**
 
-1. **Redaction (§5).** ag email masked before entering generic records; no raw account ids.
-   - Failing test: collector output contains no unmasked email.
-2. **Resilience (§11).** Collectors return `unknown` records (not exceptions) on missing
+1. **Resilience (§11).** Collectors return `unknown` records (not exceptions) on missing
    files, `spawn EPERM`, and unreadable sqlite; synthetic/test peers filtered from log-derived signals.
    - Failing test: inject missing path + EPERM + `testpeer` log line → no raise, marked unknown/filtered.
-3. **Alerts (§7).** Deterministic `CONTEXT_WARN/CRITICAL`, `QUOTA_WARN/CRITICAL`,
+2. **Alerts (§7).** Deterministic `CONTEXT_WARN/CRITICAL`, `QUOTA_WARN/CRITICAL`,
    `CTX_UNKNOWN`, `SESSION_STALE`, `ACCOUNT_UNKNOWN` from `governance_params.json`.
    - Failing test: threshold table drives each alert; `CTX_UNKNOWN` suppresses precise remaining-token claims.
-4. **Detail views (§6.2).** `--profiles/--accounts/--tokens/--sessions/--project` are
+3. **Detail views (§6.2).** `--profiles/--accounts/--tokens/--sessions/--project` are
    read-only and honor the resolutions in §12.
    - Failing test: each flag renders its view read-only; `--profiles` never inlines raw `profile_args`.
 

@@ -319,6 +319,7 @@ def gather_peer(peer, peer_dirs):
         info["cost"] = data["cost"].get("total_cost_usd")
     info["agent_state"] = data.get("agent_state")
     info["plan_tier"] = data.get("plan_tier")
+    info["email"] = data.get("email")  # masked at the normalization boundary (§5)
     session_h = health_data.get("session_health", {})
     if "session_count_today" in session_h:
         info["sessions"] = session_h.get("session_count_today")
@@ -520,6 +521,18 @@ def parse_args(argv=None):
 _LOCAL_TTL_SEC = 5
 
 
+def _mask_email(email):
+    """Redact an email for telemetry (§5): keep only first local char + domain.
+    Returns None for empty, '***' for non-email strings."""
+    if not email:
+        return None
+    s = str(email)
+    local, sep, domain = s.partition("@")
+    if not sep or not local or not domain:
+        return "***"
+    return f"{local[0]}***@{domain}"
+
+
 def _source_meta(kind, observed_at, ttl_sec, confidence):
     """Normalized source-provenance block (§4)."""
     return {"kind": kind, "observed_at": observed_at, "ttl_sec": ttl_sec, "confidence": confidence}
@@ -573,11 +586,14 @@ def normalize_peer(info, now=None):
                                "last_known" if info.get("sessions") is not None else "unknown"),
     }
 
-    # Account (redaction of raw identifiers is TDD slice 2) ------------------
+    # Account — identifiers are redacted before leaving this boundary (§5) ---
+    masked_email = _mask_email(info.get("email"))
+    has_account = bool(info.get("plan_tier") or masked_email)
     account = {
         "plan_tier": info.get("plan_tier"),
-        "source": _source_meta(kind if info.get("plan_tier") else "unknown", observed,
-                               _LOCAL_TTL_SEC, "last_known" if info.get("plan_tier") else "unknown"),
+        "email": masked_email,
+        "source": _source_meta(kind if has_account else "unknown", observed,
+                               _LOCAL_TTL_SEC, "last_known" if has_account else "unknown"),
     }
 
     # Health / gate ---------------------------------------------------------
@@ -588,6 +604,11 @@ def normalize_peer(info, now=None):
                                "last_known" if not info.get("empty") else "unknown"),
     }
 
+    # Sanitized raw passthrough: never let raw account identifiers leak via "raw".
+    safe_raw = dict(info)
+    if info.get("email"):
+        safe_raw["email"] = masked_email
+
     return {
         "peer": info.get("peer"),
         "model": info.get("model"),
@@ -595,7 +616,7 @@ def normalize_peer(info, now=None):
             "context": context, "quota": quota, "cost": cost,
             "session": session, "account": account, "health": health,
         },
-        "raw": info,
+        "raw": safe_raw,
     }
 
 
