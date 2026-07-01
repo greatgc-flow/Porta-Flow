@@ -446,3 +446,28 @@ cleared (605 SKILL.md); 85 `.ai/*.tmp` rename-residue swept; 494 synthetic lines
 from `error-log.jsonl`; test log isolation added (`HUB_LOG_DIR` env override in
 `hub_logging.py` + autouse `isolate_hub_logs` fixture in `_sys/tests/unit/conftest.py`),
 so production logs no longer accumulate test-fixture entries.
+
+---
+
+## 14. Pacing / Telemetry Follow-up — Debate Consensus (2026-07-01)
+
+R:10 exhaustive debate. Participants: **ag.deepthink** (full), **cx** (expert confirms,
+short-query path), **cc** (synthesis). **No top-level disagreement.** cx note: long
+deepthink asks still stall on the codex skill re-sync; short focused asks answer fast on
+`cx.standard`.
+
+| ID | Item | Consensus | Priority |
+|----|------|-----------|----------|
+| **D0** | `diag --json` ~32min hang | **DONE.** `_codex_rate_limits(deadline_sec=12)` now uses a background reader thread + hard deadline + `proc.kill()` so the deadline holds even when `readline()` blocks (app-server spawn-EPERM under sandbox). `diag --json` now ~2s. cx: also treat timeout as terminal / drain pipes. | 1 (done) |
+| **D1** | Stale usage ("Claude 100% after reset") | `observed_at` must be the **source-file mtime**, not diag's collection time. Add staleness `age` + `SOURCE_STALE` alert when age > ttl. (cc quota actually reset — 5h 0% / 7d 14% now; the 100% was a stale snapshot because status logs only refresh when that peer's statusline renders.) | 2 |
+| **D2** | cx context wrong | Source from the **newest thread `rollout_path` JSONL** `event_msg/token_count`: occupancy = `last_token_usage.total_tokens` over `model_context_window` (capacity). sqlite `tokens_used` is cumulative — never occupancy. Parse resiliently (tolerate a truncated final line). | 3 |
+| **D6** | Sandbox EPERM (cx, also ag/cc) | Centralize into a **shared core spawn helper** that traps `PermissionError`/`WinError 5`, retries **exactly once**, then degrades with a clear error. Generalizes the existing `SandboxRenameDeniedError` (rename) to spawn. | 4 |
+| **D4** | Pacing UX | Show **numeric value + emoji** (e.g. `🟢 45%`), not emoji only. | 5 |
+| **D3** | ag dual gemini+claude | **Do both**: surface both quota families AND add separate `ag.gemini-*` / `ag.claude-*` profiles so routing can target model family deliberately (Gemini=large-context, Claude=precision). Governed config (orchestration.json) — needs its own consensus/TDD. | 5 |
+| **D7** | Refactor diag.py (~800 lines) | Split into a `diag/` package (`collectors.py` / `normalizers.py` / `render.py`) — **LAST**, only after D0-D6 land and are proven, to avoid regression churn. | 6 |
+| **D5** | Pacing → traffic routing | **Advisory only; dynamic routing weights DEFERRED.** Feeding live quota into `routing-config.json` weights risks thundering-herd/nondeterminism. diag surfaces headroom; coordinator/human chooses fallback. | deferred |
+
+Invariant guards agreed: JSONL parsing resilient to truncated tail (D2); `null`≠zero
+preserved; alerts stay deterministic & multi-valued; core spawn helper must not change
+`_lease_cfg`/public contracts without updating `test_contracts.py`; D7 refactor gated on
+D0-D6 stability.

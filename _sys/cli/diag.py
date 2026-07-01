@@ -130,16 +130,20 @@ def _fmt_reset(value, rel_seconds=None):
 # Live quota source for Codex (no local persistence)
 # --------------------------------------------------------------------------
 
-def _codex_rate_limits():
+def _codex_rate_limits(deadline_sec=12):
     """Query the codex app-server (initialize -> account/rateLimits/read) for live
-    5h/weekly rate-limit reset times. Codex does not persist these locally; they are
-    fetched from the API. Returns the rateLimits dict or None."""
+    5h/weekly rate-limit reset times. Codex does not persist these locally.
+
+    A background reader thread feeds lines to a queue so the deadline is honored
+    EVEN IF proc.stdout.readline() blocks (the app-server is a daemon and, under a
+    denied sandbox, can spawn-EPERM and never emit — which previously hung diag for
+    tens of minutes). Returns the rateLimits dict or None."""
+    import threading, queue, shutil
     msgs = (
         '{"jsonrpc":"2.0","id":0,"method":"initialize","params":'
         '{"clientInfo":{"name":"diag","version":"1.0"},"apiVersion":"v2"}}\n'
         '{"jsonrpc":"2.0","id":1,"method":"account/rateLimits/read","params":{}}\n'
     )
-    import time, shutil
     codex_exe = shutil.which("codex") or shutil.which("codex.cmd")
     if not codex_exe:
         cand = SYS_DIR / "env" / "nodejs" / "npm-global" / "codex.cmd"
@@ -150,14 +154,37 @@ def _codex_rate_limits():
     try:
         proc = subprocess.Popen([codex_exe, "app-server"], stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
-        proc.stdin.write(msgs)
-        proc.stdin.flush()
-        # app-server is a daemon (doesn't exit on EOF) - read lines until the id=1
-        # response arrives, then terminate, instead of waiting for process exit.
-        deadline = time.monotonic() + 20
-        while time.monotonic() < deadline:
-            line = proc.stdout.readline()
-            if not line:
+        try:
+            proc.stdin.write(msgs)
+            proc.stdin.flush()
+        except Exception:
+            return None
+
+        q: "queue.Queue" = queue.Queue()
+
+        def _reader():
+            try:
+                while True:
+                    line = proc.stdout.readline()
+                    if not line:
+                        break
+                    q.put(line)
+            except Exception:
+                pass
+            q.put(None)  # EOF / reader-done sentinel
+
+        threading.Thread(target=_reader, daemon=True).start()
+
+        deadline = time.monotonic() + deadline_sec
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break  # deadline enforced regardless of a blocked readline
+            try:
+                line = q.get(timeout=min(0.5, remaining))
+            except queue.Empty:
+                continue
+            if line is None:
                 break
             try:
                 obj = json.loads(line)
@@ -332,10 +359,19 @@ def gather_peer(peer, peer_dirs):
             if not isinstance(q, dict):
                 continue
             rem = q.get("remaining_fraction", 0) or 0
+            used_frac = max(0.0, 1.0 - rem)
+            
+            import quota as qmgr
+            window_hours = 5.0 if "5H" in label else 168.0
+            reset_sec = q.get("reset_in_seconds")
+            rem_sec = qmgr.get_remaining_seconds(reset_in_seconds=reset_sec)
+            pacing = qmgr.calculate_pacing(used_frac, rem_sec, window_hours)
+            indicator = f" {pacing['indicator']}" if pacing['indicator'] else ""
+            
             quotas.append({
-                "label": label, "used_frac": max(0.0, 1.0 - rem),
-                "reset": _fmt_reset(q.get("reset_time"), q.get("reset_in_seconds")),
-                "metric": f"{rem * 100:.1f}% rem",
+                "label": label, "used_frac": used_frac,
+                "reset": _fmt_reset(q.get("reset_time"), reset_sec),
+                "metric": f"{used_frac * 100:.1f}% used{indicator}",
             })
     if "rate_limits" in data and isinstance(data["rate_limits"], dict):  # cc
         rl = data["rate_limits"]
@@ -344,10 +380,19 @@ def gather_peer(peer, peer_dirs):
             if not isinstance(q, dict):
                 continue
             used = q.get("used_percentage", 0) or 0
+            used_frac = used / 100.0
+            
+            import quota as qmgr
+            window_hours = 5.0 if label == "5H" else 168.0
+            resets_at = q.get("resets_at") or q.get("reset_at")
+            rem_sec = qmgr.get_remaining_seconds(resets_at_iso=resets_at)
+            pacing = qmgr.calculate_pacing(used_frac, rem_sec, window_hours)
+            indicator = f" {pacing['indicator']}" if pacing['indicator'] else ""
+            
             quotas.append({
-                "label": label, "used_frac": used / 100.0,
-                "reset": _fmt_reset(q.get("resets_at") or q.get("reset_at")),
-                "metric": f"{used}% used",
+                "label": label, "used_frac": used_frac,
+                "reset": _fmt_reset(resets_at),
+                "metric": f"{float(used):.1f}% used{indicator}",
             })
 
     # Codex: model/tokens/effort from sqlite + live rate limits from app-server
@@ -384,10 +429,19 @@ def gather_peer(peer, peer_dirs):
                 if not isinstance(q, dict):
                     continue
                 used = q.get("usedPercent", 0) or 0
+                used_frac = used / 100.0
+                
+                import quota as qmgr
+                window_hours = 5.0 if label == "5H" else 168.0
+                resets_at = q.get("resetsAt")
+                rem_sec = qmgr.get_remaining_seconds(resets_at_iso=resets_at)
+                pacing = qmgr.calculate_pacing(used_frac, rem_sec, window_hours)
+                indicator = f" {pacing['indicator']}" if pacing['indicator'] else ""
+                
                 quotas.append({
-                    "label": label, "used_frac": used / 100.0,
-                    "reset": _fmt_reset(q.get("resetsAt")),
-                    "metric": f"{used}% used",
+                    "label": label, "used_frac": used_frac,
+                    "reset": _fmt_reset(resets_at),
+                    "metric": f"{float(used):.1f}% used{indicator}",
                 })
         elif not quotas:
             info["cx_quota_unavailable"] = True
