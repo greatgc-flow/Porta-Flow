@@ -77,6 +77,22 @@ class TestClaudeAdapter:
         cmd, _ = self.adapter.build_cmd(node, "ignored")
         assert cmd == ["claude", "--version"]
 
+    def test_new_session_uses_session_id_flag(self):
+        # First turn (no prior id): SET a known id via --session-id (create).
+        inv = self.adapter.build_session_cmd(self.node, "hi", session_id=None)
+        assert "--session-id" in inv.cmd
+        assert "--resume" not in inv.cmd
+        # the id we set is what gets persisted
+        assert inv.cmd[inv.cmd.index("--session-id") + 1] == inv.session_id
+
+    def test_resume_uses_resume_flag_not_session_id(self):
+        # Subsequent turns: RESUME the stored id via --resume (verified: works with -p).
+        inv = self.adapter.build_session_cmd(self.node, "hi", session_id="sess-9")
+        assert "--resume" in inv.cmd
+        assert inv.cmd[inv.cmd.index("--resume") + 1] == "sess-9"
+        assert "--session-id" not in inv.cmd
+        assert inv.session_id == "sess-9"
+
 
 # ?? AgyAdapter ?????????????????????????????????????????????????????????????
 

@@ -458,11 +458,16 @@ class ClaudeAdapter(BaseAdapter):
     ) -> SessionInvocation:
         effective_id = session_id or str(uuid.uuid4())
         cmd, use_stdin = self.build_cmd(node, query, session_id)
-        
-        # Inject --session-id flag if not present
-        if "--session-id" not in cmd:
-            cmd.extend(["--session-id", effective_id])
-            
+
+        # Claude Code (verified): --session-id SETS/creates an id; --resume RESUMES
+        # an existing one (both work with -p). Use --resume on subsequent turns.
+        if session_id:
+            if "--resume" not in cmd and "--session-id" not in cmd:
+                cmd.extend(["--resume", session_id])
+        else:
+            if "--session-id" not in cmd:
+                cmd.extend(["--session-id", effective_id])
+
         return SessionInvocation(cmd, use_stdin, effective_id)
 
     def parse_output(self, stdout: str, node: dict[str, Any]) -> str:
