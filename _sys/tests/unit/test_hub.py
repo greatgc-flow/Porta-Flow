@@ -1575,3 +1575,74 @@ class TestEphemeralQueryFile:
             hub.action_ask("cx", "", str(qf), 120, None)
 
         assert qf.exists()
+
+
+# ── D6: sandbox spawn-denial core handling ──────────────────────────────────────
+
+import errno as _errno
+
+
+def _perm_err(winerror=None, errno_=None):
+    e = PermissionError("denied")
+    if winerror is not None:
+        e.winerror = winerror
+    if errno_ is not None:
+        e.errno = errno_
+    return e
+
+
+class TestSandboxSpawnDenial:
+    def test_classifier_winerror5_only_on_nt(self, monkeypatch):
+        monkeypatch.setattr(hub.os, "name", "nt")
+        assert hub._is_sandbox_spawn_denied(_perm_err(winerror=5)) is True
+        # WinError 32 (sharing violation) must stay a normal PermissionError
+        assert hub._is_sandbox_spawn_denied(_perm_err(winerror=32)) is False
+
+    def test_classifier_posix_errno(self, monkeypatch):
+        monkeypatch.setattr(hub.os, "name", "posix")
+        assert hub._is_sandbox_spawn_denied(_perm_err(errno_=_errno.EPERM)) is True
+        assert hub._is_sandbox_spawn_denied(_perm_err(errno_=_errno.EACCES)) is True
+        assert hub._is_sandbox_spawn_denied(_perm_err(errno_=_errno.ENOENT)) is False
+
+    def test_spawn_process_retries_exactly_once_then_typed_raise(self, monkeypatch):
+        monkeypatch.setattr(hub.os, "name", "nt")
+        monkeypatch.setattr(hub.time, "sleep", lambda *_: None)
+        calls = []
+
+        def popen(*a, **k):
+            calls.append(1)
+            raise _perm_err(winerror=5)
+
+        monkeypatch.setattr(hub.subprocess, "Popen", popen)
+        with pytest.raises(hub.SandboxSpawnDeniedError):
+            hub._spawn_process(["x"])
+        assert len(calls) == 2  # initial attempt + exactly one retry
+
+    def test_spawn_process_succeeds_on_retry(self, monkeypatch):
+        monkeypatch.setattr(hub.os, "name", "nt")
+        monkeypatch.setattr(hub.time, "sleep", lambda *_: None)
+        calls = []
+
+        def popen(*a, **k):
+            calls.append(1)
+            if len(calls) == 1:
+                raise _perm_err(winerror=5)
+            return "PROC"
+
+        monkeypatch.setattr(hub.subprocess, "Popen", popen)
+        assert hub._spawn_process(["x"]) == "PROC"
+        assert len(calls) == 2
+
+    def test_spawn_process_non_sandbox_error_propagates(self, monkeypatch):
+        monkeypatch.setattr(hub.os, "name", "nt")
+        monkeypatch.setattr(hub.time, "sleep", lambda *_: None)
+
+        def popen(*a, **k):
+            raise FileNotFoundError("no such binary")
+
+        monkeypatch.setattr(hub.subprocess, "Popen", popen)
+        with pytest.raises(FileNotFoundError):
+            hub._spawn_process(["x"])
+
+    def test_sandbox_spawn_denied_is_transient_reason(self):
+        assert "sandbox_spawn_denied" in hub._TRANSIENT_REASONS

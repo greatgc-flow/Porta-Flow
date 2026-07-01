@@ -11,6 +11,7 @@ v3.0: N-Way Room 세션 기반 평등 권등 구조 구현.
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
 import json
 import os
@@ -536,6 +537,57 @@ def _is_sandbox_rename_denied(exc: PermissionError) -> bool:
     # WinError 5 is ACCESS_DENIED. WinError 32 is a sharing violation and must
     # remain a normal PermissionError after retry exhaustion.
     return os.name == "nt" and _permission_winerror(exc) == 5
+
+
+class SandboxSpawnDeniedError(OSError):
+    """Process spawn was denied by the host sandbox / AV (D6). Generalizes the
+    rename-denied pattern to subprocess launch."""
+
+    error_type = "SANDBOX_SPAWN_DENIED"
+
+    def __init__(self, cmd, original: BaseException):
+        self.cmd = list(cmd) if cmd else []
+        self.original = original
+        self.winerror = _permission_winerror(original)
+        target = self.cmd[0] if self.cmd else "?"
+        super().__init__(
+            f"SANDBOX_SPAWN_DENIED: process spawn denied for '{target}' "
+            f"(winerror={self.winerror}, errno={getattr(original, 'errno', None)}). "
+            "Sandbox policy or AV real-time scan likely blocked the binary."
+        )
+
+
+def _is_sandbox_spawn_denied(exc: BaseException) -> bool:
+    """Spawn denial classifier: nt -> WinError 5 ONLY (32 sharing-violation stays
+    a normal error); POSIX -> errno EACCES/EPERM."""
+    if not isinstance(exc, OSError):
+        return False
+    if os.name == "nt":
+        return _permission_winerror(exc) == 5
+    return getattr(exc, "errno", None) in (errno.EACCES, errno.EPERM)
+
+
+# ~150ms backoff: long enough to clear a transient Windows AV real-time-scan lock
+# on a freshly invoked binary, short enough to fail fast if the policy is permanent.
+_SPAWN_RETRY_BACKOFF_SEC = 0.15
+
+
+def _spawn_process(cmd, **popen_kwargs):
+    """subprocess.Popen with exactly one retry on a sandbox-denied spawn, then a
+    typed SandboxSpawnDeniedError. Non-sandbox errors propagate unchanged.
+    All Popen kwargs (incl. PTY pipes) are forwarded verbatim (D6)."""
+    try:
+        return subprocess.Popen(cmd, **popen_kwargs)
+    except OSError as exc:
+        if not _is_sandbox_spawn_denied(exc):
+            raise
+        time.sleep(_SPAWN_RETRY_BACKOFF_SEC)
+        try:
+            return subprocess.Popen(cmd, **popen_kwargs)
+        except OSError as exc2:
+            if _is_sandbox_spawn_denied(exc2):
+                raise SandboxSpawnDeniedError(cmd, exc2) from exc2
+            raise
 
 
 def _write_json_atomic(path: Path, data: dict) -> None:
@@ -1457,7 +1509,7 @@ def _decode_output(data: bytes) -> str:
     return data.decode("utf-8", errors="replace").replace("\r\n", "\n")
 
 
-_TRANSIENT_REASONS = {"rate_or_session_limit", "transient_network", "terminal_timeout"}
+_TRANSIENT_REASONS = {"rate_or_session_limit", "transient_network", "terminal_timeout", "sandbox_spawn_denied"}
 
 def _parse_reset_time(text: str) -> str | None:
     import re
@@ -2367,10 +2419,22 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
     try:
         p = _winpty.PtyProcess.spawn(cmd, cwd=cwd, env=process_env)
     except Exception as exc:
-        return _PtyAskResult(
-            text="", elapsed=0, exit_code=None, timed_out=False,
-            timeout_kind=None, pid=-1, transport_error=f"pty_spawn_failed: {exc}",
-        )
+        # D6: one retry on a sandbox/AV-denied spawn before giving up.
+        if _is_sandbox_spawn_denied(exc):
+            time.sleep(_SPAWN_RETRY_BACKOFF_SEC)
+            try:
+                p = _winpty.PtyProcess.spawn(cmd, cwd=cwd, env=process_env)
+            except Exception as exc2:
+                return _PtyAskResult(
+                    text="", elapsed=0, exit_code=None, timed_out=False,
+                    timeout_kind="sandbox_spawn_denied", pid=-1,
+                    transport_error=f"sandbox_spawn_denied: {exc2}",
+                )
+        else:
+            return _PtyAskResult(
+                text="", elapsed=0, exit_code=None, timed_out=False,
+                timeout_kind=None, pid=-1, transport_error=f"pty_spawn_failed: {exc}",
+            )
 
     pid = p.pid
     if ai_root:
@@ -3244,7 +3308,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         logger.log_ipc(peer_id=to, direction="send", query_file=saved_query_file_path, query_preview=query)
 
     try:
-        proc = subprocess.Popen(
+        proc = _spawn_process(
             cmd,
             stdin=subprocess.PIPE if use_stdin else None,
             stdout=subprocess.PIPE,
@@ -3357,7 +3421,7 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                 fresh_use_stdin = fresh.use_stdin
                 command_session_id = fresh.session_id
                 fresh_cmd[0] = exe
-                proc = subprocess.Popen(
+                proc = _spawn_process(
                     fresh_cmd,
                     stdin=subprocess.PIPE if fresh_use_stdin else None,
                     stdout=subprocess.PIPE,
@@ -3544,6 +3608,17 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
             _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=reported_timeout, failure_reason="terminal_timeout")
         print(f"[HUB:ERROR] {detail}", file=sys.stderr)
         sys.exit(1)
+    except SandboxSpawnDeniedError as e:
+        # D6: spawn denied by sandbox/AV — transient so failover applies (with the
+        # existing hard escalation-depth limit); never a silent crash.
+        elapsed = int(time.monotonic() - t0)
+        lease_status = "failed"
+        _record_ask_failure(health_peer, "sandbox_spawn_denied", str(e), elapsed, ai_root, profile_key=profile_key)
+        _append_ask_history(ai_root, to, saved_query_file_path, output_file, None, False, "sandbox_spawn_denied")
+        if ai_root:
+            _record_routing_metric(ai_root, "direct_ask", selected_peer=to, profile_id=_resolve_profile_id(to), outcome="failure", latency_sec=None, failure_reason="sandbox_spawn_denied")
+        print(f"[HUB:GATE] {to} sandbox denied spawn (transient) — reroute/failover", file=sys.stderr)
+        sys.exit(0)
     except Exception as e:
         elapsed = int(time.monotonic() - t0)
         lease_status = "failed"

@@ -325,6 +325,24 @@ Current implementation: `hub.py` classifies persistent Windows ACCESS_DENIED fro
 
 See `ops/hub-mutation-broker.md`.
 
+### 18.1 Sandbox spawn denial (D6 decision — 2026-07-01, R:10 ag+cx+cc)
+
+Sandboxed peers can also be denied at **process spawn** (not just rename): codex
+`app-server`/`exec`, and potentially ag/cc, hit `spawn EPERM` / Windows ACCESS_DENIED
+(often a transient AV real-time-scan lock on a freshly-invoked binary). Decision:
+
+- `_is_sandbox_spawn_denied(exc)` — `nt`: `winerror == 5` **only** (WinError 32 sharing
+  violation stays a normal `PermissionError`); POSIX: `errno in (EACCES, EPERM)`.
+- Shared core helper `_spawn_process(cmd, **popen_kwargs)` — runs `subprocess.Popen`,
+  forwarding all kwargs; on a sandbox-denied spawn it **retries exactly once** after a
+  short (~150ms) backoff, then raises the typed `SandboxSpawnDeniedError(OSError)`.
+  Non-sandbox errors propagate unchanged. The PTY spawn path reuses the same classifier.
+- The ask loop records `SandboxSpawnDeniedError` as **transient** (terminal_timeout-class)
+  so existing failover applies — but failover keeps its **hard depth limit** so a
+  permanently-blocked binary bubbles up fatally instead of looping.
+- Generalizes the existing `SANDBOX_RENAME_DENIED` (rename) pattern to spawn; benefits
+  cc/cx/ag uniformly.
+
 ---
 
 ## 19. gc Legacy Gate Mirror
