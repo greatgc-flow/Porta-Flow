@@ -1,37 +1,44 @@
-# User Manual — Portable Multi-Peer Dev Environment
-> Condensed from USER_MANUAL.md. Full version archived → `_sys/docs/history/` (pre-docs-v2 SSOT).
+# User Manual - Portable Multi-Peer Dev Environment
+> Condensed from USER_MANUAL.md. Full version archived in `_sys/docs/history/` (pre-docs-v2 SSOT).
 
 ---
 
 ## Quick Start
 
 ```
-1. register.bat          ← register on new PC (SUBST P: + context menu)
-2. _sys\cli\claude.bat   ← launch Claude Code peer
-3. _sys\cli\gemini.bat   ← launch Gemini CLI peer
+1. register.bat          # register on new PC (SUBST P: + context menu)
+2. _sys\cli\claude.bat   # launch Claude Code peer
+3. _sys\cli\gemini.bat   # launch Gemini CLI peer
 ```
 
 ---
+
+## Command Wrappers
+
+Use bare commands from any workspace: `hub`, `diag`, `msg`, `manage`, `git-draft`, `batch-review`, `set-collab-rate`, and the peer launchers (`claude`, `codex`, `agy`, `gemini`). `_sys\cli` is the single PATH entry for these operator commands. cmd/PowerShell resolve the `.bat` wrappers; Git Bash resolves the extensionless shims. Do not call `python _sys/core/hub.py ...` from arbitrary workspaces.
+
 
 ## Daily Workflow
 
 ### Session Start
 ```
-hub.py init-session --agent cc     # (auto-called by claude.bat)
-hub.py peer-status                 # all peers at a glance (canonical status)
+hub init-session --agent cc     # (auto-called by claude.bat)
+hub peer-status                 # all peers at a glance (canonical status)
 ```
 
 ### Check Peers
 ```
-hub.py peer-status                 # all peers at a glance (canonical status)
-hub.py health-precheck --peer ag   # before routing ask to a peer
-hub.py health-check                # (Audit/Maintenance only) raw local health reads
-_sys\cli\diag.bat                  # live diagnostic dashboard (tokens, 5H/7D quotas, cost)
+hub peer-status                 # all peers at a glance (canonical status)
+hub health-precheck --peer ag   # before routing ask to a peer
+hub health-check                # (Audit/Maintenance only) raw local health reads
+diag                             # diagnostic dashboard (context, quotas, sessions, cost)
+diag --watch 5                   # live refresh view; default 5s, rejects values below 2s
+diag --json --watch 5            # NDJSON telemetry stream for automation
 ```
 
 ### Ask a Peer
 ```
-python _sys/core/hub.py ask --to gc --query-file <file.txt>
+hub ask --to gc --query-file <file.txt>
 ```
 Query file format: TASK/CONTEXT/QUESTION in English.
 
@@ -76,14 +83,14 @@ Current value: `_sys/ai/protocol.json["collab_rate"]["current"]`
 ## Common Commands
 
 ```
-hub.py consensus-propose --subject "..." --voters cc,gc --from cc
-hub.py consensus-vote --round-id r-XXXX --voter gc --vote agree
-hub.py consensus-sweep                    # clean stalled rounds
-hub.py directive-list                     # show active runtime directives
-hub.py peer-quarantine --peer gc --reason quota
-hub.py peer-recover --peer gc --reason quota_reset
-hub.py elect-leader --needs code --effort mid
-hub.py task-checkpoint --id <id> --peer cc --msg "..."
+hub consensus-propose --subject "..." --voters cc,gc --from cc
+hub consensus-vote --round-id r-XXXX --voter gc --vote agree
+hub consensus-sweep                    # clean stalled rounds
+hub directive-list                     # show active runtime directives
+hub peer-quarantine --peer gc --reason quota
+hub peer-recover --peer gc --reason quota_reset
+hub elect-leader --needs code --effort mid
+hub task-checkpoint --id <id> --peer cc --msg "..."
 ```
 
 ---
@@ -101,7 +108,7 @@ To move to a new drive: run `unregister.bat` on old PC, then `register.bat` on n
 ## Maintenance
 
 ```
-_sys\checks\check-health.bat      ← verify peer health + deps
-_sys\checks\check-portability.bat ← verify no host-path leaks
-_sys\tests\run-tests.bat --all    ← full test suite
+_sys\checks\check-health.bat      # verify peer health + deps
+_sys\checks\check-portability.bat # verify no host-path leaks
+_sys\tests\run-tests.bat --all    # full test suite
 ```

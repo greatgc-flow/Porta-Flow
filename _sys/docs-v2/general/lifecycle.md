@@ -309,13 +309,25 @@ Preference order: GREEN → YELLOW → (avoid STALE) → RED blocked.
 
 ---
 
-## 18. gc Legacy Gate Mirror
+## 18. Sandbox Mutation Boundary
+
+Heartbeat, lease, handoff, thread, proposal, directive, and role updates are hub-managed state mutations. They require the same atomic commit guarantees as other `.ai` state.
+
+Under managed sandboxes, ordinary file writes may succeed while `os.replace`, rename, or delete fails. When that happens, classify the failure as `SANDBOX_RENAME_DENIED` and fail closed. Do not downgrade to non-atomic copy/write/bak behavior.
+
+Current implementation: `hub.py` classifies persistent Windows ACCESS_DENIED from atomic replace as `SANDBOX_RENAME_DENIED`. Sandbox peers can use `broker-submit` to create unique pending requests under `.ai/broker/pending`; host-side `broker-drain` validates whitelisted targets and performs guarded commits with locks, journals, and `os.replace`; `broker-status` reports queue state. Operator-approved direct external execution is break-glass only when the broker path itself is unavailable.
+
+See `ops/hub-mutation-broker.md`.
+
+---
+
+## 19. gc Legacy Gate Mirror
 
 gc is a SUSPENDED TOMBSTONE (no live health file). See `specific/gc.md` for legacy tombstone details.
 
 ---
 
-## 19. ContextGate v1.0 Design
+## 20. ContextGate v1.0 Design
 
 ContextGate prevents context overflow by estimating token usage before each ask, then pruning or failing over if thresholds are exceeded.
 
@@ -350,7 +362,7 @@ Traceability: `traceability_map.json` entry `context-gate`
 
 ---
 
-## 20. Implementation Priority
+## 21. Implementation Priority
 
 | Priority | Item | File | Status |
 |----------|------|------|--------|

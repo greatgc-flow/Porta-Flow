@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-06-28T11:52:09",
+  "generated_at": "2026-06-30T00:51:50",
   "source": "hub.py",
-  "count": 80,
+  "count": 83,
   "signatures": {
     "_lease_cfg": {
       "params": {
@@ -360,6 +360,61 @@
           "kind": "POSITIONAL_OR_KEYWORD",
           "default": null,
           "annotation": "str | None"
+        }
+      },
+      "return": "None"
+    },
+    "action_broker_drain": {
+      "params": {
+        "ai_root": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": "Path"
+        },
+        "limit": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "default": 50,
+          "annotation": "int"
+        },
+        "origin": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "default": "broker",
+          "annotation": "str"
+        },
+        "force_tier0": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "default": false,
+          "annotation": "bool"
+        }
+      },
+      "return": "None"
+    },
+    "action_broker_status": {
+      "params": {
+        "ai_root": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": "Path"
+        }
+      },
+      "return": "None"
+    },
+    "action_broker_submit": {
+      "params": {
+        "ai_root": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": "Path"
+        },
+        "target": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": "str"
+        },
+        "payload_text": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "annotation": "str"
+        },
+        "origin": {
+          "kind": "POSITIONAL_OR_KEYWORD",
+          "default": "unknown",
+          "annotation": "str"
         }
       },
       "return": "None"

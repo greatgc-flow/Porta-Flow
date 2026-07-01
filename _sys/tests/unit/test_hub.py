@@ -51,6 +51,159 @@ def test_ask_coordinator_falls_back_from_unroutable_stale_leader(ai_dir):
     assert ask.call_args.args[0] == "cc"
 
 
+class TestHubMutationBrokerBoundary:
+    def _permission_error(self, winerror):
+        exc = PermissionError(f"winerror {winerror}")
+        exc.winerror = winerror
+        return exc
+
+    def test_atomic_replace_winerror5_classifies_sandbox_denied(self, tmp_path, monkeypatch):
+        target = tmp_path / "state.json"
+        attempts = []
+
+        def deny_replace(src, dst):
+            attempts.append((src, dst))
+            raise self._permission_error(5)
+
+        monkeypatch.setattr(hub.os, "name", "nt", raising=False)
+        monkeypatch.setattr(hub.os, "replace", deny_replace)
+        monkeypatch.setattr(hub.time, "sleep", lambda _: None)
+
+        with pytest.raises(hub.SandboxRenameDeniedError) as raised:
+            hub._write_json_atomic(target, {"ok": True})
+
+        assert raised.value.error_type == "SANDBOX_RENAME_DENIED"
+        assert raised.value.winerror == 5
+        assert len(attempts) == 5
+
+    def test_atomic_replace_winerror32_remains_permission_error(self, tmp_path, monkeypatch):
+        target = tmp_path / "state.json"
+
+        def sharing_violation(src, dst):
+            raise self._permission_error(32)
+
+        monkeypatch.setattr(hub.os, "name", "nt", raising=False)
+        monkeypatch.setattr(hub.os, "replace", sharing_violation)
+        monkeypatch.setattr(hub.time, "sleep", lambda _: None)
+
+        with pytest.raises(PermissionError) as raised:
+            hub._write_json_atomic(target, {"ok": True})
+
+        assert not isinstance(raised.value, hub.SandboxRenameDeniedError)
+
+    def test_broker_enqueue_disabled_fails_closed_with_journal(self, tmp_path, monkeypatch):
+        ai_root = tmp_path / ".ai"
+        ai_root.mkdir()
+        monkeypatch.setattr(hub, "_runtime_cfg", lambda: {"hub_mutation_broker_enabled": False})
+        req = hub.HubMutationRequest(
+            action="thread-append",
+            origin="cc",
+            target_path=ai_root / "state.json",
+            payload={"ok": True},
+            request_id="req-test",
+        )
+
+        with pytest.raises(RuntimeError, match="broker is disabled"):
+            hub._enqueue_hub_mutation_request(ai_root, req)
+
+        journal = (ai_root / "operations.jsonl").read_text(encoding="utf-8")
+        assert '"status": "intent"' in journal
+        assert '"status": "rejected"' in journal
+        assert '"request_id": "req-test"' in journal
+
+class TestHubMutationBrokerLive:
+    def _request(self, request_id, target, payload, origin="cx"):
+        return {
+            "schema_version": 1,
+            "request_id": request_id,
+            "created_at": "2026-06-30T00:00:00",
+            "origin": origin,
+            "operation": "json_replace",
+            "target": target,
+            "payload": payload,
+        }
+
+    def test_broker_submit_writes_pending_request_without_target_commit(self, ai_dir):
+        before = (ai_dir / "mailbox.json").read_text(encoding="utf-8")
+
+        hub.action_broker_submit(
+            ai_dir,
+            "mailbox.json",
+            "\ufeff" + json.dumps({"messages": [], "unread_count": 0}),
+            origin="cx",
+        )
+
+        pending = list((ai_dir / "broker" / "pending").glob("*.json"))
+        assert len(pending) == 1
+        request = json.loads(pending[0].read_text(encoding="utf-8"))
+        assert request["origin"] == "cx"
+        assert request["target"] == "mailbox.json"
+        assert request["operation"] == "json_replace"
+        assert (ai_dir / "mailbox.json").read_text(encoding="utf-8") == before
+        assert not (ai_dir / "broker" / "done").exists()
+        assert not (ai_dir / "broker" / "error").exists()
+
+    def test_broker_submit_rejects_target_traversal(self, ai_dir):
+        with pytest.raises(ValueError, match="traversal|relative|escapes"):
+            hub.action_broker_submit(ai_dir, "../state.json", json.dumps({}), origin="cx")
+
+    def test_broker_drain_commits_in_filename_order_and_archives_done(self, ai_dir, monkeypatch):
+        monkeypatch.setattr(hub, "_guard_action", lambda *args, **kwargs: None)
+        pending = ai_dir / "broker" / "pending"
+        pending.mkdir(parents=True)
+        (pending / "001.json").write_text(
+            json.dumps(self._request("br-20260101000000000000-aaaaaaaa", "leases.json", {"order": 1})),
+            encoding="utf-8",
+        )
+        (pending / "002.json").write_text(
+            json.dumps(self._request("br-20260101000000000001-bbbbbbbb", "leases.json", {"order": 2})),
+            encoding="utf-8",
+        )
+
+        hub.action_broker_drain(ai_dir, limit=10, origin="broker")
+
+        assert json.loads((ai_dir / "leases.json").read_text(encoding="utf-8")) == {"order": 2}
+        assert list(pending.glob("*.json")) == []
+        assert sorted(p.name for p in (ai_dir / "broker" / "done").glob("*.json")) == ["001.json", "002.json"]
+        journal = (ai_dir / "operations.jsonl").read_text(encoding="utf-8")
+        assert '"status": "commit_intent"' in journal
+        assert '"status": "commit"' in journal
+
+    def test_broker_drain_moves_invalid_request_to_error(self, ai_dir, monkeypatch):
+        monkeypatch.setattr(hub, "_guard_action", lambda *args, **kwargs: None)
+        pending = ai_dir / "broker" / "pending"
+        pending.mkdir(parents=True)
+        (pending / "bad.json").write_text(
+            json.dumps(self._request("br-20260101000000000000-cccccccc", "../state.json", {"bad": True})),
+            encoding="utf-8",
+        )
+
+        hub.action_broker_drain(ai_dir, limit=10, origin="broker")
+
+        assert list(pending.glob("*.json")) == []
+        assert sorted(p.name for p in (ai_dir / "broker" / "error").glob("*.json")) == ["bad.json"]
+        journal = (ai_dir / "operations.jsonl").read_text(encoding="utf-8")
+        assert '"status": "error"' in journal
+        assert "traversal" in journal
+
+    def test_broker_status_reports_queue_counts(self, ai_dir, capsys):
+        pending = ai_dir / "broker" / "pending"
+        pending.mkdir(parents=True)
+        (pending / "001.json").write_text("{}", encoding="utf-8")
+
+        hub.action_broker_status(ai_dir)
+
+        out = capsys.readouterr().out
+        assert "broker pending=1 done=0 error=0" in out
+        assert "pending\t001.json" in out
+
+    def test_broker_status_does_not_create_queue_dirs(self, ai_dir, capsys):
+        hub.action_broker_status(ai_dir)
+
+        out = capsys.readouterr().out
+        assert "broker pending=0 done=0 error=0" in out
+        assert not (ai_dir / "broker").exists()
+
 # ─── init-session ───────────────────────────────────────────
 class TestInitSession:
     def test_cc_creates_sid(self, ai_dir, capsys):

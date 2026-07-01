@@ -16,10 +16,11 @@ import hub
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 @pytest.fixture
-def ai_dir(tmp_path: Path):
+def ai_dir(tmp_path: Path, monkeypatch):
     """Create a mock .ai root with necessary config files."""
     ai = tmp_path / ".ai"
     ai.mkdir()
+    monkeypatch.setattr(hub, "_peer_sys_dir", lambda peer_id: tmp_path / "_sys" / peer_id)
     
     # orchestration.json
     orch = ai.parent / "_sys" / "ai" / "orchestration.json"
@@ -153,7 +154,7 @@ def test_action_ask_integrates_error_visibility(ai_dir, monkeypatch):
     
     mock_proc = MagicMock()
     mock_proc.returncode = 1
-    mock_proc.communicate.return_value = (b"", b"API Error: Quota exceeded")
+    mock_proc.communicate.return_value = (b"", b"API Error: Authentication failed")
     mock_proc.pid = 9012
     
     with patch("subprocess.Popen", return_value=mock_proc), \

@@ -506,6 +506,38 @@ def _validate_state(state: dict) -> None:
                 raise ValueError("state.role_assignments entries must include peer strings")
 
 
+class SandboxRenameDeniedError(PermissionError):
+    """Atomic replace was denied by the host while committing hub state."""
+
+    error_type = "SANDBOX_RENAME_DENIED"
+
+    def __init__(self, path: Path, temp_path: Path, original: PermissionError):
+        self.path = Path(path)
+        self.temp_path = Path(temp_path)
+        self.original = original
+        winerror = _permission_winerror(original)
+        super().__init__(
+            f"SANDBOX_RENAME_DENIED: atomic replace denied for '{self.path}' "
+            f"from '{self.temp_path}' (winerror={winerror}). "
+            "Commit must be performed by the host-side mutation broker or an explicit break-glass operator action."
+        )
+        self.winerror = winerror
+
+
+def _permission_winerror(exc: BaseException) -> int | None:
+    value = getattr(exc, "winerror", None)
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_sandbox_rename_denied(exc: PermissionError) -> bool:
+    # WinError 5 is ACCESS_DENIED. WinError 32 is a sharing violation and must
+    # remain a normal PermissionError after retry exhaustion.
+    return os.name == "nt" and _permission_winerror(exc) == 5
+
+
 def _write_json_atomic(path: Path, data: dict) -> None:
     """Atomic write using a temporary file and os.replace."""
     # Use a unique temporary file to avoid collisions between parallel processes on Windows
@@ -519,8 +551,10 @@ def _write_json_atomic(path: Path, data: dict) -> None:
             try:
                 os.replace(str(temp_path), str(path))
                 return
-            except PermissionError:
+            except PermissionError as exc:
                 if i == max_retries - 1:
+                    if _is_sandbox_rename_denied(exc):
+                        raise SandboxRenameDeniedError(path, temp_path, exc) from exc
                     raise
                 # Exponential backoff: 20ms, 40ms, 80ms, 160ms, 320ms + jitter
                 delay = (0.02 * (2**i)) + (random.random() * 0.01)
@@ -533,6 +567,228 @@ def _write_json_atomic(path: Path, data: dict) -> None:
                 pass
         raise e
 
+
+@dataclass(frozen=True)
+class HubMutationRequest:
+    """Inert broker request envelope for future host-side hub state commits."""
+
+    action: str
+    origin: str
+    target_path: Path
+    payload: dict
+    request_id: str
+
+
+def _mutation_broker_enabled() -> bool:
+    return bool(_runtime_cfg().get("hub_mutation_broker_enabled", False))
+
+
+def _enqueue_hub_mutation_request(ai_root: Path, request: HubMutationRequest) -> None:
+    """Record intent for a future host-side broker; fail closed until enabled."""
+    _journal_op(ai_root, "hub_mutation_broker", "intent", {
+        "request_id": request.request_id,
+        "action": request.action,
+        "origin": request.origin,
+        "target_path": str(request.target_path),
+    })
+    if not _mutation_broker_enabled():
+        _journal_op(ai_root, "hub_mutation_broker", "rejected", {
+            "request_id": request.request_id,
+            "reason": "broker_disabled",
+        })
+        raise RuntimeError("hub mutation broker is disabled; request was not committed")
+    raise NotImplementedError("host-side mutation broker consumer is not implemented")
+
+
+def _commit_hub_mutation_request(ai_root: Path, request: HubMutationRequest, force_tier0: bool = False) -> None:
+    """Host-side commit primitive: guard, lock, journal, atomic replace."""
+    _guard_action(ai_root, request.action, force_tier0=force_tier0, origin=request.origin)
+    with _get_lock(ai_root, f"broker_{request.target_path.name}"):
+        _journal_op(ai_root, "hub_mutation_broker", "commit_intent", {
+            "request_id": request.request_id,
+            "action": request.action,
+            "target_path": str(request.target_path),
+        })
+        _write_json_atomic(request.target_path, request.payload)
+        _journal_op(ai_root, "hub_mutation_broker", "commit", {
+            "request_id": request.request_id,
+            "action": request.action,
+            "target_path": str(request.target_path),
+        })
+
+
+def _broker_dirs(ai_root: Path) -> tuple[Path, Path, Path]:
+    root = ai_root / "broker"
+    return root / "pending", root / "done", root / "error"
+
+
+def _ensure_broker_dirs(ai_root: Path) -> tuple[Path, Path, Path]:
+    dirs = _broker_dirs(ai_root)
+    for path in dirs:
+        path.mkdir(parents=True, exist_ok=True)
+    return dirs
+
+
+def _broker_rel_target(ai_root: Path, target: str) -> tuple[str, Path]:
+    if not target or not str(target).strip():
+        raise ValueError("broker target is required")
+    raw = str(target).replace("\\", "/").strip()
+    path = Path(raw)
+    if path.is_absolute() or path.drive:
+        raise ValueError("broker target must be relative to .ai")
+    if any(part in {"", ".", ".."} for part in path.parts):
+        raise ValueError("broker target must not contain traversal segments")
+    target_path = (ai_root / path).resolve()
+    ai_resolved = ai_root.resolve()
+    try:
+        rel = target_path.relative_to(ai_resolved).as_posix()
+    except ValueError as exc:
+        raise ValueError("broker target escapes .ai") from exc
+    return rel, target_path
+
+
+def _validate_mailbox_payload(payload: dict) -> None:
+    if not isinstance(payload.get("messages", []), list):
+        raise ValueError("mailbox.messages must be a list")
+    unread = payload.get("unread_count", 0)
+    if not isinstance(unread, int) or unread < 0:
+        raise ValueError("mailbox.unread_count must be a non-negative integer")
+
+
+def _validate_handoff_payload(payload: dict) -> None:
+    allowed = {"GOAL", "RECENT_COMPLETED", "PENDING_ISSUES", "KEY_DECISIONS", "CONSENSUS_HISTORY", "ACTIVE_THREADS"}
+    for key, value in payload.items():
+        if key not in allowed:
+            raise ValueError(f"handoff contains unknown section: {key}")
+        if key == "GOAL":
+            if not isinstance(value, str):
+                raise ValueError("handoff.GOAL must be a string")
+        elif not isinstance(value, list):
+            raise ValueError(f"handoff.{key} must be a list")
+
+
+def _validate_consensus_payload(payload: dict) -> None:
+    if payload.get("status") == "finalized" and "round_id" not in payload:
+        raise ValueError("finalized consensus payload requires round_id")
+    if "votes" in payload and not isinstance(payload.get("votes"), dict):
+        raise ValueError("consensus.votes must be an object")
+
+
+def _validate_broker_payload(ai_root: Path, target: str, payload: dict) -> tuple[str, Path]:
+    if not isinstance(payload, dict):
+        raise ValueError("broker payload must be a JSON object")
+    rel, target_path = _broker_rel_target(ai_root, target)
+    if rel == "state.json":
+        _validate_state(payload)
+    elif rel == "task_registry.json":
+        _validate_task_registry(payload)
+    elif rel == "mailbox.json":
+        _validate_mailbox_payload(payload)
+    elif rel in {"leases.json", "nodes.json"}:
+        if not isinstance(payload, dict):
+            raise ValueError(f"{rel} payload must be an object")
+    elif rel.startswith("sessions/") and rel.endswith("/handoff.json") and len(Path(rel).parts) == 3:
+        _validate_handoff_payload(payload)
+    elif rel.startswith("consensus/") and rel.endswith(".json") and len(Path(rel).parts) == 2:
+        _validate_consensus_payload(payload)
+    else:
+        raise ValueError(f"broker target is not whitelisted: {rel}")
+    return rel, target_path
+
+
+def _broker_request_from_dict(ai_root: Path, data: dict, commit_origin: str = "broker") -> HubMutationRequest:
+    if not isinstance(data, dict):
+        raise ValueError("broker request must be a JSON object")
+    if data.get("schema_version") != 1:
+        raise ValueError("unsupported broker schema_version")
+    if data.get("operation") != "json_replace":
+        raise ValueError("unsupported broker operation")
+    request_id = str(data.get("request_id") or "").strip()
+    origin = str(data.get("origin") or "unknown").strip() or "unknown"
+    target = str(data.get("target") or "").strip()
+    payload = data.get("payload")
+    if not re.fullmatch(r"br-[0-9]{20}-[0-9a-f]{8}", request_id):
+        raise ValueError("invalid broker request_id")
+    _, target_path = _validate_broker_payload(ai_root, target, payload)
+    return HubMutationRequest(
+        action="broker-drain",
+        origin=commit_origin or "broker",
+        target_path=target_path,
+        payload=payload,
+        request_id=request_id,
+    )
+
+
+def _broker_archive_request(src: Path, dest_dir: Path) -> Path:
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / src.name
+    if dest.exists():
+        dest = dest_dir / f"{src.stem}-{uuid.uuid4().hex[:6]}{src.suffix}"
+    os.replace(str(src), str(dest))
+    return dest
+
+
+def action_broker_submit(ai_root: Path, target: str, payload_text: str, origin: str = "unknown") -> None:
+    """Submit an append-only broker request under .ai/broker/pending."""
+    payload = json.loads((payload_text or "").lstrip("\ufeff"))
+    rel, _ = _validate_broker_payload(ai_root, target, payload)
+    pending_dir, _, _ = _broker_dirs(ai_root)
+    pending_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
+    request_id = f"br-{stamp}-{uuid.uuid4().hex[:8]}"
+    request = {
+        "schema_version": 1,
+        "request_id": request_id,
+        "created_at": _now(),
+        "origin": origin or "unknown",
+        "operation": "json_replace",
+        "target": rel,
+        "payload": payload,
+    }
+    path = pending_dir / f"{stamp}-{request_id}.json"
+    with path.open("x", encoding="utf-8") as f:
+        json.dump(request, f, ensure_ascii=False, indent=2)
+    print(f"[HUB] BROKER-SUBMIT {request_id} | target={rel} | pending={path.name}")
+
+
+def action_broker_drain(ai_root: Path, limit: int = 50, origin: str = "broker", force_tier0: bool = False) -> None:
+    """Drain pending broker requests in deterministic filename order."""
+    pending_dir, done_dir, error_dir = _ensure_broker_dirs(ai_root)
+    processed = committed = failed = 0
+    with _get_lock(ai_root, "broker_drain"):
+        for req_path in sorted(pending_dir.glob("*.json"))[:max(0, int(limit or 0))]:
+            processed += 1
+            try:
+                raw = _read_json(req_path)
+                request = _broker_request_from_dict(ai_root, raw, commit_origin=origin or "broker")
+                _commit_hub_mutation_request(ai_root, request, force_tier0=force_tier0)
+                archived = _broker_archive_request(req_path, done_dir)
+                committed += 1
+                print(f"[HUB] BROKER-COMMIT {request.request_id} | done={archived.name}")
+            except Exception as exc:
+                failed += 1
+                try:
+                    _journal_op(ai_root, "hub_mutation_broker", "error", {
+                        "request_file": req_path.name,
+                        "error": str(exc),
+                    })
+                    archived = _broker_archive_request(req_path, error_dir)
+                    print(f"[HUB] BROKER-ERROR {req_path.name} | error={type(exc).__name__} | moved={archived.name}")
+                except Exception:
+                    print(f"[HUB] BROKER-ERROR {req_path.name} | error={type(exc).__name__}", file=sys.stderr)
+                    raise
+    print(f"[HUB] BROKER-DRAIN processed={processed} committed={committed} failed={failed}")
+
+
+def action_broker_status(ai_root: Path) -> None:
+    """Print broker queue counts and pending filenames without mutating the queue."""
+    pending_dir, done_dir, error_dir = _broker_dirs(ai_root)
+    pending = sorted(p.name for p in pending_dir.glob("*.json")) if pending_dir.exists() else []
+    done = list(done_dir.glob("*.json")) if done_dir.exists() else []
+    error = list(error_dir.glob("*.json")) if error_dir.exists() else []
+    print(f"broker pending={len(pending)} done={len(done)} error={len(error)}")
+    for name in pending[:20]:
+        print(f"pending\t{name}")
 
 def _journal_op(ai_root: Path, op_type: str, status: str, metadata: dict) -> None:
     """Record an operation in the Recovery Journal (.ai/operations.jsonl)."""
@@ -6388,7 +6644,7 @@ def main() -> None:
         prog="hub",
         description="AI collaboration hub - Protocol v4.2",
     )
-    parser.add_argument("action", choices=["init-session", "end-session", "send", "broadcast", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "ask-all", "ask-coordinator", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint", "peer-quarantine", "peer-recover", "new-topic", "clear-room", "preflight", "context-hash", "context-ack", "report-error", "feedback-add", "feedback-list", "feedback-resolve", "artifact-claim", "artifact-status", "artifact-finalize", "leader-yield", "leader-claim", "elect-leader", "discover", "assign-role", "release-role", "role-status", "health-precheck", "health-sweep", "append-handoff", "task-checkpoint", "task-status", "task-failover", "approval-request", "file-lock", "file-unlock", "lock-status", "profile-validate", "lease-status", "lease-sweep", "model-status", "transient-scan", "directive-add", "directive-list", "directive-clear", "lessons-list", "lessons-propose", "lessons-activate", "lessons-retire", "lesson-broadcast", "lesson-sweep", "lesson-inject", "thread-new", "thread-append", "thread-react", "thread-promote", "alert-raise", "proposal-add", "proposal-vote", "proposal-list", "update-signatures"])
+    parser.add_argument("action", choices=["init-session", "end-session", "send", "broadcast", "mark-read", "append-log", "archive-file", "update-status", "check", "status", "check-gate", "ask", "ask-all", "ask-coordinator", "consensus-propose", "consensus-vote", "consensus-check", "consensus-sweep", "register-node", "list-nodes", "health-update", "health-check", "peer-status", "context-fill", "checkpoint", "peer-quarantine", "peer-recover", "new-topic", "clear-room", "preflight", "context-hash", "context-ack", "report-error", "feedback-add", "feedback-list", "feedback-resolve", "artifact-claim", "artifact-status", "artifact-finalize", "leader-yield", "leader-claim", "elect-leader", "discover", "assign-role", "release-role", "role-status", "health-precheck", "health-sweep", "append-handoff", "task-checkpoint", "task-status", "task-failover", "approval-request", "file-lock", "file-unlock", "lock-status", "profile-validate", "lease-status", "lease-sweep", "model-status", "transient-scan", "directive-add", "directive-list", "directive-clear", "lessons-list", "lessons-propose", "lessons-activate", "lessons-retire", "lesson-broadcast", "lesson-sweep", "lesson-inject", "thread-new", "thread-append", "thread-react", "thread-promote", "alert-raise", "proposal-add", "proposal-vote", "proposal-list", "broker-submit", "broker-drain", "broker-status", "update-signatures"])
     parser.add_argument("--needs")
     parser.add_argument("--effort", default="mid")
     parser.add_argument("--agent")
@@ -6404,6 +6660,7 @@ def main() -> None:
     parser.add_argument("--ref", type=int)
     parser.add_argument("--query", default="")
     parser.add_argument("--query-file")
+    parser.add_argument("--payload-file")
     parser.add_argument("--target")
     parser.add_argument("--recover", action="store_true", help="Recover state for health-check")
     parser.add_argument("--all", action="store_true")
@@ -6470,6 +6727,7 @@ def main() -> None:
     parser.add_argument("--trim", action="store_true")
     parser.add_argument("--days", type=int, default=14)
     parser.add_argument("--min-triggers", dest="min_triggers", type=int, default=3)
+    parser.add_argument("--limit", type=int, default=50)
 
     args = parser.parse_args()
     if args.action == "ask":
@@ -6491,8 +6749,9 @@ def main() -> None:
         return
 
     ai_root = find_ai_root()
-    ensure_ai_dir(ai_root)
     act = args.action
+    if act not in {"broker-submit", "broker-status"}:
+        ensure_ai_dir(ai_root)
     _guard_action(ai_root, act, args.force_tier0, origin=origin)
     if act == "ask-coordinator":
         action_ask_coordinator(ai_root, args.query, args.query_file, args.timeout, args.from_ or args.peer or args.agent or "unknown", quiet=args.quiet, output_file=args.output_file)
@@ -6683,6 +6942,17 @@ def main() -> None:
         action_proposal_vote(ai_root, proposal_id=args.proposal_id, voter=args.voter or args.peer or args.agent or "cc", vote=args.vote_val, reason=args.reason or "")
     elif act == "proposal-list":
         action_proposal_list(ai_root)
+    elif act == "broker-submit":
+        payload_text = args.text
+        if args.payload_file:
+            payload_text = Path(args.payload_file).read_text(encoding="utf-8-sig")
+        if not args.file_path or payload_text is None:
+            print("[HUB] broker-submit requires --file and --text or --payload-file", file=sys.stderr); sys.exit(1)
+        action_broker_submit(ai_root, args.file_path, payload_text, args.from_ or args.peer or args.agent or "unknown")
+    elif act == "broker-drain":
+        action_broker_drain(ai_root, limit=args.limit, origin="broker", force_tier0=args.force_tier0)
+    elif act == "broker-status":
+        action_broker_status(ai_root)
     elif act == "update-signatures":
         action_update_signatures()
 
@@ -6718,3 +6988,4 @@ if __name__ == "__main__":
     except Exception:
         pass
     main()
+

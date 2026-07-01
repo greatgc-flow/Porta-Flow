@@ -206,6 +206,29 @@ class TestActionDirectiveContract:
 # 2. protocol.json Structure Contract
 # ─────────────────────────────────────────────────────────────────────────────
 
+
+class TestActionBrokerContract:
+    """broker-* action signatures"""
+
+    def test_broker_submit_params(self):
+        sig = inspect.signature(hub.action_broker_submit)
+        p = sig.parameters
+        assert list(p.keys()) == ["ai_root", "target", "payload_text", "origin"]
+        assert p["origin"].default == "unknown"
+
+    def test_broker_drain_params(self):
+        sig = inspect.signature(hub.action_broker_drain)
+        p = sig.parameters
+        assert list(p.keys()) == ["ai_root", "limit", "origin", "force_tier0"]
+        assert p["limit"].default == 50
+        assert p["origin"].default == "broker"
+        assert p["force_tier0"].default is False
+
+    def test_broker_status_params(self):
+        sig = inspect.signature(hub.action_broker_status)
+        assert list(sig.parameters.keys()) == ["ai_root"]
+
+
 class TestProtocolJsonContract:
     PROTOCOL_PATH = SYS_DIR / "ai" / "protocol.json"
 
@@ -245,6 +268,14 @@ class TestProtocolJsonContract:
         assert "r10_voters" in consensus or "default_voters" in consensus, (
             "consensus section must have 'r10_voters' or 'default_voters'"
         )
+
+    def test_broker_actions_are_classified(self, proto):
+        guard = proto["operational_guard"]
+        assert "broker-drain" in guard["mutating_hub_actions"]
+        assert "broker-submit" in guard["recovery_hub_actions"]
+        assert "broker-status" in guard["read_only_hub_actions"]
+        assert "broker-submit" in guard["collab_rate_guard"]["exempt_actions"]
+        assert "broker-status" in guard["collab_rate_guard"]["exempt_actions"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────

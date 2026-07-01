@@ -215,6 +215,7 @@ with open("cost-log.jsonl") as f:
 | `CONSENSUS_DEADLOCK` | No ACK within R:8 timeout | escalate to R:11 |
 | `HEALTH_RED` | Peer health = RED, gate_open = false | route to fallback |
 | `QUERY_FILE_COLLISION` | Duplicate filename in IPC dir | abort + regenerate UUID |
+| `SANDBOX_RENAME_DENIED` | Managed sandbox denied rename/replace/delete needed for atomic state commit | fail closed; broker or break-glass operator action |
 
 ### 6.3 5-Whys Integration for Consecutive Errors
 
@@ -408,4 +409,4 @@ _v1.0 completed 2026-06-18. Covers full log taxonomy (MECE), per-node/model deta
 
 - **JSON Pipeline**: Native binaries (`agy`, `cc`) stream status JSON to stdout/stdin. Python wrappers intercept this, and bash adapters (`statusline-command.sh`) tee it to live dumps (`_sys/cli/ag_stdin.log`, `_sys/claude/config/status_input.log`).
 - **Unified Processing**: `_sys/ai/common/statusline/statusline-unified.sh` parses this JSON (`jq`), dynamically converts UTC/UNIX reset times to Local OS Time (`date -d`), and appends reasoning effort.
-- **`diag` Command**: `_sys/cli/diag.bat` provides a global diagnostic dashboard. It reads the live JSON logs directly for `ag` and `cc`. For `cx` (which lacks JSON), it queries `_sys/codex/config/state_5.sqlite` natively (`?mode=ro`). Gate and quarantine status fall back to `peer-status` (canonical).
+- **`diag` Command**: `diag` provides a global diagnostic dashboard via `_sys/cli` PATH wrappers (`diag.bat` for cmd/PowerShell, `diag` for Git Bash). It reads the live JSON logs directly for `ag` and `cc`. For `cx` (which lacks JSON), it queries `_sys/codex/config/state_5.sqlite` natively (`?mode=ro`) and uses app-server rate-limit reads where available. Gate and quarantine status fall back to `peer-status` (canonical). The expansion contract is `ops/diag-telemetry-architecture.md`: Specific collectors normalize into a Generic telemetry schema before `diag` renders freshness-aware summaries. Watch mode uses a 5s default interval, 2s minimum interval, TTL-gated expensive sources, and NDJSON for `--json --watch`.

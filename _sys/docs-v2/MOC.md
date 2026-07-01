@@ -48,6 +48,8 @@
 | Exhaustive work rules | `ops/debate.md` | ROI gate, exhaustive sessions, DIR-001 |
 | Failure modes | `ops/anti-patterns.md` | AP-xx peer failure taxonomy |
 | Audit checklist | `ops/audit-checklist.md` | MECE audit, release checklist, bootstrap checks |
+| Hub mutation broker | `ops/hub-mutation-broker.md` | SANDBOX_RENAME_DENIED, `.ai` mutation authority, broker/queue, os.replace, break-glass escalation |
+| Diag telemetry architecture | `ops/diag-telemetry-architecture.md` | diag, telemetry, context, quota, token history, account redaction, Specific collectors, Generic schema |
 | Work templates | `ops/templates.md` | goal frame, closure manifest, round templates |
 
 ## LAZY LOAD — design/roadmap (active specs; see MANIFEST doc-status)

@@ -89,6 +89,7 @@
 | F-03 | No Korean strings in `.bat` files | `cmd.exe` parser bug with `chcp 65001` — must be English only |
 | F-04 | PATH update in `.bat`: individual `if exist` lines per tool — NOT inside a `for` loop | `for` loop expands `%PATH%` only once → stale PATH bug |
 | F-05 | Peer permissions: minimum non-interactive (INV-12, DIR-002) | `profile-validate` passes for cc, gc, cx, ag |
+| F-06 | Hub `.ai` mutations from sandbox are brokered or explicitly break-glass approved | `broker-submit` only queues; `broker-drain` validates whitelist and preserves INV-20 `os.replace`; no copy/write/bak fallback |
 
 ---
 

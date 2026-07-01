@@ -120,6 +120,23 @@ _sys/ai/protocol.json            ← single runtime SSOT for all collab policy
 _sys/core/hub.py                 ← orchestration engine
     ↓ manages
 .ai/state.json + handoff.md      ← session state
+
+### Hub Mutation Authority Boundary
+
+`.ai/` is hub-managed IPC/session state. It is not a general workspace scratch area. Runtime peers may read it through canonical hub commands and may request mutations, but committed writes must preserve INV-20 atomicity.
+
+Target authority split:
+
+```text
+_sys/cli wrappers
+  -> peer process in its declared permission profile
+  -> hub mutation request
+  -> host-side broker / queue consumer
+  -> guarded atomic commit into .ai
+```
+
+This avoids peer-specific permission hacks and avoids replacing atomic writes with weaker copy/write/bak fallbacks. Design details live in `ops/hub-mutation-broker.md`.
+
 _sys/{peer}/health.json          ← per-peer health
 _sys/ai/runtime-directives.jsonl ← active behavioral corrections
     ↓ routes to

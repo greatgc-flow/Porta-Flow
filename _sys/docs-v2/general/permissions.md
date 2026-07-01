@@ -91,3 +91,21 @@ ag mutation safety instead relies on:
 
 This is an **accepted, documented gap**, pending an upstream agy mechanism that actually
 enforces workspace filesystem confinement.
+
+
+---
+
+## 8. Hub State Mutation Boundary
+
+Peer execution permission and hub state commit authority are separate. A sandboxed peer may request a hub state change, but it is not automatically the authority that commits `.ai` state.
+
+Rules:
+
+1. Hub-managed `.ai` state must keep INV-20 atomic replace semantics.
+2. If the active sandbox denies rename/replace/delete operations, do not fall back to copy/write/bak for hub state.
+3. Use `broker-submit` for sandbox-side mutation requests and host-side `broker-drain` for committed state changes.
+4. `broker-drain` must validate the request schema, target whitelist, payload shape, guard policy, lock, intent journal, and atomic commit path.
+5. Direct external execution is break-glass only, scoped to the exact hub action and operator-approved.
+6. The failure class for this boundary is `SANDBOX_RENAME_DENIED`.
+
+See `ops/hub-mutation-broker.md` for the design contract and current implementation status.

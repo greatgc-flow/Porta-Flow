@@ -66,6 +66,8 @@ For navigation by domain: `MOC.md`. For human onboarding: `user/manual.md`.
 | `ops/audit-checklist.md` | living | MECE audit items — bootstrap, SUBST, cleanup, collab, docs | 2026-06-16 |
 | `ops/backlog-5whys-consensus-2026-06-26.md` | design | **AUTHORITATIVE ROADMAP** — Ask Transaction AT-0..AT-6; KEEP/DROP/DEFER verdicts | 2026-06-26 |
 | `ops/endgame-general-specific-plan-2026-06-28.md` | design | Implementation-ready no-code/composable General-Specific endgame plan; stops before source implementation | 2026-06-28 |
+| `ops/hub-mutation-broker.md` | design | Host-side broker/queue authority boundary for `.ai` mutations under managed sandboxes | 2026-06-29 |
+| `ops/diag-telemetry-architecture.md` | design | Pre-TDD telemetry architecture for `diag`: Specific collectors, Generic schema, freshness-aware presentation | 2026-06-30 |
 | `user/manual.md` | living | Human onboarding, daily workflow, command reference | 2026-06-26 |
 | `user/requirements.md` | living | Root requirement contract (A1-A5...) — source of intent | 2026-06-26 |
 | `_exceptions/README.md` | living | Active ambiguity register (small; not a backlog) | 2026-06-26 |

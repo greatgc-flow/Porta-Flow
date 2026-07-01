@@ -589,7 +589,9 @@
         "thread-react",
         "proposal-add",
         "proposal-vote",
-        "proposal-list"
+        "proposal-list",
+        "broker-submit",
+        "broker-status"
       ]
     },
     "decision_tier_floor": {
@@ -644,7 +646,8 @@
       "thread-append",
       "thread-react",
       "proposal-add",
-      "proposal-vote"
+      "proposal-vote",
+      "broker-drain"
     ],
     "semi_governed_hub_actions": [
       "leader-claim",
@@ -659,7 +662,8 @@
       "report-error",
       "context-ack",
       "lease-sweep",
-      "alert-raise"
+      "alert-raise",
+      "broker-submit"
     ],
     "read_only_hub_actions": [
       "ask",
@@ -696,7 +700,8 @@
       "artifact-status",
       "lessons-list",
       "lesson-inject",
-      "proposal-list"
+      "proposal-list",
+      "broker-status"
     ],
     "phase_action_matrix": {
       "default": {
