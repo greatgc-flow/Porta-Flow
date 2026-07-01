@@ -16,9 +16,12 @@ models, permissions, and roles are defined in `_sys/ai/orchestration.json`.
 
 - **Launch:** Hub `ask --to ag` invokes the native `_sys\tools\agy\agy.exe` DIRECTLY via `AgyAdapter`. This bypasses `agy.bat` to avoid context-fill contamination. (`agy_entry.py` / `agy.bat` are used for INTERACTIVE launch only).
 - **Arguments:** `ag` is PTY-only, inline `-p {query}` (agy ignores stdin); `--print-timeout 60m`.
-- **Session Mode:** `session_mode: reuse` (orchestration.json SSOT). Hub passes a scoped `--conversation <room:ag.profile>` id (`AgyAdapter.build_session_cmd`) and persists/reuses it via the general lifecycle (`_store_session_from_result`).
-- **Durable home (verified 2026-07-01):** ag uses the durable `AGY_CONFIG_HOME=config` home. There is **no** clean/stateless `ipc-config` home — `ipc_stateless_home` is not configured (earlier design, inactive). IPC isolation from the interactive session is achieved by the explicit scoped `--conversation` id, not by wiping the home.
-- **Continuity caveat:** the id is reused, but `agy -p` one-shot does not currently restore prior history — collaboration context must travel in the ask envelope.
+- **No session reuse under `-p` (VERIFIED 2026-07-02):** agy assigns its OWN
+  conversation id (the `conversations/*.db` name) and IGNORES an injected
+  `--conversation <uuid>`, and does not expose that id to `-p`/`status.json`. So each
+  IPC `-p` ask is effectively fresh; `AgyAdapter.extract_session_id` returns `None`
+  (persists nothing). `agy -p` is also impractically slow for IPC. (cc/cx do reuse.)
+- **Durable home (verified 2026-07-01):** ag uses the durable `AGY_CONFIG_HOME=config` home. There is **no** clean/stateless `ipc-config` home — `ipc_stateless_home` is not configured (earlier design, inactive).
 
 ## Profile Defaults
 

@@ -20,12 +20,14 @@ agy --dangerously-skip-permissions -p {query} --print-timeout 60m
   state, so IPC asks are isolated by an explicit scoped `--conversation
   <room:ag.profile>` id (`AgyAdapter`), which pins the conversation instead of
   wiping the home. (Empirically a fresh scope does not inherit prior context.)
-- **Reuse lifecycle (unified):** the hub persists + reuses that id via the general
-  path-agnostic `_store_session_from_result` — same lifecycle as cc/cx.
-- **Continuity caveat:** the id is reused, but `agy -p` one-shot mode does **not**
-  currently restore prior conversation history (verified) — effective continuity is
-  limited pending an agy resume/continue mode; collaboration context should still
-  travel in the ask envelope.
+- **No session reuse under `-p` (VERIFIED 2026-07-02):** ag does NOT resume in the
+  IPC path. Direct CLI tests showed agy **assigns its own conversation id** (the
+  `conversations/*.db` name) and **ignores an injected `--conversation <uuid>`**; that
+  real id is not surfaced to `-p` output or `status.json` (only in `brain/`/`log/`).
+  So there is no reusable id to capture — `AgyAdapter.extract_session_id` returns
+  `None` (the general lifecycle persists nothing for ag). `agy -p` is also
+  impractically slow for IPC (multi-minute). Collaboration context must travel in the
+  ask envelope. (cc/cx DO reuse — see their specifics.)
 
 ## Runtime Profiles
 | Profile | Runtime model |

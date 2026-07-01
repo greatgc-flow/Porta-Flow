@@ -670,9 +670,13 @@ class AgyAdapter(BaseAdapter):
     def extract_session_id(
         self, stdout: str, node: dict[str, Any], command_session_id: str | None
     ) -> str | None:
-        """ag reuses the conversation id we passed via --conversation (persisted in
-        the durable agy home), so persist that command id for the next resume."""
-        return command_session_id
+        """No reusable session id for ag under `-p`. VERIFIED 2026-07-02: agy
+        assigns its OWN conversation id (the conversations/*.db name) and ignores
+        an injected `--conversation <uuid>`; it does not surface that id to -p
+        output or status.json. Returning None keeps the general lifecycle honest
+        (no false 'session stored') instead of persisting an id agy won't resume.
+        (agy -p is also impractically slow for IPC — separate concern.)"""
+        return None
 
     def context_policy(self, node: dict[str, Any]) -> ContextPolicy:
         """ag IPC context delta (A6): the agy model is context-fragile — it

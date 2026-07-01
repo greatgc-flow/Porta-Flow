@@ -123,10 +123,12 @@ class TestAgyAdapter:
         result = self.adapter.parse_output(raw, self.node)
         assert "This is the answer" in result
 
-    def test_extract_session_id_returns_command_id(self):
-        # ag persists the --conversation id we pass (durable home), so the general
-        # reuse lifecycle must surface command_session_id from AgyAdapter.
-        assert self.adapter.extract_session_id("any out", self.node, "conv-abc") == "conv-abc"
+    def test_extract_session_id_returns_none(self):
+        # VERIFIED 2026-07-02: agy assigns its OWN conversation id (the *.db name)
+        # and IGNORES an injected --conversation <uuid>; it does not expose that id
+        # to -p output/status. So there is no reusable id — extract must return None
+        # (no false session persisted) rather than the ignored command id.
+        assert self.adapter.extract_session_id("any out", self.node, "conv-abc") is None
         assert self.adapter.extract_session_id("out", self.node, None) is None
 
 
