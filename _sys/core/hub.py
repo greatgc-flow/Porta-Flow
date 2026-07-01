@@ -2333,7 +2333,7 @@ def action_new_topic(ai_root: Path, subject: str) -> None:
     new_dir.mkdir(parents=True, exist_ok=True)
     _write_handoff(new_dir, carried)
     # Clear peer sessions on topic change (old scope_key = old room no longer valid)
-    for pid in ("cx", "gc", "cc"):
+    for pid in ("cx", "gc", "cc", "ag"):
         _clear_peer_sessions(pid, f"new-topic:{new_room}", ai_root)
     print(f"[HUB] NEW-TOPIC {new_room} | from={old_room or 'none'} | subject={subject}")
 
@@ -2364,7 +2364,7 @@ def action_clear_room(ai_root: Path, subject: str) -> None:
     new_dir = ai_root / "sessions" / new_room
     new_dir.mkdir(parents=True, exist_ok=True)
     _write_handoff(new_dir, sections)
-    for pid in ("cx", "gc", "cc"):
+    for pid in ("cx", "gc", "cc", "ag"):
         _clear_peer_sessions(pid, f"clear-room:{new_room}", ai_root)
     print(f"[HUB] CLEAR-ROOM {new_room} | from={old_room or 'none'} | subject={subject}")
 
