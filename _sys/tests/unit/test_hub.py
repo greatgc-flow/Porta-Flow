@@ -384,6 +384,29 @@ class TestAsk:
             with pytest.raises(SystemExit):
                 hub.action_ask("gc", "test", None, 120, None)
 
+    def test_ask_startup_stall_kills_before_zombie(self, ai_dir):
+        """A peer that emits NO output must be killed after the (short) startup
+        window, not after the full zombie window. With timeout_sec=0 the only
+        guard is the silent-beat counter; before first output it must cap at
+        startup//heartbeat beats, far fewer than zombie//heartbeat."""
+        heartbeat = hub._lease_cfg()[0]
+        expected_beats = max(1, hub._startup_timeout_sec() // heartbeat)
+        zombie_beats = max(1, hub._lease_cfg()[2] // heartbeat)
+        assert expected_beats < zombie_beats  # sanity: staging actually helps
+
+        mock_proc = _make_mock_proc()
+        mock_proc.communicate.side_effect = subprocess.TimeoutExpired("codex", heartbeat)
+        mock_proc.poll.return_value = None  # alive but silent
+        with patch("shutil.which", return_value="/usr/bin/codex"), \
+             patch("subprocess.Popen", return_value=mock_proc), \
+             patch("hub._kill_process_tree"):
+            with pytest.raises(SystemExit):
+                hub.action_ask("cx", "test", None, 0, ai_dir)
+        assert mock_proc.communicate.call_count == expected_beats, (
+            f"silent process should be killed after {expected_beats} startup beats, "
+            f"got {mock_proc.communicate.call_count}"
+        )
+
     def test_ask_query_file(self, tmp_path, capsys):
         ipc_dir = tmp_path / "ipc"
         ipc_dir.mkdir(parents=True, exist_ok=True)

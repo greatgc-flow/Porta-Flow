@@ -57,6 +57,22 @@ class TestLeafCfgContract:
         assert zombie >= heartbeat * 2, "zombie_timeout must be >= 2× heartbeat"
 
 
+class TestStartupTimeoutContract:
+    """_startup_timeout_sec() gates the pre-first-output stall window (must be
+    far below zombie so a silent peer fails fast)."""
+
+    def test_is_int_and_bounded(self):
+        val = hub._startup_timeout_sec()
+        assert isinstance(val, int)
+        assert val >= 5, "startup timeout must be >= 5s to allow spin-up"
+
+    def test_below_zombie_window(self):
+        _, _, zombie = hub._lease_cfg()
+        assert hub._startup_timeout_sec() < zombie, (
+            "startup timeout must be shorter than the zombie window (else it never fires)"
+        )
+
+
 class TestActionAskContract:
     """action_ask() parameter contract"""
 

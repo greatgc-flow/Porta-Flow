@@ -2355,6 +2355,7 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
         sys.exit(1)
 
     heartbeat_sec, _lease_timeout_sec, zombie_timeout_sec = _lease_cfg(node_id)
+    startup_timeout_sec = _startup_timeout_sec()
     lease = int(_runtime_cfg().get("pty_lease_sec", 300) or 300)
 
     # CONDITION-3: the bounded get() slice MUST be <= heartbeat (so lease renewal
@@ -2400,6 +2401,7 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
     deadline = t0 + (timeout_sec if timeout_sec > 0 else float("inf"))
     last_renew = t0
     last_activity = t0  # any chunk resets the silent-zombie clock
+    first_output_seen = False  # staged timeout: startup window until first chunk
     timed_out = False
     timeout_kind: str | None = None
     transport_error: str | None = None
@@ -2420,10 +2422,12 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
             _lease_renew(ai_root, node_id, lease)
             last_renew = now
 
-        # 3. silent-zombie guard (no output for zombie_timeout_sec)
-        if now - last_activity >= zombie_timeout_sec:
+        # 3. silent-stall guard — staged: startup window until first output,
+        #    then the full zombie window. startup never exceeds zombie.
+        _silence_bound = zombie_timeout_sec if first_output_seen else min(startup_timeout_sec, zombie_timeout_sec)
+        if now - last_activity >= _silence_bound:
             timed_out = True
-            timeout_kind = "zombie"
+            timeout_kind = "zombie" if first_output_seen else "startup"
             break
 
         # 4. liveness backstop
@@ -2449,6 +2453,7 @@ def _ask_with_pty(cmd: list[str], node_id: str, timeout_sec: int, process_env: d
         if kind == "data":
             chunks.append(payload)
             last_activity = time.monotonic()
+            first_output_seen = True
         elif kind == "eof":
             eof_seen = True
             break
@@ -3255,7 +3260,11 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         raw_err = b""
         # Zombie-process guard: kill after this many consecutive silent heartbeats (no output, alive).
         # Uses zombie_timeout_sec (separate from lease_timeout_sec) — see communication_policy.
+        # Staged: BEFORE first output the tighter startup window applies (fast-fail a
+        # cold/hung startup); AFTER first output the full zombie window applies.
         _MAX_SILENT_HEARTBEATS = max(1, zombie_timeout_sec // heartbeat_sec)
+        # startup window never exceeds the zombie window (min guards tiny/test configs)
+        _MAX_STARTUP_SILENT = max(1, min(_startup_timeout_sec(), zombie_timeout_sec) // heartbeat_sec)
         _silent_beats = 0
         _last_out_len = 0
 
@@ -3284,10 +3293,13 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
                     _silent_beats += 1
 
                 _lease_renew(ai_root, to, lease_timeout_sec)
-                if _silent_beats >= _MAX_SILENT_HEARTBEATS:
-                    # Process alive but producing no output for zombie_timeout_sec total — treat as zombie.
+                # Staged bound: startup window until first output, then zombie window.
+                _max_silent = _MAX_SILENT_HEARTBEATS if _last_out_len > 0 else _MAX_STARTUP_SILENT
+                if _silent_beats >= _max_silent:
+                    # Alive but silent past the applicable window — treat as a stall.
                     lease_status = "timeout"
-                    raise subprocess.TimeoutExpired(cmd, zombie_timeout_sec)
+                    _bound = zombie_timeout_sec if _last_out_len > 0 else min(_startup_timeout_sec(), zombie_timeout_sec)
+                    raise subprocess.TimeoutExpired(cmd, _bound)
 
         elapsed = int(time.monotonic() - t0)
         lease_status = "closed"
@@ -5803,6 +5815,15 @@ def _lease_cfg(node_id: str | None = None) -> tuple[int, int, int]:
                 
     z = max(h * 2, z_base)
     return h, l, z
+
+
+def _startup_timeout_sec() -> int:
+    """Pre-first-output stall window (seconds). Until a peer emits its first
+    stdout chunk, silence is bounded by this instead of the full zombie window,
+    so a cold/hung startup fails fast. Kept separate from _lease_cfg to preserve
+    that function's 3-tuple contract."""
+    comm = _load_protocol_cfg().get("communication_policy", {})
+    return max(5, int(comm.get("startup_timeout_sec", 90) or 90))
 
 
 def _lease_open(ai_root: Path | None, peer_id: str, pid: int, lease_timeout_sec: int, ask_id: str | None = None, ask_query_file: str | None = None) -> None:

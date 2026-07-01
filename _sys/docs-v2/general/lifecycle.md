@@ -303,7 +303,13 @@ Preference order: GREEN → YELLOW → (avoid STALE) → RED blocked.
   - `heartbeat_sec`
   - `lease_timeout_sec`
   - `zombie_timeout_sec`
-- Zombie guard: consecutive silent heartbeats exceeding `zombie_timeout_sec` → force-kill
+  - `startup_timeout_sec` (staged: pre-first-output silence bound)
+- **Staged silence guard** (both PTY and non-PTY ask loops):
+  - Before the peer emits its first stdout chunk, silence is bounded by
+    `min(startup_timeout_sec, zombie_timeout_sec)` → `timeout_kind="startup"`
+    (fast-fails a cold/hung startup, e.g. a codex skill re-sync stall).
+  - After first output, the full `zombie_timeout_sec` applies → `timeout_kind="zombie"`.
+  - Both are recorded as transient (`terminal_timeout`) so failover/retry still applies.
 - `hub.py lease-status` / `hub.py lease-sweep`
 - Does NOT: auto-replay/retry tasks, trigger directives
 

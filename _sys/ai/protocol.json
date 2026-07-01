@@ -466,7 +466,9 @@
       "standard": 600,
       "effort": 600,
       "deepthink": 7200
-    }
+    },
+    "startup_timeout_sec": 90,
+    "_note_startup_timeout": "Pre-first-output stall window. Until a peer emits its first stdout chunk, silence is bounded by this (fast-fail cold stalls); after first output the zombie window applies."
   },
   "feedback_loop": {
     "enabled": true,

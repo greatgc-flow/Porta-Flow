@@ -360,9 +360,12 @@ Exhaustive review taking over the in-flight cx/ag work. The prior doc-review deb
        `test_contracts.py::TestPeersJsonContract` (CODEX_HOME + portable-resolve).
      - Transitional: old host-home sessions won't resume after the pin; hub logs
        "session resume failed → retrying fresh" (expected, self-heals).
-   - **Deferred (defense-in-depth):** CodexAdapter staged-startup timeout / early
-     heartbeat (ag proposal) — turns any future silent stall into a fast fail
-     regardless of cause. Separate slice.
+   - **DONE (defense-in-depth, 2026-07-01, R:10 ag+cx+cc):** staged silence guard
+     in both ask loops — before first output, silence is bounded by
+     `min(startup_timeout_sec=90, zombie)` → `timeout_kind="startup"`; after first
+     output the zombie window applies. Turns any future silent stall (any cause)
+     into a ~90s fast-fail instead of a 600s zombie wait. See `general/lifecycle.md`
+     §17; tests in `test_hub_pty.py`/`test_pty_timeout_h2.py`/`test_contracts.py`.
 2. **Sandbox `spawn EPERM` / `지정된 경로를 찾을 수 없습니다` (path not found).** Codex
    child spawns intermittently fail under the workspace-write sandbox (error-log
    `sandbox_spawn_eperm`, `nonzero_exit`).

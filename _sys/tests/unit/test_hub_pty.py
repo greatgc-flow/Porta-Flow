@@ -49,14 +49,16 @@ class _FakePty:
         return inst
 
     def read(self, n):
+        # Emit any queued chunks first (flips staged timeout to the zombie phase),
+        # then either block (silent stall) or EOF.
+        if self._reads:
+            return self._reads.pop(0)
         if self.behavior.get("block"):
             # Simulate a blocking read that ends only when the main thread
             # terminates/closes us (the A2 scenario). Daemon reader → no hang.
             while self._alive and not self.terminated and not self.closed:
                 time.sleep(0.01)
             raise EOFError()
-        if self._reads:
-            return self._reads.pop(0)
         self._alive = False
         raise EOFError()
 
@@ -140,15 +142,28 @@ def test_lease_renewal_happens_while_read_blocked(fake_winpty, monkeypatch):
 
 
 def test_silent_zombie_timeout(fake_winpty, monkeypatch):
-    """Alive but silent child is killed by the zombie guard."""
+    """Child that produced output then went silent is killed by the zombie guard.
+    (Post-first-output stall → 'zombie'; the pre-output case is 'startup', below.)"""
     # heartbeat, lease_timeout, zombie  → tiny zombie so the test is fast.
     monkeypatch.setattr(hub, "_lease_cfg", lambda node_id=None: (30, 300, 1))
-    fake_winpty(block=True)
+    fake_winpty(block=True, reads=["partial "])  # emit once, then stall
     r = hub._ask_with_pty(["agy"], "ag", 60, {}, quiet=True, ai_root=None)
     assert r.timed_out is True
     assert r.timeout_kind == "zombie"
     assert _FakePty.instances[0].terminated is True
     assert _FakePty.instances[0].closed is True
+
+
+def test_startup_timeout_no_output(fake_winpty, monkeypatch):
+    """Child that never emits output is killed by the (short) startup guard,
+    well before the long zombie window — staged-timeout defense-in-depth."""
+    monkeypatch.setattr(hub, "_lease_cfg", lambda node_id=None: (30, 300, 600))
+    monkeypatch.setattr(hub, "_startup_timeout_sec", lambda: 1)  # tiny startup
+    fake_winpty(block=True)  # silent from start, no reads
+    r = hub._ask_with_pty(["agy"], "ag", 60, {}, quiet=True, ai_root=None)
+    assert r.timed_out is True
+    assert r.timeout_kind == "startup"
+    assert _FakePty.instances[0].terminated is True
 
 
 def test_spawn_failure_returns_transport_error(fake_winpty):

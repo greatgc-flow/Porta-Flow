@@ -82,8 +82,9 @@ def test_a1_silent_zombie_exception_reports_zombie_threshold(monkeypatch):
         def poll(self):
             return None # still running
         def communicate(self, input=None, timeout=None):
-            # simulate hitting the zombie threshold loop exactly
-            raise subprocess.TimeoutExpired(["cmd"], timeout, output=b"")
+            # Emit output once (flips staged timeout to the zombie phase), then
+            # stay silent so the ZOMBIE threshold (not startup, not lease) is hit.
+            raise subprocess.TimeoutExpired(["cmd"], timeout, output=b"partial")
             
     monkeypatch.setattr(hub.subprocess, "Popen", MockPopen)
     
