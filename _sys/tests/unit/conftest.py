@@ -60,6 +60,15 @@ def pytest_sessionfinish(session, exitstatus):
     if hasattr(session, "memory_guard"):
         session.memory_guard.stop()
 
+# --- Log isolation (prevents tests from polluting tracked _sys/data/logs) ---
+
+@pytest.fixture(autouse=True)
+def isolate_hub_logs(tmp_path, monkeypatch):
+    """Redirect HubLogger output to a per-test temp dir so error/ipc/etc. log
+    fixtures never write into the tracked production logs under _sys/data/logs."""
+    monkeypatch.setenv("HUB_LOG_DIR", str(tmp_path / "hub-logs"))
+
+
 # --- Existing Fixtures ---
 
 @pytest.fixture

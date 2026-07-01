@@ -1,8 +1,12 @@
 import os
+import argparse
 import json
 import subprocess
 from pathlib import Path
 import sys
+import time
+from contextlib import redirect_stdout
+from datetime import datetime, timezone
 
 CLI_DIR = Path(__file__).parent
 SYS_DIR = CLI_DIR.parent
@@ -11,6 +15,120 @@ PORTABLE_ROOT = SYS_DIR.parent
 sys.path.insert(0, str(SYS_DIR / "core"))
 from hub_peer import resolve_peer_sys_dir
 
+
+# --------------------------------------------------------------------------
+# Display helpers (no external deps; ASCII-only, color strictly TTY-gated)
+# --------------------------------------------------------------------------
+
+_COLOR = sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
+_ANSI = {
+    "reset": "\033[0m", "bold": "\033[1m", "dim": "\033[2m",
+    "green": "\033[32m", "yellow": "\033[33m", "red": "\033[31m",
+    "cyan": "\033[36m",
+}
+
+
+def _c(text, *codes):
+    """Wrap text in ANSI codes only when color is enabled."""
+    if not _COLOR or not codes:
+        return text
+    prefix = "".join(_ANSI.get(code, "") for code in codes)
+    return f"{prefix}{text}{_ANSI['reset']}"
+
+
+def _sev_color(used_frac):
+    """Map a USED fraction (0..1) to a severity color name."""
+    if used_frac >= 0.90:
+        return "red"
+    if used_frac >= 0.75:
+        return "yellow"
+    return "green"
+
+
+def _bar(frac, width=10):
+    """ASCII progress bar like [####------] for frac in 0..1 (USED)."""
+    try:
+        frac = max(0.0, min(1.0, float(frac)))
+    except (TypeError, ValueError):
+        frac = 0.0
+    fill = int(round(frac * width))
+    return "[" + "#" * fill + "-" * (width - fill) + "]"
+
+
+def _short(n):
+    """Compact token count: 58787 -> 58k, 1000000 -> 1M."""
+    if not isinstance(n, (int, float)):
+        return str(n)
+    n = int(n)
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M".replace(".0M", "M")
+    if n >= 1_000:
+        return f"{n // 1000}k"
+    return str(n)
+
+
+def _parse_reset(value):
+    """Parse an epoch (int/float/digit-string; /1000 if milliseconds) or an
+    ISO8601 string into a timezone-aware datetime in LOCAL time.
+    Returns None on failure (never raises)."""
+    if value is None or value == "":
+        return None
+    # Numeric epoch (int/float or pure digit / float string)
+    is_numeric = isinstance(value, (int, float))
+    if not is_numeric and isinstance(value, str):
+        is_numeric = value.strip().replace(".", "", 1).isdigit()
+    if is_numeric:
+        try:
+            num = float(value)
+            if abs(num) > 1e12:  # looks like milliseconds
+                num /= 1000.0
+            return datetime.fromtimestamp(num, tz=timezone.utc).astimezone()
+        except (ValueError, OSError, OverflowError):
+            return None
+    # ISO8601 string
+    try:
+        s = str(value).strip().replace("Z", "+00:00")
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone()
+    except (ValueError, TypeError):
+        return None
+
+
+def _rel(seconds):
+    """Relative countdown string compressed to two units."""
+    secs = int(seconds)
+    if secs <= 0:
+        return "now"
+    days, rem = divmod(secs, 86400)
+    hours, rem = divmod(rem, 3600)
+    mins, _ = divmod(rem, 60)
+    if days > 0:
+        return f"in {days}d {hours}h"
+    if hours > 0:
+        return f"in {hours}h {mins}m"
+    return f"in {mins}m"
+
+
+def _fmt_reset(value, rel_seconds=None):
+    """Single shared reset formatter for cc/ag/cx:
+    'MM/DD HH:MM +0900 (in Xh Ym)' in local time, with the year across years.
+    rel_seconds (e.g. ag reset_in_seconds) is used only as a fallback."""
+    dt = _parse_reset(value)
+    if dt is None:
+        if rel_seconds is not None:
+            return _rel(rel_seconds)
+        return str(value) if value not in (None, "") else "?"
+    now = datetime.now().astimezone()
+    abs_fmt = "%Y-%m-%d %H:%M %z" if dt.year != now.year else "%m/%d %H:%M %z"
+    abs_str = dt.strftime(abs_fmt)
+    return f"{abs_str} ({_rel((dt - now).total_seconds())})"
+
+
+# --------------------------------------------------------------------------
+# Live quota source for Codex (no local persistence)
+# --------------------------------------------------------------------------
 
 def _codex_rate_limits():
     """Query the codex app-server (initialize -> account/rateLimits/read) for live
@@ -34,7 +152,7 @@ def _codex_rate_limits():
                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
         proc.stdin.write(msgs)
         proc.stdin.flush()
-        # app-server is a daemon (doesn't exit on EOF) — read lines until the id=1
+        # app-server is a daemon (doesn't exit on EOF) - read lines until the id=1
         # response arrives, then terminate, instead of waiting for process exit.
         deadline = time.monotonic() + 20
         while time.monotonic() < deadline:
@@ -58,22 +176,29 @@ def _codex_rate_limits():
     return None
 
 
-def main():
-    print("="*60)
-    print(" 🛠️  Antigravity Collaboration Environment Diagnostics ")
-    print("="*60)
-    
-    print("\n[ROOM & HUB STATUS]")
-    hub_py = SYS_DIR / "core" / "hub.py"
-    if hub_py.exists():
-        subprocess.run(["python", str(hub_py), "status"])
-    else:
-        print("hub.py not found.")
+EXPENSIVE_SOURCE_TTL_SEC = 60
+_CODEX_RATE_LIMIT_CACHE = {}
 
-    print("\n" + "="*60)
-    print(" 📊 PEER DETAILED METRICS")
-    print("="*60)
 
+def _cached_codex_rate_limits(ttl_sec=EXPENSIVE_SOURCE_TTL_SEC, clock=time.monotonic):
+    now = clock()
+    cached = _CODEX_RATE_LIMIT_CACHE.get("rate_limits")
+    if cached and now < cached["expires_at"]:
+        return cached["value"]
+    value = _codex_rate_limits()
+    _CODEX_RATE_LIMIT_CACHE["rate_limits"] = {
+        "value": value,
+        "expires_at": now + ttl_sec,
+    }
+    return value
+
+
+# --------------------------------------------------------------------------
+# Per-peer metric gathering
+# --------------------------------------------------------------------------
+
+def _discover_peers():
+    """Return (peers, peer_dirs) from orchestration.json, with a static fallback."""
     peers = []
     peer_dirs = {}
     orch_file = SYS_DIR / "ai" / "orchestration.json"
@@ -86,10 +211,7 @@ def main():
                     if pid:
                         peers.append(pid)
                         subdir = resolve_peer_sys_dir(pid)
-                        if subdir:
-                            peer_dirs[pid] = SYS_DIR / subdir
-                        else:
-                            peer_dirs[pid] = SYS_DIR / pid
+                        peer_dirs[pid] = SYS_DIR / (subdir if subdir else pid)
         except Exception:
             pass
     if not peers:
@@ -97,178 +219,466 @@ def main():
         peer_dirs = {
             "ag": SYS_DIR / "antigravity",
             "cc": SYS_DIR / "claude",
-            "cx": SYS_DIR / "codex"
+            "cx": SYS_DIR / "codex",
         }
+    return peers, peer_dirs
 
-    for peer in peers:
-        print(f"\n[{peer.upper()} PEER INFO]")
-        
-        # Check live state log first
-        live_file = None
-        if peer == "ag":
-            live_file = CLI_DIR / "ag_stdin.log"
-        elif peer == "cc":
-            live_file = SYS_DIR / "claude" / "config" / "status_input.log"
 
-        data = {}
-        health_file = peer_dirs[peer] / "health.json"
-        
-        if live_file and live_file.exists():
-            try:
-                data = json.loads(live_file.read_text(encoding="utf-8"))
-            except Exception:
-                pass
-                
-        # Fallback to health.json if live_file is missing or empty
-        health_data = {}
-        if health_file.exists():
-            try:
-                health_data = json.loads(health_file.read_text(encoding="utf-8"))
-            except Exception:
-                pass
-        
-        if not data and not health_data:
-            print("  (No data found)")
-            continue
+# Friendly labels for ag's quota buckets.
+_AG_QUOTA_LABELS = {
+    "gemini-5h": "G-5H", "gemini-weekly": "G-7D",
+    "3p-5h": "3P-5H", "3p-weekly": "3P-7D",
+}
 
-        # General Health
-        avail = health_data.get("availability", {})
-        print(f"  - Gate: {avail.get('gate_open')} | Quarantined: {avail.get('quarantined')}")
-        
-        # Context & Tokens (Live preferred)
-        ctx_window = "Unknown"
-        session_tokens = 0
-        if "context_window" in data:
-            ctx = data["context_window"]
-            ctx_window = ctx.get("context_window_size", "Unknown")
-            session_tokens = ctx.get("total_input_tokens", 0) + ctx.get("total_output_tokens", 0)
-            cur_usage = ctx.get("current_usage")
-            if session_tokens == 0 and isinstance(cur_usage, dict):
-                session_tokens = cur_usage.get("input_tokens", 0) + cur_usage.get("output_tokens", 0)
-        elif "context_used_tokens" in data:
-            session_tokens = data["context_used_tokens"]
-            ctx_window = data.get("context_total_tokens", "Unknown")
+
+def gather_peer(peer, peer_dirs):
+    """Collect a normalized metrics dict for one peer."""
+    info = {
+        "peer": peer, "gate": None, "quarantined": None, "quarantine_reason": None,
+        "model": "Unknown", "ctx_used": 0, "ctx_window": "Unknown", "ctx_pct": None,
+        "cost": None, "source": "none", "agent_state": None, "plan_tier": None,
+        "quotas": [], "sessions": None, "total_tokens": None, "empty": True,
+        "ctx_known": False,
+    }
+
+    # Live state log (cc/ag publish one; cx is queried live below).
+    live_file = None
+    if peer == "ag":
+        live_file = CLI_DIR / "ag_stdin.log"
+    elif peer == "cc":
+        live_file = SYS_DIR / "claude" / "config" / "status_input.log"
+
+    data = {}
+    if live_file and live_file.exists():
+        try:
+            data = json.loads(live_file.read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+
+    health_data = {}
+    health_file = peer_dirs[peer] / "health.json"
+    if health_file.exists():
+        try:
+            health_data = json.loads(health_file.read_text(encoding="utf-8"))
+        except Exception:
+            health_data = {}
+
+    if not data and not health_data:
+        return info
+    info["empty"] = False
+    info["source"] = "live" if data else "health"
+
+    # Health / gate
+    avail = health_data.get("availability", {})
+    info["gate"] = avail.get("gate_open")
+    info["quarantined"] = avail.get("quarantined")
+    info["quarantine_reason"] = avail.get("quarantine_reason") or avail.get("reason")
+
+    # Context & tokens (live preferred)
+    if "context_window" in data:
+        ctx = data["context_window"]
+        info["ctx_window"] = ctx.get("context_window_size", "Unknown")
+        info["ctx_used"] = ctx.get("total_input_tokens", 0) + ctx.get("total_output_tokens", 0)
+        cur_usage = ctx.get("current_usage")
+        if info["ctx_used"] == 0 and isinstance(cur_usage, dict):
+            info["ctx_used"] = cur_usage.get("input_tokens", 0) + cur_usage.get("output_tokens", 0)
+        if isinstance(ctx.get("used_percentage"), (int, float)):
+            info["ctx_pct"] = ctx["used_percentage"]
+        info["ctx_known"] = True
+    elif "context_used_tokens" in data:
+        info["ctx_used"] = data["context_used_tokens"]
+        info["ctx_window"] = data.get("context_total_tokens", "Unknown")
+        info["ctx_known"] = True
+    else:
+        ctx = health_data.get("context_health", {})
+        profile = health_data.get("profile", {})
+        info["ctx_window"] = profile.get("context_window", "Unknown")
+        info["ctx_used"] = ctx.get("session_token_count", 0)
+        info["ctx_known"] = "session_token_count" in ctx
+
+    # Model + effort
+    model_name = "Unknown"
+    effort_val = ""
+    if "model" in data:
+        if isinstance(data["model"], dict):
+            model_name = data["model"].get("display_name") or data["model"].get("id", "Unknown")
         else:
-            ctx = health_data.get("context_health", {})
-            profile = health_data.get("profile", {})
-            ctx_window = profile.get("context_window", "Unknown")
-            session_tokens = ctx.get("session_token_count", 0)
-            
-        # Cost, Model, Effort
-        model_name = "Unknown"
-        effort_val = ""
-        
-        # Codex (cx) native extraction from SQLite
-        if peer == "cx":
-            db_path = SYS_DIR / "codex" / "config" / "state_5.sqlite"
-            if db_path.exists():
-                try:
-                    import sqlite3
-                    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-                    cur = conn.cursor()
-                    cur.execute("SELECT model, tokens_used, reasoning_effort FROM threads WHERE tokens_used > 0 ORDER BY updated_at DESC LIMIT 1;")
-                    row = cur.fetchone()
-                    if row:
-                        if row[0]: model_name = str(row[0])
-                        if row[1]: session_tokens = int(row[1])
-                        if row[2]: effort_val = str(row[2])
-                    cur.execute("SELECT SUM(tokens_used) FROM threads;")
-                    row_sum = cur.fetchone()
-                    if row_sum and row_sum[0]:
-                        total_cx_tokens = int(row_sum[0])
-                    else:
-                        total_cx_tokens = 0
-                    conn.close()
-                except Exception:
-                    total_cx_tokens = 0
-                    
-        # CC / AG native extraction
-        if "model" in data:
-            if isinstance(data["model"], dict):
-                model_name = data["model"].get("display_name") or data["model"].get("id", "Unknown")
-            else:
-                model_name = str(data["model"])
-        elif "model_name" in data:
-            model_name = str(data["model_name"])
-            
-        if "model_reasoning_effort" in data:
-            if isinstance(data["model_reasoning_effort"], dict):
-                effort_val = data["model_reasoning_effort"].get("level", "")
-            else:
-                effort_val = str(data["model_reasoning_effort"])
-        elif "effort" in data:
-            if isinstance(data["effort"], dict):
-                effort_val = data["effort"].get("level", "")
-            else:
-                effort_val = str(data["effort"])
+            model_name = str(data["model"])
+    elif "model_name" in data:
+        model_name = str(data["model_name"])
 
-        if effort_val and effort_val.lower() not in model_name.lower() and effort_val != "null":
-            model_name = f"{model_name} ({effort_val})"
+    if "model_reasoning_effort" in data:
+        mre = data["model_reasoning_effort"]
+        effort_val = mre.get("level", "") if isinstance(mre, dict) else str(mre)
+    elif "effort" in data:
+        ef = data["effort"]
+        effort_val = ef.get("level", "") if isinstance(ef, dict) else str(ef)
 
-        print(f"  - Active Model: {model_name}")
-        print(f"  - Context: {session_tokens} / {ctx_window} tokens")
-        if peer == "cx" and 'total_cx_tokens' in locals() and total_cx_tokens > 0:
-            print(f"  - Total Historical Tokens: {total_cx_tokens:,}")
-        if peer == "cx":
-            rl = _codex_rate_limits()
-            if rl:
-                from datetime import datetime
-                prim, sec = rl.get("primary") or {}, rl.get("secondary") or {}
-                if prim.get("resetsAt"):
-                    rst = datetime.fromtimestamp(prim["resetsAt"]).strftime("%H:%M")
-                    print(f"  - 5H Quota: {prim.get('usedPercent', 0)}% Used (Resets at {rst})")
-                if sec.get("resetsAt"):
-                    rst = datetime.fromtimestamp(sec["resetsAt"]).strftime("%m/%d %H:%M")
-                    print(f"  - 7D Quota: {sec.get('usedPercent', 0)}% Used (Resets on {rst})")
-            else:
-                print("  - 5H/7D Quota: (codex app-server unavailable)")
-            
-        # Quota
-        def format_reset(val, fmt="%Y-%m-%d %H:%M:%S"):
-            if not val: return ""
+    # Cost / state / tier
+    if "cost" in data and isinstance(data["cost"], dict):
+        info["cost"] = data["cost"].get("total_cost_usd")
+    info["agent_state"] = data.get("agent_state")
+    info["plan_tier"] = data.get("plan_tier")
+    session_h = health_data.get("session_health", {})
+    if "session_count_today" in session_h:
+        info["sessions"] = session_h.get("session_count_today")
+
+    # Quotas (normalized to USED fraction)
+    quotas = []
+    if "quota" in data and isinstance(data["quota"], dict):  # ag
+        for key, label in _AG_QUOTA_LABELS.items():
+            q = data["quota"].get(key)
+            if not isinstance(q, dict):
+                continue
+            rem = q.get("remaining_fraction", 0) or 0
+            quotas.append({
+                "label": label, "used_frac": max(0.0, 1.0 - rem),
+                "reset": _fmt_reset(q.get("reset_time"), q.get("reset_in_seconds")),
+                "metric": f"{rem * 100:.1f}% rem",
+            })
+    if "rate_limits" in data and isinstance(data["rate_limits"], dict):  # cc
+        rl = data["rate_limits"]
+        for key, label in (("five_hour", "5H"), ("seven_day", "7D")):
+            q = rl.get(key)
+            if not isinstance(q, dict):
+                continue
+            used = q.get("used_percentage", 0) or 0
+            quotas.append({
+                "label": label, "used_frac": used / 100.0,
+                "reset": _fmt_reset(q.get("resets_at") or q.get("reset_at")),
+                "metric": f"{used}% used",
+            })
+
+    # Codex: model/tokens/effort from sqlite + live rate limits from app-server
+    if peer == "cx":
+        db_path = SYS_DIR / "codex" / "config" / "state_5.sqlite"
+        if db_path.exists():
             try:
-                if str(val).isdigit():
-                    return subprocess.check_output(f'bash -c "date -d \\"@{val}\\" +\\"{fmt}\\""', shell=True).decode().strip()
-                else:
-                    return subprocess.check_output(f'bash -c "date -d \\"{val}\\" +\\"{fmt}\\""', shell=True).decode().strip()
-            except:
-                return str(val)
+                import sqlite3
+                conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+                cur = conn.cursor()
+                cur.execute("SELECT model, tokens_used, reasoning_effort FROM threads "
+                            "WHERE tokens_used > 0 ORDER BY updated_at DESC LIMIT 1;")
+                row = cur.fetchone()
+                if row:
+                    if row[0]:
+                        model_name = str(row[0])
+                    # row[1] (tokens_used) is the thread's CUMULATIVE token total,
+                    # not current context occupancy - surfaced as total_tokens, not ctx.
+                    if row[2]:
+                        effort_val = str(row[2])
+                cur.execute("SELECT SUM(tokens_used) FROM threads;")
+                row_sum = cur.fetchone()
+                if row_sum and row_sum[0]:
+                    info["total_tokens"] = int(row_sum[0])
+                conn.close()
+                info["empty"] = False
+            except Exception:
+                pass
+        rl = _cached_codex_rate_limits()
+        if rl:
+            info["source"] = "app-server"
+            for key, label in (("primary", "5H"), ("secondary", "7D")):
+                q = rl.get(key)
+                if not isinstance(q, dict):
+                    continue
+                used = q.get("usedPercent", 0) or 0
+                quotas.append({
+                    "label": label, "used_frac": used / 100.0,
+                    "reset": _fmt_reset(q.get("resetsAt")),
+                    "metric": f"{used}% used",
+                })
+        elif not quotas:
+            info["cx_quota_unavailable"] = True
 
-        if "quota" in data:
-            q = data["quota"]
-            if "gemini-5h" in q:
-                rst = format_reset(q['gemini-5h'].get('reset_time'), "%H:%M")
-                print(f"  - Gemini 5H Quota: {q['gemini-5h'].get('remaining_fraction', 0)*100:.1f}% Remaining (Resets at {rst})")
-            if "gemini-weekly" in q:
-                rst = format_reset(q['gemini-weekly'].get('reset_time'), "%m/%d")
-                print(f"  - Gemini 7D Quota: {q['gemini-weekly'].get('remaining_fraction', 0)*100:.1f}% Remaining (Resets on {rst})")
-            if "3p-5h" in q:
-                rst = format_reset(q['3p-5h'].get('reset_time'), "%H:%M")
-                print(f"  - Claude(3P) 5H Quota: {q['3p-5h'].get('remaining_fraction', 0)*100:.1f}% Remaining (Resets at {rst})")
-            if "3p-weekly" in q:
-                rst = format_reset(q['3p-weekly'].get('reset_time'), "%m/%d")
-                print(f"  - Claude(3P) 7D Quota: {q['3p-weekly'].get('remaining_fraction', 0)*100:.1f}% Remaining (Resets on {rst})")
-                
-        if "rate_limits" in data:
-            rl = data["rate_limits"]
-            if "five_hour" in rl:
-                rst = format_reset(rl['five_hour'].get('reset_at') or rl['five_hour'].get('resets_at'), "%H:%M")
-                print(f"  - 5H Quota: {rl['five_hour'].get('used_percentage', 0)}% Used (Resets at {rst})")
-            if "seven_day" in rl:
-                rst = format_reset(rl['seven_day'].get('reset_at') or rl['seven_day'].get('resets_at'), "%m/%d")
-                print(f"  - 7D Quota: {rl['seven_day'].get('used_percentage', 0)}% Used (Resets on {rst})")
-                
-        if "cost" in data:
-            print(f"  - Cost USD: ${data['cost'].get('total_cost_usd', 0):.4f}")
-            
-        # Sessions
-        session_h = health_data.get("session_health", {})
-        if "session_count_today" in session_h:
-            print(f"  - Sessions Today: {session_h.get('session_count_today')}")
+    if effort_val and effort_val.lower() not in model_name.lower() and effort_val != "null":
+        model_name = f"{model_name} ({effort_val})"
+    info["model"] = model_name
+    info["quotas"] = quotas
 
-    print("\n" + "="*60)
-    print("💡 Note: Run '_sys\\cli\\diag.bat' anytime to view this screen.")
-    print("="*60)
+    # Context percentage fallback (only when occupancy is genuinely known)
+    if (info["ctx_pct"] is None and info["ctx_known"]
+            and isinstance(info["ctx_window"], (int, float)) and info["ctx_window"]):
+        info["ctx_pct"] = round(info["ctx_used"] / info["ctx_window"] * 100, 1)
+    return info
+
+
+# --------------------------------------------------------------------------
+# Rendering
+# --------------------------------------------------------------------------
+
+def _health_label(info):
+    if info["empty"]:
+        return _c("NO DATA", "dim")
+    if info.get("quarantined"):
+        return _c("QUARANTINE", "red", "bold")
+    if info.get("gate") is False:
+        return _c("GATE SHUT", "yellow")
+    if info.get("gate") is True:
+        return _c("OPEN", "green")
+    return _c("?", "dim")
+
+
+def render_summary(infos):
+    print("\n" + "=" * 60)
+    print(_c(" SUMMARY", "bold"))
+    print("=" * 60)
+    header = f"{'PEER':<5} {'GATE':<6} {'MODEL':<24} {'CONTEXT':<14} {'COST':<9} DATA"
+    print(_c(header, "dim"))
+    for info in infos:
+        peer = info["peer"].upper()
+        model = (info["model"] or "Unknown")
+        if len(model) > 24:
+            model = model[:21] + "..."
+        cost = f"${info['cost']:.4f}" if isinstance(info["cost"], (int, float)) else "-"
+        # Pad on the raw cells, then colorize gate separately to keep alignment.
+        gate_raw = "OPEN" if info.get("gate") else ("QUAR" if info.get("quarantined")
+                                                    else ("SHUT" if info.get("gate") is False else "n/a"))
+        line = f"{peer:<5} {gate_raw:<6} {model:<24} {_ctx_cell_raw(info):<14} {cost:<9} {info['source']}"
+        print(line)
+
+
+def _ctx_cell_raw(info):
+    win = _short(info["ctx_window"])
+    if not info.get("ctx_known"):
+        return f"?/{win}"
+    used = _short(info["ctx_used"])
+    pct = f"{info['ctx_pct']:.0f}%" if isinstance(info["ctx_pct"], (int, float)) else "--"
+    return f"{used}/{win} {pct}"
+
+
+def render_card(info):
+    peer = info["peer"].upper()
+    print()
+    if info["empty"]:
+        print(f"[ {peer} ] " + _c("(no data found)", "dim"))
+        return
+
+    head_bits = [info["model"] or "Unknown", _health_label(info)]
+    if info.get("agent_state"):
+        head_bits.append(str(info["agent_state"]).upper())
+    if isinstance(info["cost"], (int, float)):
+        head_bits.append(f"${info['cost']:.4f}")
+    print(f"[ {_c(peer, 'bold', 'cyan')} ] " + " | ".join(head_bits))
+    if info.get("plan_tier"):
+        print(_c(f"   Plan: {info['plan_tier']}", "dim"))
+    print("-" * 60)
+
+    # Context bar
+    if not info.get("ctx_known"):
+        print(f" Context : (current occupancy n/a)  window {_short(info['ctx_window'])}")
+    else:
+        cpct = info["ctx_pct"] if isinstance(info["ctx_pct"], (int, float)) else 0
+        bar = _bar(cpct / 100.0)
+        print(f" Context : {bar} {cpct:>4.0f}% ({_short(info['ctx_used'])}/{_short(info['ctx_window'])})")
+
+    # Quota bars
+    if info["quotas"]:
+        width = max(len(q["label"]) for q in info["quotas"])
+        for q in info["quotas"]:
+            color = _sev_color(q["used_frac"])
+            bar = _c(_bar(q["used_frac"]), color)
+            warn = "  " + _c("WARN", "red", "bold") if q["used_frac"] >= 0.90 else ""
+            print(f" {q['label']:<{width}} : {bar} {q['metric']:<10} resets {q['reset']}{warn}")
+    elif info.get("cx_quota_unavailable"):
+        print(_c(" Quota   : (codex app-server unavailable)", "dim"))
+
+    if info.get("quarantine_reason"):
+        print(_c(f" Quarantine reason: {info['quarantine_reason']}", "red"))
+    if info.get("total_tokens"):
+        print(_c(f" Total historical tokens: {info['total_tokens']:,}", "dim"))
+    if info.get("sessions") is not None:
+        print(_c(f" Sessions today: {info['sessions']}", "dim"))
+
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(prog="diag")
+    parser.add_argument("--json", dest="json_mode", action="store_true",
+                        help="emit normalized telemetry JSON")
+    parser.add_argument("--watch", nargs="?", const=5, type=float, metavar="SECONDS",
+                        help="refresh repeatedly; defaults to 5 seconds")
+    parser.add_argument("--interval", type=float, metavar="SECONDS",
+                        help="alias for --watch SECONDS")
+    parser.add_argument("--profiles", action="store_true", help="reserved profile detail view")
+    parser.add_argument("--accounts", action="store_true", help="reserved account detail view")
+    parser.add_argument("--tokens", action="store_true", help="reserved token detail view")
+    parser.add_argument("--sessions", action="store_true", help="reserved session detail view")
+    parser.add_argument("--project", action="store_true", help="reserved project detail view")
+    args = parser.parse_args(argv)
+
+    requested_interval = args.interval if args.interval is not None else args.watch
+    args.watch = requested_interval is not None
+    args.interval = requested_interval
+    if args.watch:
+        if args.interval < 2:
+            parser.error("minimum interval is 2 seconds")
+        if float(args.interval).is_integer():
+            args.interval = int(args.interval)
+    return args
+
+
+_LOCAL_TTL_SEC = 5
+
+
+def _source_meta(kind, observed_at, ttl_sec, confidence):
+    """Normalized source-provenance block (§4)."""
+    return {"kind": kind, "observed_at": observed_at, "ttl_sec": ttl_sec, "confidence": confidence}
+
+
+def normalize_peer(info, now=None):
+    """Map a raw gather_peer() dict into the normalized per-domain telemetry
+    record (§4). Every domain carries source provenance; unknown numerics stay
+    None (never 0). The raw dict is preserved under "raw" for renderers/drill-down."""
+    now = now or datetime.now().astimezone()
+    observed = now.isoformat()
+    raw_src = info.get("source", "none")
+    kind = {"live": "live", "app-server": "live", "health": "cached"}.get(raw_src, "unknown")
+
+    # Context ---------------------------------------------------------------
+    ctx_known = bool(info.get("ctx_known"))
+    window = info.get("ctx_window")
+    pct = info.get("ctx_pct")
+    ctx_conf = "exact" if (ctx_known and kind == "live") else ("last_known" if ctx_known else "unknown")
+    context = {
+        "window_tokens": window if isinstance(window, (int, float)) else None,
+        "used_tokens": info.get("ctx_used") if ctx_known else None,
+        "utilization_pct": pct if isinstance(pct, (int, float)) else None,
+        "source": _source_meta(kind if ctx_known else "unknown", observed, _LOCAL_TTL_SEC, ctx_conf),
+    }
+
+    # Quota (cx quota is fetched from the codex app-server = expensive TTL) --
+    quotas = info.get("quotas", [])
+    expensive = info.get("peer") == "cx" or any(q.get("expensive") for q in quotas)
+    quota = {
+        "buckets": quotas,
+        "source": _source_meta(kind if quotas else "unknown", observed,
+                               EXPENSIVE_SOURCE_TTL_SEC if expensive else _LOCAL_TTL_SEC,
+                               "exact" if quotas else "unknown"),
+    }
+
+    # Cost ------------------------------------------------------------------
+    cost_val = info.get("cost")
+    cost = {
+        "total_cost_usd": cost_val if isinstance(cost_val, (int, float)) else None,
+        "total_tokens": info.get("total_tokens"),
+        "source": _source_meta(kind, observed, _LOCAL_TTL_SEC,
+                               "exact" if isinstance(cost_val, (int, float)) else "unknown"),
+    }
+
+    # Session ---------------------------------------------------------------
+    session = {
+        "state": info.get("agent_state"),
+        "sessions_today": info.get("sessions"),
+        "source": _source_meta("cached", observed, _LOCAL_TTL_SEC,
+                               "last_known" if info.get("sessions") is not None else "unknown"),
+    }
+
+    # Account (redaction of raw identifiers is TDD slice 2) ------------------
+    account = {
+        "plan_tier": info.get("plan_tier"),
+        "source": _source_meta(kind if info.get("plan_tier") else "unknown", observed,
+                               _LOCAL_TTL_SEC, "last_known" if info.get("plan_tier") else "unknown"),
+    }
+
+    # Health / gate ---------------------------------------------------------
+    health = {
+        "gate_open": info.get("gate"),
+        "quarantined": info.get("quarantined"),
+        "source": _source_meta("cached", observed, _LOCAL_TTL_SEC,
+                               "last_known" if not info.get("empty") else "unknown"),
+    }
+
+    return {
+        "peer": info.get("peer"),
+        "model": info.get("model"),
+        "domains": {
+            "context": context, "quota": quota, "cost": cost,
+            "session": session, "account": account, "health": health,
+        },
+        "raw": info,
+    }
+
+
+def collect_snapshot():
+    peers, peer_dirs = _discover_peers()
+    now = datetime.now().astimezone()
+    infos = [gather_peer(p, peer_dirs) for p in peers]
+    return {
+        "schema_version": 1,
+        "observed_at": now.isoformat(),
+        "peers": [normalize_peer(i, now) for i in infos],
+    }
+
+
+def render_dashboard(stdout=None):
+    out = stdout or sys.stdout
+    with redirect_stdout(out):
+        print("=" * 60)
+        print(_c(" Antigravity Collaboration Environment Diagnostics", "bold"))
+        print("=" * 60)
+        print(_c(" Reset times shown in local time. Set NO_COLOR=1 to disable color.", "dim"))
+
+        print("\n[ROOM & HUB STATUS]")
+        out.flush()
+        hub_py = SYS_DIR / "core" / "hub.py"
+        if hub_py.exists():
+            subprocess.run(["python", str(hub_py), "status"], stdout=out)
+        else:
+            print("hub.py not found.")
+
+        snapshot = collect_snapshot()
+        infos = [p["raw"] for p in snapshot["peers"]]
+        render_summary(infos)
+
+        print("\n" + "=" * 60)
+        print(_c(" PEER DETAIL", "bold"))
+        print("=" * 60)
+        for info in infos:
+            render_card(info)
+
+        print("\n" + "=" * 60)
+        print(_c(" Note: run '_sys\\cli\\diag' (or diag.bat) anytime to view this screen.", "dim"))
+        print("=" * 60)
+
+
+def emit_json_snapshot(stdout=None):
+    out = stdout or sys.stdout
+    out.write(json.dumps(collect_snapshot(), ensure_ascii=False, sort_keys=True) + "\n")
+    out.flush()
+
+
+def run_watch(interval=5, json_mode=False, stdout=None, sleep=time.sleep, max_frames=None):
+    out = stdout or sys.stdout
+    frames = 0
+    try:
+        while max_frames is None or frames < max_frames:
+            if json_mode:
+                emit_json_snapshot(out)
+            else:
+                if hasattr(out, "isatty") and out.isatty():
+                    out.write("\033[2J\033[H")
+                render_dashboard(out)
+                out.flush()
+            frames += 1
+            if max_frames is not None and frames >= max_frames:
+                break
+            sleep(interval)
+    except KeyboardInterrupt:
+        return 130
+    return 0
+
+
+def main(argv=None, stdout=None):
+    args = parse_args(argv)
+    out = stdout or sys.stdout
+    if args.watch:
+        return run_watch(interval=args.interval, json_mode=args.json_mode, stdout=out)
+    if args.json_mode:
+        emit_json_snapshot(out)
+        return 0
+    render_dashboard(out)
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

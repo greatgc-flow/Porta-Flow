@@ -39,7 +39,14 @@ class HubLogger:
 
     def __init__(self, config_path: Path | None = None) -> None:
         self._cfg = self._load_config(config_path or _CONFIG_PATH)
-        self._log_dir = _SYS_DIR.parent / self._cfg.get("log_dir", "_sys/data/logs")
+        # HUB_LOG_DIR lets tests (and sandboxed runs) redirect logs away from the
+        # tracked _sys/data/logs tree, preventing test fixtures from polluting
+        # production logs. Falls back to the config/default repo path.
+        env_dir = os.environ.get("HUB_LOG_DIR")
+        if env_dir:
+            self._log_dir = Path(env_dir)
+        else:
+            self._log_dir = _SYS_DIR.parent / self._cfg.get("log_dir", "_sys/data/logs")
         self._log_dir.mkdir(parents=True, exist_ok=True)
 
     # ── Config ────────────────────────────────────────────────────────────────
