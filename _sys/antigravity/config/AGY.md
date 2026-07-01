@@ -20,7 +20,8 @@ models, permissions, and roles are defined in `_sys/ai/orchestration.json`.
   conversation id (the `conversations/*.db` name) and IGNORES an injected
   `--conversation <uuid>`, and does not expose that id to `-p`/`status.json`. So each
   IPC `-p` ask is effectively fresh; `AgyAdapter.extract_session_id` returns `None`
-  (persists nothing). `agy -p` is also impractically slow for IPC. (cc/cx do reuse.)
+  (persists nothing). (agy -p works via the hub's winpty console — a console is
+  required; it only hangs in a headless no-console harness. cc/cx do reuse.)
 - **Durable home (verified 2026-07-01):** ag uses the durable `AGY_CONFIG_HOME=config` home. There is **no** clean/stateless `ipc-config` home — `ipc_stateless_home` is not configured (earlier design, inactive).
 
 ## Profile Defaults

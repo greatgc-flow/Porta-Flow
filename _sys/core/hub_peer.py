@@ -675,7 +675,8 @@ class AgyAdapter(BaseAdapter):
         an injected `--conversation <uuid>`; it does not surface that id to -p
         output or status.json. Returning None keeps the general lifecycle honest
         (no false 'session stored') instead of persisting an id agy won't resume.
-        (agy -p is also impractically slow for IPC — separate concern.)"""
+        (agy runs fine via the hub's winpty console; capturing agy's real id to
+        enable reuse is a possible future improvement — see peer-cli-reference.md.)"""
         return None
 
     def context_policy(self, node: dict[str, Any]) -> ContextPolicy:

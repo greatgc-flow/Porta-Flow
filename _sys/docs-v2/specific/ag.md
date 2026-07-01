@@ -24,10 +24,14 @@ agy --dangerously-skip-permissions -p {query} --print-timeout 60m
   IPC path. Direct CLI tests showed agy **assigns its own conversation id** (the
   `conversations/*.db` name) and **ignores an injected `--conversation <uuid>`**; that
   real id is not surfaced to `-p` output or `status.json` (only in `brain/`/`log/`).
-  So there is no reusable id to capture — `AgyAdapter.extract_session_id` returns
-  `None` (the general lifecycle persists nothing for ag). `agy -p` is also
-  impractically slow for IPC (multi-minute). Collaboration context must travel in the
-  ask envelope. (cc/cx DO reuse — see their specifics.)
+  So the injected uuid isn't reusable — `AgyAdapter.extract_session_id` returns
+  `None` (the general lifecycle persists nothing for ag). Collaboration context must
+  travel in the ask envelope. (cc/cx DO reuse.)
+  - **Console requirement (not slowness):** agy needs a console — fine via the hub's
+    winpty (short asks ~13–26 s) and interactively; it only hangs in a headless
+    no-console harness. An earlier "agy -p multi-minute" note was that artifact and is
+    retracted. Reuse is implementable if we capture agy's REAL id (revisit) — see
+    `ops/peer-cli-reference.md §3`.
 
 ## Runtime Profiles
 | Profile | Runtime model |
