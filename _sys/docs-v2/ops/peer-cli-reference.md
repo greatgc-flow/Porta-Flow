@@ -186,6 +186,18 @@ resume flag is peer-specific (matrix above).
 - **cc** — the uuid the hub set via `--session-id` on turn 1 (claude honors it; `--resume` finds it), cwd+`CLAUDE_CONFIG_DIR`-scoped.
 - **ag** — agy's own id, captured as the newest `conversations/<id>.db` stem.
 
+**Resume-failure recovery (stale/invalid stored id) — same NET result, different site:**
+- **cx / cc (non-PTY path):** the hub detects a failed resume (nonzero exit on a
+  resume attempt), classifies it (`_classify_resume_failure`), and on *permanent*
+  failure **retires the session and retries fresh**; *transient* keeps it for retry.
+- **ag (PTY path):** the hub has **no** explicit resume-failure branch — and does not
+  need one: agy **silently ignores an unknown `--conversation <id>` and starts fresh**
+  (verified), so the ask still succeeds (exit 0) and `extract_session_id` re-captures
+  the new `.db` id → self-heals. Net effect (failed resume → fresh + continue) matches
+  cc/cx; only the mechanism differs (agy self-recovers vs hub-managed).
+- The rest of the session policy (reuse-enable, scope key, fingerprint-drift retire,
+  new-topic/clear-room clearing, persist lifecycle) is **uniform across all peers**.
+
 ### PATH shadowing (important for programmatic calls)
 `_sys/cli` is first on PATH, so a **bare** `codex`/`agy`/`claude` (and Windows
 `shutil.which("codex")` via PATHEXT → `_sys/cli/codex.bat`) resolves to **our wrapper**,
