@@ -17,7 +17,7 @@ import json
 from pathlib import Path
 import pytest
 
-SYS_DIR = Path(__file__).parent.parent.parent.resolve()  # _sys/
+SYS_DIR = Path(__file__).parent.parent.parent.parent.resolve()  # _sys/
 
 import sys
 if str(SYS_DIR) not in sys.path:

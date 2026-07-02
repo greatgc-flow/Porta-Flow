@@ -1,933 +1,953 @@
 {
-  "_version": "1.2",
-  "_protocol_version": "4.2",
-  "_help": "Universal multi-peer collaboration protocol config. Single source of truth. All peers read this. No hardcoding.",
-  "_updated": "2026-06-18",
-  "_docs_root": "_sys/docs-v2",
-  "_docs_history": "_sys/docs/history",
-  "_peers_voted": [
-    "cc",
-    "ca",
-    "ag",
-    "cx"
-  ],
-  "leader_election": {
-    "enabled": true,
-    "human_interface_peer_stays_fixed": true,
-    "active_coordinator_field": "active_coordinator",
-    "yield_context_threshold_percent": 80,
-    "yield_failure_threshold": 3,
-    "cool_down_seconds": 300,
-    "health_stale_minutes": 120,
-    "allow_failover_on_red": true,
-    "forwarding_mode": "thin_envelope",
-    "single_hop_forwarding_only": true,
-    "election_score": {
-      "capability_match_max": 10,
-      "health_score": {
-        "GREEN": 3,
-        "YELLOW": 1,
-        "STALE": -5,
-        "RED": "blocked"
-      },
-      "continuity_bonus_max": 2,
-      "console_fit_bonus_max": 1,
-      "cost_penalty": {
-        "low": 0,
-        "mid": 1,
-        "high": 2
-      },
-      "cold_start_penalty_max": 1
-    },
-    "human_interface_health_policy": {
-      "healthy": "normal",
-      "degraded": "thin_forwarding_and_concise_local_summary",
-      "rate_limited": "queue_or_manual_console_switch",
-      "auth_blocked": "request_setup_or_reroute_without_forwarding_credentials",
-      "hard_fail": "manual_console_migration_required"
-    },
-    "recommended_console_by_task": {
-      "general_repo_work": "cx",
-      "architecture_policy_review": "cc",
-      "large_context_research": "ag",
-      "shell_operations": "ag",
-      "independent_verification": "ca"
-    },
-    "role_enforcement": {
-      "enabled": true,
-      "scope": "hub_state_mutations",
-      "note": "Direct peer file writes are policy-governed until filesystem hooks/locks enforce them."
-    },
-    "forwarding_contract": {
-      "send_full_history": false,
-      "send_user_query": true,
-      "send_state_refs": true,
-      "auth_and_approval_owner": "human_interface_peer",
-      "credential_forwarding": "forbidden",
-      "coordinator_may_request_approval": true,
-      "preferred_refs": [
-        ".ai/state.json",
-        ".ai/sessions/{room_id}/handoff.md",
-        ".ai/task_registry.json"
-      ],
-      "max_forward_chars": 800
-    },
-    "prompt_templates": {
-      "compact": {
-        "purpose": "Low-tier or short-context peer handoff.",
-        "fields": [
-          "TASK",
-          "INPUT_REFS",
-          "CONSTRAINTS",
-          "DO",
-          "DO_NOT",
-          "OUTPUT_SCHEMA"
-        ]
-      },
-      "standard": {
-        "purpose": "Normal coordinator-to-peer routing.",
-        "fields": [
-          "TASK",
-          "BACKGROUND",
-          "INPUT_REFS",
-          "CONSTRAINTS",
-          "EXPECTED_OUTPUT"
-        ]
-      },
-      "deep_review": {
-        "purpose": "High-tier review when additional context is justified.",
-        "fields": [
-          "TASK",
-          "DECISION_HISTORY",
-          "CHANGED_FILES",
-          "TEST_RESULTS",
-          "OPEN_RISKS",
-          "EXPECTED_OUTPUT"
-        ]
-      }
-    },
-    "reelect_per_task": false,
-    "reelect_per_task_note": "If true, hub.py triggers elect-leader before every ask. Default false (session-scoped)."
-  },
-  "collab_rate": {
-    "current": 10,
-    "review_interval_min": 5,
-    "last_review_ts": null,
-    "risk_table": {
-      "readonly": 0,
-      "workspace": 3,
-      "sys_single": 5,
-      "sys_multi": 8,
-      "constitutional": 10
-    },
-    "r10_semantics": {
-      "requires_unanimous": true,
-      "requires_final_call": true,
-      "offline_abstain_policy": "fail_to_human",
-      "governed_decisions": [
-        "implementation",
-        "protocol_edits",
-        "config_edits"
-      ],
-      "unanimity_requirement": "100% of registered voters must explicitly agree",
-      "abstain_handling": "Offline auto-abstain cannot satisfy unanimity; human override/downgrade is required",
-      "final_call_check": "Mandatory Final Call with explicit ACKs required from all peers before execution",
-      "local_orientation_exemption": "COLLAB_RATE controls governed decisions and side-effecting actions; zero-token local orientation is exempt"
-    },
-    "zero_token_allowlist": [
-      "local_observe",
-      "local_read",
-      "local_validate",
-      "local_classify",
-      "dry_check"
-    ],
-    "operation_classes": {
-      "observe": "exempt",
-      "read": "exempt",
-      "validate": "exempt",
-      "classify": "exempt",
-      "ask": "pre_consensus",
-      "test": "requires_classification",
-      "write": "governed",
-      "execute": "governed"
-    },
-    "effect_classes": {
-      "read_only": {
-        "side_effects": "none",
-        "exempt_at_all_rates": true
-      },
-      "declared_dry_validate": {
-        "side_effects": "none",
-        "exempt_at_all_rates": true,
-        "requires_schema_validated_connector": true
-      },
-      "local_temp_write": {
-        "side_effects": "local_temp_only",
-        "exempt_at_all_rates": false
-      },
-      "governance_write": {
-        "side_effects": "policy_or_handoff_state",
-        "exempt_at_all_rates": false
-      },
-      "workspace_write": {
-        "side_effects": "write_or_execute",
-        "exempt_at_all_rates": false
-      },
-      "process_mutation": {
-        "side_effects": "process_or_external",
-        "exempt_at_all_rates": false
-      },
-      "external_io": {
-        "side_effects": "network_or_external_resource",
-        "exempt_at_all_rates": false
-      }
-    },
-    "connector_declaration": {
-      "dry_declaration_authority": "schema_validated_connector_metadata",
-      "runtime_assertion_rejected": true,
-      "dry_requires": {
-        "effect_class": "declared_dry_validate",
-        "also_allows_effect_class": "read_only",
-        "idempotent": true,
-        "external_io": "none_or_local_only",
-        "workspace_writes": false,
-        "path_scope_declared": true
-      },
-      "unknown_or_missing_metadata_policy": "requires_classification"
-    },
-    "action_policy": {
-      "local_observe": {
-        "description": "Read file/directory contents, inspect environment state",
-        "collab_rate_override": 0
-      },
-      "local_validate": {
-        "description": "Schema validation, declared dry checks (e.g. check-health, check-deps)",
-        "collab_rate_override": 0
-      },
-      "local_classify": {
-        "description": "Categorize risk level and route tasks without semantic action",
-        "collab_rate_override": 0
-      },
-      "peer_ask_non_binding": {
-        "description": "Pre-consensus gathering of facts, info, or objections",
-        "collab_rate_override": 0
-      },
-      "peer_ask_binding": {
-        "description": "Voting/approving or establishing binding consensus decisions",
-        "requires_consensus": true
-      },
-      "run_test_or_command": {
-        "description": "Any execution command or test suite run (defaults to governed/requires classification)",
-        "requires_classification": true
-      }
-    }
-  },
-  "health": {
-    "_note_thresholds": "These measure per-peer active context jsonl size, distinct from global autonomous_maintenance limits.",
-    "thresholds": {
-      "claude": {
-        "green_mb": 0.6,
-        "yellow_mb": 1.2,
-        "unit": "jsonl_mb"
-      },
-      "gemini": {
-        "green_mb": 0.6,
-        "yellow_mb": 1.2,
-        "unit": "jsonl_mb"
-      },
-      "antigravity": {
-        "green_mb": 0.6,
-        "yellow_mb": 1.2,
-        "unit": "jsonl_mb"
-      },
-      "codex": {
-        "green_mb": 0.6,
-        "yellow_mb": 1.2,
-        "unit": "jsonl_mb"
-      }
-    },
-    "failure_warn": 3,
-    "failure_error": 5
-  },
-  "session": {
-    "handoff_staleness_hours": 24,
-    "resume_window_hours": 4,
-    "context_fill_sections": [
-      "GOAL",
-      "PENDING_ISSUES",
-      "KEY_DECISIONS",
-      "ACTIVE_THREADS"
-    ],
-    "full_sections": [
-      "GOAL",
-      "RECENT_COMPLETED",
-      "PENDING_ISSUES",
-      "KEY_DECISIONS",
-      "CONSENSUS_HISTORY",
-      "ACTIVE_THREADS"
-    ]
-  },
-  "consensus": {
-    "r10_voters": [
-      "cc",
-      "ag",
-      "cx"
-    ],
-    "default_voters": [
-      "cc",
-      "ag",
-      "cx"
-    ],
-    "inactive_default_voters": [
-      "ca"
-    ],
-    "inactive_default_note": "gc: tier_suspended 2026-06-19 (IneligibleTierError ??Gemini Code Assist for individuals discontinued). ca: never activated (cc alias). ag activated 2026-06-19 as gc replacement.",
-    "default_proposer": "rotating",
-    "timeout_minutes": 30,
-    "offline_auto_abstain_minutes": 30,
-    "tiebreak_rule": "domain_weight_recommend_to_human",
-    "r10_requires_finalized_for": [
-      "governed_decisions",
-      "side_effecting_implementation",
-      "protocol_edits",
-      "config_edits"
-    ]
-  },
-  "workload": {
-    "capability_registry": {
-      "cc": [
-        "architecture",
-        "implementation",
-        "_sys-scripts",
-        "orchestration",
-        "persistent-memory"
-      ],
-      "ca": [
-        "testing",
-        "verification",
-        "cross-check",
-        "targeted-implementation"
-      ],
-      "ag": [
-        "architecture",
-        "orchestration",
-        "documentation",
-        "large-corpus-analysis",
-        "global-dependency-mapping",
-        "shell-scripts",
-        "quick-cli",
-        "file-ops",
-        "system-orchestration",
-        "real-time-feedback-loop",
-        "image-generation"
-      ],
-      "cx": [
-        "code-generation",
-        "refactoring",
-        "focused-implementation",
-        "code-review",
-        "bug-fixing",
-        "test-authoring",
-        "patch-planning",
-        "repo-local-reasoning",
-        "cli-tooling",
-        "developer-workflow"
-      ]
-    },
-    "fill_depth_multiplier": {
-      "ag": 1,
-      "cc": 1,
-      "ca": 1,
-      "cx": 1
-    },
-    "routing_rules": [
-      {
-        "task_type": "doc",
-        "preferred": [
-          "ag",
-          "cc",
-          "cx"
-        ],
-        "fallback": "first_healthy",
-        "_note": "ag: large-context drafting (gc successor); cc/cx: structured doc generation"
-      },
-      {
-        "task_type": "script",
-        "preferred": [
-          "cc",
-          "ag",
-          "cx"
-        ],
-        "fallback": "first_healthy",
-        "_note": "All active peers support script generation"
-      },
-      {
-        "task_type": "verify",
-        "preferred": [
-          "ag",
-          "cc",
-          "cx"
-        ],
-        "fallback": "first_healthy",
-        "_note": "ag: large-corpus verification (gc successor); cc/cx: contract and test verification"
-      },
-      {
-        "task_type": "code",
-        "preferred": [
-          "cx",
-          "cc",
-          "ag"
-        ],
-        "fallback": "first_healthy",
-        "_note": "cx: patch-first; cc: architecture-aware; ag: zero-shot generation"
-      },
-      {
-        "task_type": "code-review",
-        "preferred": [
-          "cx",
-          "ag",
-          "cc"
-        ],
-        "fallback": "first_healthy",
-        "_note": "cx: diff-level review; ag: cross-file consistency (gc successor); cc: invariant checks"
-      },
-      {
-        "task_type": "large-corpus",
-        "preferred": [
-          "ag",
-          "cc",
-          "cx"
-        ],
-        "fallback": "first_healthy",
-        "_note": "ag: 1M-token context (gc successor); cc/cx: supplemental deep-dive"
-      },
-      {
-        "task_type": "shell-ops",
-        "preferred": [
-          "cc",
-          "cx",
-          "ag"
-        ],
-        "fallback": "first_healthy",
-        "_note": "cc: Bash+PowerShell toolset; cx: workspace-scoped; ag: system-orchestration"
-      }
-    ],
-    "user_communication": {
-      "rule": "any_peer_equal",
-      "note": "Any peer may communicate directly with the Human. No fixed coordinator. Domain expertise guides who leads.",
-      "domain_leads": {
-        "code_review_impl": "cx",
-        "large_doc_analysis": "ag",
-        "shell_interactive": "cc",
-        "architecture_session": "cc",
-        "verification": "cc"
-      }
-    }
-  },
-  "active_constraints": {
-    "forbidden_paths": [],
-    "require_consensus_for": [
-      "_sys/ changes",
-      "PROTOCOL.md edits",
-      "peers.json edits",
-      "protocol.json edits"
-    ],
-    "current_collab_rate": 10,
-    "ipc_query_file_naming": "{peer_id}-{YYYYMMDDHHMMSS}-{rand4}.txt"
-  },
-  "runtime": {
-    "ask_default_timeout_sec": 180,
-    "pty_lease_sec": 300,
-    "quiet_default": false,
-    "output_file_policy": {
-      "enabled": true,
-      "portable_paths_only": true,
-      "default_dir": ".ai/out"
-    },
-    "provenance_logs": {
-      "ask_history": ".ai/ask_history.jsonl",
-      "routing_metrics": ".ai/routing_metrics.jsonl",
-      "compliance_metrics": "_archive/compliance_metrics.jsonl"
-    }
-  },
-  "communication_policy": {
-    "unbounded_semantic_discussion": true,
-    "bounded_transport_required": true,
-    "heartbeat_required_for_long_running": true,
-    "heartbeat_sec": 30,
-    "lease_timeout_sec": 1800,
-    "_note_large_content": "handoff uses HANDOFF_MAX_* truncation instead of file_ref",
-    "out_of_band_direct_writes": {
-      "enforceable_by_hub": false,
-      "policy": "non_compliant_for_governed_artifacts_without_artifact_workflow"
-    },
-    "zombie_timeout_sec": 600,
-    "zombie_profile_map": {
-      "standard": 600,
-      "effort": 600,
-      "deepthink": 900
-    },
-    "_note_zombie_profile_map": "Silence (no-output) window per profile. Peer comms are UNLIMITED in total time and content — ANY output chunk resets this clock, so a peer that keeps streaming is never killed. The window only catches a HANG (zero progress). deepthink=900s (15m): streaming reasoning models never idle that long mid-work, so 15m of silence = hung (was 7200s, which let a stalled deepthink hang ~2h).",
-    "startup_timeout_sec": 90,
-    "_note_startup_timeout": "Pre-first-output stall window. Until a peer emits its first stdout chunk, silence is bounded by this (fast-fail cold stalls); after first output the zombie window applies."
-  },
-  "feedback_loop": {
-    "enabled": true,
-    "path": "feedback.jsonl",
-    "statuses": [
-      "open",
-      "accepted",
-      "in_progress",
-      "done",
-      "rejected"
-    ],
-    "categories": [
-      "protocol",
-      "runtime",
-      "test",
-      "doc",
-      "hygiene",
-      "model-routing",
-      "artifact",
-      "other"
-    ],
-    "schema_version": 1
-  },
-  "artifact_workflow": {
-    "enabled": true,
-    "path": "artifacts.json",
-    "default_mode": "single_owner_merge",
-    "statuses": [
-      "claimed",
-      "draft",
-      "review",
-      "finalized",
-      "abandoned"
-    ],
-    "draft_dir": ".ai/artifacts",
-    "out_of_band_direct_writes": "not_enforceable_by_hub"
-  },
-  "model_profiles": {
-    "strategy": "nested_profiles_generate_runtime_nodes",
-    "canonical_source": "_sys/ai/orchestration.json",
-    "node_id_format": "{peer}.{profile}",
-    "required_profiles": ["standard", "effort", "deepthink"],
-    "dynamic_model_arg_supported": true,
-    "generated_nodes_tracked": false,
-    "note": "Only root peers are tracked. Runtime normalization expands nested profiles into deterministic peer.profile nodes."
-  },
-  "generated_artifacts": {
-    "policy": "Generated launcher outputs are tracked separately from governed source files and must not block consensus unless their generator, stable wrapper, or runtime behavior is affected.",
-    "volatile_outputs": [
-      "_sys/antigravity/config/bin/agentapi.bat"
-    ],
-    "stable_wrappers": [
-      "_sys/cli/agy.bat"
-    ],
-    "source_of_truth": [
-      "_sys/ai/orchestration.json",
-      "_sys/docs/workspace-environment.md"
-    ],
-    "audit_action": "Classify volatile generated drift as informational; review the source of truth and stable wrapper before proposing source edits."
-  },
-  "operational_guard": {
-    "enabled": true,
-    "collab_rate_guard": {
-      "enabled": true,
-      "threshold": 10,
-      "require_finalized_consensus": true,
-      "exempt_actions": [
-        "ask",
-        "ask-coordinator",
-        "read",
-        "mark-read",
-        "check",
-        "status",
-        "check-gate",
-        "consensus-propose",
-        "consensus-vote",
-        "consensus-check",
-        "consensus-sweep",
-        "list-nodes",
-        "discover",
-        "health-check",
-        "health-precheck",
-        "peer-status",
-        "role-status",
-        "context-fill",
-        "preflight",
-        "context-hash",
-        "context-ack",
-        "task-status",
-        "lock-status",
-        "profile-validate",
-        "model-status",
-        "transient-scan",
-        "directive-add",
-        "directive-list",
-        "directive-clear",
-        "peer-recover",
-        "feedback-list",
-        "artifact-status",
-        "init-session",
-        "end-session",
-        "send",
-        "broadcast",
-        "append-handoff",
-        "append-log",
-        "checkpoint",
-        "task-checkpoint",
-        "update-status",
-        "health-update",
-        "report-error",
-        "lessons-list",
-        "lessons-propose",
-        "lessons-activate",
-        "lessons-retire",
-        "lesson-broadcast",
-        "lesson-sweep",
-        "lesson-inject",
-        "thread-new",
-        "thread-append",
-        "thread-react",
-        "proposal-add",
-        "proposal-vote",
-        "proposal-list",
-        "broker-submit",
-        "broker-status"
-      ]
-    },
-    "decision_tier_floor": {
-      "enabled": true,
-      "mutating_hub_actions_min_tier": "effort",
-      "binding_vote_risk_8_plus_min_tier": "deepthink"
-    },
-    "default_shell": "powershell",
-    "no_code_phases": [
-      "discussion",
-      "discussion_no_code",
-      "design_review_no_code",
-      "review_no_code",
-      "planning_no_code"
-    ],
-    "mutating_hub_actions": [
-      "init-session",
-      "end-session",
-      "thread-promote",
-      "update-signatures",
-      "send",
-      "broadcast",
-      "append-log",
-      "archive-file",
-      "update-status",
-      "consensus-propose",
-      "consensus-vote",
-      "consensus-sweep",
-      "register-node",
-      "health-update",
-      "checkpoint",
-      "peer-quarantine",
-      "new-topic",
-      "clear-room",
-      "feedback-add",
-      "feedback-resolve",
-      "artifact-claim",
-      "artifact-finalize",
-      "leader-yield",
-      "elect-leader",
-      "append-handoff",
-      "task-checkpoint",
-      "approval-request",
-      "file-lock",
-      "file-unlock",
-      "lesson-broadcast",
-      "lesson-sweep",
-      "lessons-propose",
-      "lessons-activate",
-      "lessons-retire",
-      "thread-new",
-      "thread-append",
-      "thread-react",
-      "proposal-add",
-      "proposal-vote",
-      "broker-drain"
-    ],
-    "semi_governed_hub_actions": [
-      "leader-claim",
-      "assign-role",
-      "release-role",
-      "task-failover",
-      "health-sweep"
-    ],
-    "semi_governed_rule": "Exempt only when current coordinator or role holder is RED, STALE, rate-limited, or missing (emergency recovery). Normal elective changes require visible proposal and peer verification. All semi-governed changes must write an audit record.",
-    "recovery_hub_actions": [
-      "peer-recover",
-      "report-error",
-      "context-ack",
-      "lease-sweep",
-      "alert-raise",
-      "broker-submit"
-    ],
-    "read_only_hub_actions": [
-      "ask",
-      "ask-all",
-      "ask-stream",
-      "relay",
-      "ask-coordinator",
-      "lease-status",
-      "read",
-      "mark-read",
-      "check",
-      "status",
-      "check-gate",
-      "consensus-check",
-      "list-nodes",
-      "discover",
-      "health-check",
-      "health-precheck",
-      "peer-status",
-      "role-status",
-      "context-fill",
-      "preflight",
-      "context-hash",
-      "context-ack",
-      "task-status",
-      "lock-status",
-      "profile-validate",
-      "model-status",
-      "transient-scan",
-      "directive-add",
-      "directive-list",
-      "directive-clear",
-      "feedback-list",
-      "artifact-status",
-      "lessons-list",
-      "lesson-inject",
-      "proposal-list",
-      "broker-status"
-    ],
-    "phase_action_matrix": {
-      "default": {
-        "mutating_hub_actions": "allow",
-        "semi_governed_hub_actions": "allow",
-        "read_only_hub_actions": "allow",
-        "recovery_hub_actions": "allow",
-        "unknown_actions": "requires_classification"
-      },
-      "no_code": {
-        "mutating_hub_actions": "block",
-        "semi_governed_hub_actions": "requires_classification",
-        "read_only_hub_actions": "allow",
-        "recovery_hub_actions": "allow",
-        "unknown_actions": "requires_classification"
-      }
-    },
-    "allow_missing_phase": true,
-    "missing_phase_policy": "allow_with_warning",
-    "force_tier0_flag": "--force-tier0",
-    "preflight": {
-      "unknown_policy": "requires_classification",
-      "shell_rules": {
-        "powershell": {
-          "blocked_patterns": [
-            {
-              "id": "bash_heredoc",
-              "pattern": "<<\\s*['\\\"]?\\w+['\\\"]?",
-              "reason": "Bash heredoc is not valid PowerShell"
-            },
-            {
-              "id": "bash_export",
-              "pattern": "(^|\\s)export\\s+\\w+=",
-              "reason": "Use $env:NAME='value' in PowerShell"
-            },
-            {
-              "id": "dev_null",
-              "pattern": "/dev/null",
-              "reason": "Use $null or Out-Null in PowerShell"
-            },
-            {
-              "id": "source_activate",
-              "pattern": "(^|\\s)source\\s+\\S+/bin/activate",
-              "reason": "Use Windows venv activation or direct python"
-            }
-          ]
-        }
-      },
-      "mutating_patterns": [
-        {
-          "id": "delete_command",
-          "pattern": "\\b(Remove-Item|rm|del)\\b",
-          "reason": "delete command"
-        },
-        {
-          "id": "move_copy_command",
-          "pattern": "\\b(Move-Item|mv|copy|Copy-Item)\\b",
-          "reason": "file move/copy command"
-        },
-        {
-          "id": "dependency_install",
-          "pattern": "\\b(npm|pip|pnpm|yarn)\\s+(install|add)\\b",
-          "reason": "dependency install"
-        },
-        {
-          "id": "git_mutation",
-          "pattern": "\\bgit\\s+(commit|push|reset|checkout|clean|merge|rebase)\\b",
-          "reason": "git mutation"
-        },
-        {
-          "id": "redirect_write",
-          "pattern": "(^|\\s)(>|>>)(\\s|$)",
-          "reason": "shell redirection write"
-        }
-      ],
-      "read_only_patterns": [
-        {
-          "id": "directory_list",
-          "pattern": "^(Get-ChildItem|dir|ls)\\b"
-        },
-        {
-          "id": "ripgrep",
-          "pattern": "^rg\\b"
-        },
-        {
-          "id": "git_read",
-          "pattern": "^git\\s+(status|diff|show|log)\\b"
-        },
-        {
-          "id": "pytest",
-          "pattern": "^python\\s+-m\\s+pytest\\b"
-        }
-      ]
-    },
-    "context_ack": {
-      "enabled": true,
-      "hash_algorithm": "sha256",
-      "normalize_newlines": true,
-      "sources": [
-        "state.json",
-        "sessions/{room_id}/handoff.md",
-        "../_sys/ai/protocol.json"
-      ]
-    },
-    "error_memory": {
-      "path": "../_sys/data/operational_errors.jsonl",
-      "quarantine_after": 3,
-      "manual_recovery_only": true
-    }
-  },
-  "connector_mappings": {
-    "verify_health": {
-      "intent": "verify_health",
-      "connector": "_sys/cli/msg.bat health-check",
-      "operation_class": "validate",
-      "effect_class": "declared_dry_validate",
-      "action_policy": "exempt",
-      "idempotent": true,
-      "external_io": "none",
-      "cache_policy": "none",
-      "path_scope": "_sys health files",
-      "path_safety": {
-        "portable_only": true,
-        "allow_absolute_paths": false,
-        "allow_unc_paths": false
-      },
-      "exit_code_mapping": {
-        "0": "ok",
-        "1": "warning",
-        "2": "blocked"
-      },
-      "exempt": true
-    },
-    "check_deps": {
-      "intent": "check_deps",
-      "connector": "_sys/checks/check-deps.bat",
-      "operation_class": "validate",
-      "effect_class": "declared_dry_validate",
-      "action_policy": "exempt",
-      "idempotent": true,
-      "external_io": "none",
-      "cache_policy": "none",
-      "path_scope": "_sys dependency metadata",
-      "path_safety": {
-        "portable_only": true,
-        "allow_absolute_paths": false,
-        "allow_unc_paths": false
-      },
-      "exit_code_mapping": {
-        "0": "ok",
-        "1": "warning",
-        "2": "blocked"
-      },
-      "exempt": true
-    },
-    "record_handoff": {
-      "intent": "record_handoff",
-      "connector": "_sys/cli/msg.bat checkpoint",
-      "operation_class": "record",
-      "effect_class": "governance_write",
-      "action_policy": "requires_finalized_consensus",
-      "idempotent": true,
-      "external_io": "none",
-      "cache_policy": "writes_logs",
-      "path_safety": {
-        "portable_only": true,
-        "allow_absolute_paths": false,
-        "allow_unc_paths": false
-      },
-      "exit_code_mapping": {
-        "0": "recorded",
-        "1": "failed"
-      },
-      "note": "Part of consensus connector; governed under consensus finalize rules"
-    },
-    "consensus_finalize": {
-      "intent": "consensus_finalize",
-      "connector": "_sys/cli/msg.bat consensus-vote",
-      "operation_class": "decide",
-      "effect_class": "governance_write",
-      "action_policy": "requires_finalized_consensus",
-      "idempotent": true,
-      "external_io": "none",
-      "cache_policy": "writes_logs",
-      "path_safety": {
-        "portable_only": true,
-        "allow_absolute_paths": false,
-        "allow_unc_paths": false
-      },
-      "exit_code_mapping": {
-        "0": "recorded",
-        "1": "failed"
-      },
-      "note": "Performs transition to finalized state and commits to handoff.md"
-    }
-  },
-  "autonomous_maintenance": {
-    "_doc": "Phase 1 of self-evolution.md: declarative schedule for self_care.py and lifecycle scripts.",
-    "enabled": true,
-    "trigger": "session_start",
-    "schedule": {
-      "on_session_start": [
-        {"step": "health_check", "script": "_sys/checks/self_care.py", "args": ["observe"], "abort_on_fail": false},
-        {"step": "docs_mece_fast", "script": "_sys/checks/check_docs_mece.py", "args": ["--checks", "CHK-01,CHK-02", "--json"], "abort_on_fail": false}
-      ],
-      "on_session_end": [
-        {"step": "self_care_full", "script": "_sys/checks/self_care.py", "args": [], "abort_on_fail": false},
-        {"step": "lesson_graduation", "script": "_sys/checks/self_care.py", "args": ["--lesson-grad-only"], "abort_on_fail": false}
-      ],
-      "periodic_minutes": 0
-    },
-    "health_thresholds": {
-      "_note_health": "These measure total system maintenance/log sizes, distinct from per-peer active context limits.",
-      "jsonl_warn_mb": 80,
-      "jsonl_fail_mb": 150,
-      "consecutive_failure_warn": 3,
-      "consecutive_failure_halt": 5,
-      "context_stale_hours": 2
-    },
-    "escalation": {
-      "on_health_red": "log_and_notify_user",
-      "on_check_fail": "log_only",
-      "on_graduation_fail": "log_only"
-    }
-  }
+    "_version":  "1.2",
+    "_protocol_version":  "4.2",
+    "_help":  "Universal multi-peer collaboration protocol config. Single source of truth. All peers read this. No hardcoding.",
+    "_updated":  "2026-06-18",
+    "_docs_root":  "_sys/docs-v2",
+    "_docs_history":  "_sys/docs/history",
+    "_peers_voted":  [
+                         "cc",
+                         "ca",
+                         "ag",
+                         "cx"
+                     ],
+    "leader_election":  {
+                            "enabled":  true,
+                            "human_interface_peer_stays_fixed":  true,
+                            "active_coordinator_field":  "active_coordinator",
+                            "yield_context_threshold_percent":  80,
+                            "yield_failure_threshold":  3,
+                            "cool_down_seconds":  300,
+                            "health_stale_minutes":  120,
+                            "allow_failover_on_red":  true,
+                            "forwarding_mode":  "thin_envelope",
+                            "single_hop_forwarding_only":  true,
+                            "election_score":  {
+                                                   "capability_match_max":  10,
+                                                   "health_score":  {
+                                                                        "GREEN":  3,
+                                                                        "YELLOW":  1,
+                                                                        "STALE":  -5,
+                                                                        "RED":  "blocked"
+                                                                    },
+                                                   "continuity_bonus_max":  2,
+                                                   "console_fit_bonus_max":  1,
+                                                   "cost_penalty":  {
+                                                                        "low":  0,
+                                                                        "mid":  1,
+                                                                        "high":  2
+                                                                    },
+                                                   "cold_start_penalty_max":  1
+                                               },
+                            "human_interface_health_policy":  {
+                                                                  "healthy":  "normal",
+                                                                  "degraded":  "thin_forwarding_and_concise_local_summary",
+                                                                  "rate_limited":  "queue_or_manual_console_switch",
+                                                                  "auth_blocked":  "request_setup_or_reroute_without_forwarding_credentials",
+                                                                  "hard_fail":  "manual_console_migration_required"
+                                                              },
+                            "recommended_console_by_task":  {
+                                                                "general_repo_work":  "cx",
+                                                                "architecture_policy_review":  "cc",
+                                                                "large_context_research":  "ag",
+                                                                "shell_operations":  "ag",
+                                                                "independent_verification":  "ca"
+                                                            },
+                            "role_enforcement":  {
+                                                     "enabled":  true,
+                                                     "scope":  "hub_state_mutations",
+                                                     "note":  "Direct peer file writes are policy-governed until filesystem hooks/locks enforce them."
+                                                 },
+                            "forwarding_contract":  {
+                                                        "send_full_history":  false,
+                                                        "send_user_query":  true,
+                                                        "send_state_refs":  true,
+                                                        "auth_and_approval_owner":  "human_interface_peer",
+                                                        "credential_forwarding":  "forbidden",
+                                                        "coordinator_may_request_approval":  true,
+                                                        "preferred_refs":  [
+                                                                               ".ai/state.json",
+                                                                               ".ai/sessions/{room_id}/handoff.md",
+                                                                               ".ai/task_registry.json"
+                                                                           ],
+                                                        "max_forward_chars":  800
+                                                    },
+                            "prompt_templates":  {
+                                                     "compact":  {
+                                                                     "purpose":  "Low-tier or short-context peer handoff.",
+                                                                     "fields":  [
+                                                                                    "TASK",
+                                                                                    "INPUT_REFS",
+                                                                                    "CONSTRAINTS",
+                                                                                    "DO",
+                                                                                    "DO_NOT",
+                                                                                    "OUTPUT_SCHEMA"
+                                                                                ]
+                                                                 },
+                                                     "standard":  {
+                                                                      "purpose":  "Normal coordinator-to-peer routing.",
+                                                                      "fields":  [
+                                                                                     "TASK",
+                                                                                     "BACKGROUND",
+                                                                                     "INPUT_REFS",
+                                                                                     "CONSTRAINTS",
+                                                                                     "EXPECTED_OUTPUT"
+                                                                                 ]
+                                                                  },
+                                                     "deep_review":  {
+                                                                         "purpose":  "High-tier review when additional context is justified.",
+                                                                         "fields":  [
+                                                                                        "TASK",
+                                                                                        "DECISION_HISTORY",
+                                                                                        "CHANGED_FILES",
+                                                                                        "TEST_RESULTS",
+                                                                                        "OPEN_RISKS",
+                                                                                        "EXPECTED_OUTPUT"
+                                                                                    ]
+                                                                     }
+                                                 },
+                            "reelect_per_task":  false,
+                            "reelect_per_task_note":  "If true, hub.py triggers elect-leader before every ask. Default false (session-scoped)."
+                        },
+    "collab_rate":  {
+                        "current":  10,
+                        "review_interval_min":  5,
+                        "last_review_ts":  null,
+                        "risk_table":  {
+                                           "readonly":  0,
+                                           "workspace":  3,
+                                           "sys_single":  5,
+                                           "sys_multi":  8,
+                                           "constitutional":  10
+                                       },
+                        "r10_semantics":  {
+                                              "requires_unanimous":  true,
+                                              "requires_final_call":  true,
+                                              "offline_abstain_policy":  "fail_to_human",
+                                              "governed_decisions":  [
+                                                                         "implementation",
+                                                                         "protocol_edits",
+                                                                         "config_edits"
+                                                                     ],
+                                              "unanimity_requirement":  "100% of registered voters must explicitly agree",
+                                              "abstain_handling":  "Offline auto-abstain cannot satisfy unanimity; human override/downgrade is required",
+                                              "final_call_check":  "Mandatory Final Call with explicit ACKs required from all peers before execution",
+                                              "local_orientation_exemption":  "COLLAB_RATE controls governed decisions and side-effecting actions; zero-token local orientation is exempt"
+                                          },
+                        "zero_token_allowlist":  [
+                                                     "local_observe",
+                                                     "local_read",
+                                                     "local_validate",
+                                                     "local_classify",
+                                                     "dry_check"
+                                                 ],
+                        "operation_classes":  {
+                                                  "observe":  "exempt",
+                                                  "read":  "exempt",
+                                                  "validate":  "exempt",
+                                                  "classify":  "exempt",
+                                                  "ask":  "pre_consensus",
+                                                  "test":  "requires_classification",
+                                                  "write":  "governed",
+                                                  "execute":  "governed"
+                                              },
+                        "effect_classes":  {
+                                               "read_only":  {
+                                                                 "side_effects":  "none",
+                                                                 "exempt_at_all_rates":  true
+                                                             },
+                                               "declared_dry_validate":  {
+                                                                             "side_effects":  "none",
+                                                                             "exempt_at_all_rates":  true,
+                                                                             "requires_schema_validated_connector":  true
+                                                                         },
+                                               "local_temp_write":  {
+                                                                        "side_effects":  "local_temp_only",
+                                                                        "exempt_at_all_rates":  false
+                                                                    },
+                                               "governance_write":  {
+                                                                        "side_effects":  "policy_or_handoff_state",
+                                                                        "exempt_at_all_rates":  false
+                                                                    },
+                                               "workspace_write":  {
+                                                                       "side_effects":  "write_or_execute",
+                                                                       "exempt_at_all_rates":  false
+                                                                   },
+                                               "process_mutation":  {
+                                                                        "side_effects":  "process_or_external",
+                                                                        "exempt_at_all_rates":  false
+                                                                    },
+                                               "external_io":  {
+                                                                   "side_effects":  "network_or_external_resource",
+                                                                   "exempt_at_all_rates":  false
+                                                               }
+                                           },
+                        "connector_declaration":  {
+                                                      "dry_declaration_authority":  "schema_validated_connector_metadata",
+                                                      "runtime_assertion_rejected":  true,
+                                                      "dry_requires":  {
+                                                                           "effect_class":  "declared_dry_validate",
+                                                                           "also_allows_effect_class":  "read_only",
+                                                                           "idempotent":  true,
+                                                                           "external_io":  "none_or_local_only",
+                                                                           "workspace_writes":  false,
+                                                                           "path_scope_declared":  true
+                                                                       },
+                                                      "unknown_or_missing_metadata_policy":  "requires_classification"
+                                                  },
+                        "action_policy":  {
+                                              "local_observe":  {
+                                                                    "description":  "Read file/directory contents, inspect environment state",
+                                                                    "collab_rate_override":  0
+                                                                },
+                                              "local_validate":  {
+                                                                     "description":  "Schema validation, declared dry checks (e.g. check-health, check-deps)",
+                                                                     "collab_rate_override":  0
+                                                                 },
+                                              "local_classify":  {
+                                                                     "description":  "Categorize risk level and route tasks without semantic action",
+                                                                     "collab_rate_override":  0
+                                                                 },
+                                              "peer_ask_non_binding":  {
+                                                                           "description":  "Pre-consensus gathering of facts, info, or objections",
+                                                                           "collab_rate_override":  0
+                                                                       },
+                                              "peer_ask_binding":  {
+                                                                       "description":  "Voting/approving or establishing binding consensus decisions",
+                                                                       "requires_consensus":  true
+                                                                   },
+                                              "run_test_or_command":  {
+                                                                          "description":  "Any execution command or test suite run (defaults to governed/requires classification)",
+                                                                          "requires_classification":  true
+                                                                      }
+                                          }
+                    },
+    "health":  {
+                   "_note_thresholds":  "These measure per-peer active context jsonl size, distinct from global autonomous_maintenance limits.",
+                   "thresholds":  {
+                                      "claude":  {
+                                                     "green_mb":  0.6,
+                                                     "yellow_mb":  1.2,
+                                                     "unit":  "jsonl_mb"
+                                                 },
+                                      "gemini":  {
+                                                     "green_mb":  0.6,
+                                                     "yellow_mb":  1.2,
+                                                     "unit":  "jsonl_mb"
+                                                 },
+                                      "antigravity":  {
+                                                          "green_mb":  0.6,
+                                                          "yellow_mb":  1.2,
+                                                          "unit":  "jsonl_mb"
+                                                      },
+                                      "codex":  {
+                                                    "green_mb":  0.6,
+                                                    "yellow_mb":  1.2,
+                                                    "unit":  "jsonl_mb"
+                                                }
+                                  },
+                   "failure_warn":  3,
+                   "failure_error":  5
+               },
+    "session":  {
+                    "handoff_staleness_hours":  24,
+                    "resume_window_hours":  4,
+                    "context_fill_sections":  [
+                                                  "GOAL",
+                                                  "PENDING_ISSUES",
+                                                  "KEY_DECISIONS",
+                                                  "ACTIVE_THREADS"
+                                              ],
+                    "full_sections":  [
+                                          "GOAL",
+                                          "RECENT_COMPLETED",
+                                          "PENDING_ISSUES",
+                                          "KEY_DECISIONS",
+                                          "CONSENSUS_HISTORY",
+                                          "ACTIVE_THREADS"
+                                      ]
+                },
+    "consensus":  {
+                      "r10_voters":  [
+                                         "cc",
+                                         "ag",
+                                         "cx"
+                                     ],
+                      "default_voters":  [
+                                             "cc",
+                                             "ag",
+                                             "cx"
+                                         ],
+                      "inactive_default_voters":  [
+                                                      "ca"
+                                                  ],
+                      "inactive_default_note":  "gc: tier_suspended 2026-06-19 (IneligibleTierError ??Gemini Code Assist for individuals discontinued). ca: never activated (cc alias). ag activated 2026-06-19 as gc replacement.",
+                      "default_proposer":  "rotating",
+                      "timeout_minutes":  30,
+                      "offline_auto_abstain_minutes":  30,
+                      "tiebreak_rule":  "domain_weight_recommend_to_human",
+                      "r10_requires_finalized_for":  [
+                                                         "governed_decisions",
+                                                         "side_effecting_implementation",
+                                                         "protocol_edits",
+                                                         "config_edits"
+                                                     ]
+                  },
+    "workload":  {
+                     "capability_registry":  {
+                                                 "cc":  [
+                                                            "architecture",
+                                                            "implementation",
+                                                            "_sys-scripts",
+                                                            "orchestration",
+                                                            "persistent-memory"
+                                                        ],
+                                                 "ca":  [
+                                                            "testing",
+                                                            "verification",
+                                                            "cross-check",
+                                                            "targeted-implementation"
+                                                        ],
+                                                 "ag":  [
+                                                            "architecture",
+                                                            "orchestration",
+                                                            "documentation",
+                                                            "large-corpus-analysis",
+                                                            "global-dependency-mapping",
+                                                            "shell-scripts",
+                                                            "quick-cli",
+                                                            "file-ops",
+                                                            "system-orchestration",
+                                                            "real-time-feedback-loop",
+                                                            "image-generation"
+                                                        ],
+                                                 "cx":  [
+                                                            "code-generation",
+                                                            "refactoring",
+                                                            "focused-implementation",
+                                                            "code-review",
+                                                            "bug-fixing",
+                                                            "test-authoring",
+                                                            "patch-planning",
+                                                            "repo-local-reasoning",
+                                                            "cli-tooling",
+                                                            "developer-workflow"
+                                                        ]
+                                             },
+                     "fill_depth_multiplier":  {
+                                                   "ag":  1,
+                                                   "cc":  1,
+                                                   "ca":  1,
+                                                   "cx":  1
+                                               },
+                     "routing_rules":  [
+                                           {
+                                               "task_type":  "doc",
+                                               "preferred":  [
+                                                                 "ag",
+                                                                 "cc",
+                                                                 "cx"
+                                                             ],
+                                               "fallback":  "first_healthy",
+                                               "_note":  "ag: large-context drafting (gc successor); cc/cx: structured doc generation"
+                                           },
+                                           {
+                                               "task_type":  "script",
+                                               "preferred":  [
+                                                                 "cc",
+                                                                 "ag",
+                                                                 "cx"
+                                                             ],
+                                               "fallback":  "first_healthy",
+                                               "_note":  "All active peers support script generation"
+                                           },
+                                           {
+                                               "task_type":  "verify",
+                                               "preferred":  [
+                                                                 "ag",
+                                                                 "cc",
+                                                                 "cx"
+                                                             ],
+                                               "fallback":  "first_healthy",
+                                               "_note":  "ag: large-corpus verification (gc successor); cc/cx: contract and test verification"
+                                           },
+                                           {
+                                               "task_type":  "code",
+                                               "preferred":  [
+                                                                 "cx",
+                                                                 "cc",
+                                                                 "ag"
+                                                             ],
+                                               "fallback":  "first_healthy",
+                                               "_note":  "cx: patch-first; cc: architecture-aware; ag: zero-shot generation"
+                                           },
+                                           {
+                                               "task_type":  "code-review",
+                                               "preferred":  [
+                                                                 "cx",
+                                                                 "ag",
+                                                                 "cc"
+                                                             ],
+                                               "fallback":  "first_healthy",
+                                               "_note":  "cx: diff-level review; ag: cross-file consistency (gc successor); cc: invariant checks"
+                                           },
+                                           {
+                                               "task_type":  "large-corpus",
+                                               "preferred":  [
+                                                                 "ag",
+                                                                 "cc",
+                                                                 "cx"
+                                                             ],
+                                               "fallback":  "first_healthy",
+                                               "_note":  "ag: 1M-token context (gc successor); cc/cx: supplemental deep-dive"
+                                           },
+                                           {
+                                               "task_type":  "shell-ops",
+                                               "preferred":  [
+                                                                 "cc",
+                                                                 "cx",
+                                                                 "ag"
+                                                             ],
+                                               "fallback":  "first_healthy",
+                                               "_note":  "cc: Bash+PowerShell toolset; cx: workspace-scoped; ag: system-orchestration"
+                                           }
+                                       ],
+                     "user_communication":  {
+                                                "rule":  "any_peer_equal",
+                                                "note":  "Any peer may communicate directly with the Human. No fixed coordinator. Domain expertise guides who leads.",
+                                                "domain_leads":  {
+                                                                     "code_review_impl":  "cx",
+                                                                     "large_doc_analysis":  "ag",
+                                                                     "shell_interactive":  "cc",
+                                                                     "architecture_session":  "cc",
+                                                                     "verification":  "cc"
+                                                                 }
+                                            }
+                 },
+    "active_constraints":  {
+                               "forbidden_paths":  [
+
+                                                   ],
+                               "require_consensus_for":  [
+                                                             "_sys/ changes",
+                                                             "PROTOCOL.md edits",
+                                                             "peers.json edits",
+                                                             "protocol.json edits"
+                                                         ],
+                               "current_collab_rate":  10,
+                               "ipc_query_file_naming":  "{peer_id}-{YYYYMMDDHHMMSS}-{rand4}.txt"
+                           },
+    "runtime":  {
+                    "ask_default_timeout_sec":  180,
+                    "pty_lease_sec":  300,
+                    "quiet_default":  false,
+                    "output_file_policy":  {
+                                               "enabled":  true,
+                                               "portable_paths_only":  true,
+                                               "default_dir":  ".ai/out"
+                                           },
+                    "provenance_logs":  {
+                                            "ask_history":  ".ai/ask_history.jsonl",
+                                            "routing_metrics":  ".ai/routing_metrics.jsonl",
+                                            "compliance_metrics":  "_archive/compliance_metrics.jsonl"
+                                        }
+                },
+    "communication_policy":  {
+                                 "unbounded_semantic_discussion":  true,
+                                 "bounded_transport_required":  true,
+                                 "heartbeat_required_for_long_running":  true,
+                                 "heartbeat_sec":  30,
+                                 "lease_timeout_sec":  1800,
+                                 "_note_large_content":  "handoff uses HANDOFF_MAX_* truncation instead of file_ref",
+                                 "out_of_band_direct_writes":  {
+                                                                   "enforceable_by_hub":  false,
+                                                                   "policy":  "non_compliant_for_governed_artifacts_without_artifact_workflow"
+                                                               },
+                                 "zombie_timeout_sec":  600,
+                                 "zombie_profile_map":  {
+                                                            "standard":  600,
+                                                            "effort":  600,
+                                                            "deepthink":  900
+                                                        },
+                                 "_note_zombie_profile_map":  "Silence (no-output) window per profile. Peer comms are UNLIMITED in total time and content ??ANY output chunk resets this clock, so a peer that keeps streaming is never killed. The window only catches a HANG (zero progress). deepthink=900s (15m): streaming reasoning models never idle that long mid-work, so 15m of silence = hung (was 7200s, which let a stalled deepthink hang ~2h).",
+                                 "startup_timeout_sec":  90,
+                                 "_note_startup_timeout":  "Pre-first-output stall window. Until a peer emits its first stdout chunk, silence is bounded by this (fast-fail cold stalls); after first output the zombie window applies."
+                             },
+    "feedback_loop":  {
+                          "enabled":  true,
+                          "path":  "feedback.jsonl",
+                          "statuses":  [
+                                           "open",
+                                           "accepted",
+                                           "in_progress",
+                                           "done",
+                                           "rejected"
+                                       ],
+                          "categories":  [
+                                             "protocol",
+                                             "runtime",
+                                             "test",
+                                             "doc",
+                                             "hygiene",
+                                             "model-routing",
+                                             "artifact",
+                                             "other"
+                                         ],
+                          "schema_version":  1
+                      },
+    "artifact_workflow":  {
+                              "enabled":  true,
+                              "path":  "artifacts.json",
+                              "default_mode":  "single_owner_merge",
+                              "statuses":  [
+                                               "claimed",
+                                               "draft",
+                                               "review",
+                                               "finalized",
+                                               "abandoned"
+                                           ],
+                              "draft_dir":  ".ai/artifacts",
+                              "out_of_band_direct_writes":  "not_enforceable_by_hub"
+                          },
+    "model_profiles":  {
+                           "strategy":  "nested_profiles_generate_runtime_nodes",
+                           "canonical_source":  "_sys/ai/orchestration.json",
+                           "node_id_format":  "{peer}.{profile}",
+                           "required_profiles":  [
+                                                     "standard",
+                                                     "effort",
+                                                     "deepthink"
+                                                 ],
+                           "dynamic_model_arg_supported":  true,
+                           "generated_nodes_tracked":  false,
+                           "note":  "Only root peers are tracked. Runtime normalization expands nested profiles into deterministic peer.profile nodes."
+                       },
+    "generated_artifacts":  {
+                                "policy":  "Generated launcher outputs are tracked separately from governed source files and must not block consensus unless their generator, stable wrapper, or runtime behavior is affected.",
+                                "volatile_outputs":  [
+                                                         "_sys/antigravity/config/bin/agentapi.bat"
+                                                     ],
+                                "stable_wrappers":  [
+                                                        "_sys/cli/agy.bat"
+                                                    ],
+                                "source_of_truth":  [
+                                                        "_sys/ai/orchestration.json",
+                                                        "_sys/docs/workspace-environment.md"
+                                                    ],
+                                "audit_action":  "Classify volatile generated drift as informational; review the source of truth and stable wrapper before proposing source edits."
+                            },
+    "operational_guard":  {
+                              "enabled":  true,
+                              "collab_rate_guard":  {
+                                                        "enabled":  true,
+                                                        "threshold":  10,
+                                                        "require_finalized_consensus":  true,
+                                                        "exempt_actions":  [
+                                                                               "ask",
+                                                                               "ask-coordinator",
+                                                                               "read",
+                                                                               "mark-read",
+                                                                               "check",
+                                                                               "status",
+                                                                               "check-gate",
+                                                                               "consensus-propose",
+                                                                               "consensus-vote",
+                                                                               "consensus-check",
+                                                                               "consensus-sweep",
+                                                                               "list-nodes",
+                                                                               "discover",
+                                                                               "health-check",
+                                                                               "health-precheck",
+                                                                               "peer-status",
+                                                                               "role-status",
+                                                                               "context-fill",
+                                                                               "preflight",
+                                                                               "context-hash",
+                                                                               "context-ack",
+                                                                               "task-status",
+                                                                               "lock-status",
+                                                                               "profile-validate",
+                                                                               "model-status",
+                                                                               "transient-scan",
+                                                                               "directive-add",
+                                                                               "directive-list",
+                                                                               "directive-clear",
+                                                                               "peer-recover",
+                                                                               "feedback-list",
+                                                                               "artifact-status",
+                                                                               "init-session",
+                                                                               "end-session",
+                                                                               "send",
+                                                                               "broadcast",
+                                                                               "append-handoff",
+                                                                               "append-log",
+                                                                               "checkpoint",
+                                                                               "task-checkpoint",
+                                                                               "update-status",
+                                                                               "health-update",
+                                                                               "report-error",
+                                                                               "lessons-list",
+                                                                               "lessons-propose",
+                                                                               "lessons-activate",
+                                                                               "lessons-retire",
+                                                                               "lesson-broadcast",
+                                                                               "lesson-sweep",
+                                                                               "lesson-inject",
+                                                                               "thread-new",
+                                                                               "thread-append",
+                                                                               "thread-react",
+                                                                               "proposal-add",
+                                                                               "proposal-vote",
+                                                                               "proposal-list",
+                                                                               "broker-submit",
+                                                                               "broker-status"
+                                                                           ]
+                                                    },
+                              "decision_tier_floor":  {
+                                                          "enabled":  true,
+                                                          "mutating_hub_actions_min_tier":  "effort",
+                                                          "binding_vote_risk_8_plus_min_tier":  "deepthink"
+                                                      },
+                              "default_shell":  "powershell",
+                              "no_code_phases":  [
+                                                     "discussion",
+                                                     "discussion_no_code",
+                                                     "design_review_no_code",
+                                                     "review_no_code",
+                                                     "planning_no_code"
+                                                 ],
+                              "mutating_hub_actions":  [
+                                                           "init-session",
+                                                           "end-session",
+                                                           "thread-promote",
+                                                           "update-signatures",
+                                                           "send",
+                                                           "broadcast",
+                                                           "append-log",
+                                                           "archive-file",
+                                                           "update-status",
+                                                           "consensus-propose",
+                                                           "consensus-vote",
+                                                           "consensus-sweep",
+                                                           "register-node",
+                                                           "health-update",
+                                                           "checkpoint",
+                                                           "peer-quarantine",
+                                                           "new-topic",
+                                                           "clear-room",
+                                                           "feedback-add",
+                                                           "feedback-resolve",
+                                                           "artifact-claim",
+                                                           "artifact-finalize",
+                                                           "leader-yield",
+                                                           "elect-leader",
+                                                           "append-handoff",
+                                                           "task-checkpoint",
+                                                           "approval-request",
+                                                           "file-lock",
+                                                           "file-unlock",
+                                                           "lesson-broadcast",
+                                                           "lesson-sweep",
+                                                           "lessons-propose",
+                                                           "lessons-activate",
+                                                           "lessons-retire",
+                                                           "thread-new",
+                                                           "thread-append",
+                                                           "thread-react",
+                                                           "proposal-add",
+                                                           "proposal-vote",
+                                                           "broker-drain"
+                                                       ],
+                              "semi_governed_hub_actions":  [
+                                                                "leader-claim",
+                                                                "assign-role",
+                                                                "release-role",
+                                                                "task-failover",
+                                                                "health-sweep"
+                                                            ],
+                              "semi_governed_rule":  "Exempt only when current coordinator or role holder is RED, STALE, rate-limited, or missing (emergency recovery). Normal elective changes require visible proposal and peer verification. All semi-governed changes must write an audit record.",
+                              "recovery_hub_actions":  [
+                                                           "peer-recover",
+                                                           "report-error",
+                                                           "context-ack",
+                                                           "lease-sweep",
+                                                           "alert-raise",
+                                                           "broker-submit"
+                                                       ],
+                              "read_only_hub_actions":  [
+                                                            "ask",
+                                                            "ask-all",
+                                                            "ask-stream",
+                                                            "relay",
+                                                            "ask-coordinator",
+                                                            "lease-status",
+                                                            "read",
+                                                            "mark-read",
+                                                            "check",
+                                                            "status",
+                                                            "check-gate",
+                                                            "consensus-check",
+                                                            "list-nodes",
+                                                            "discover",
+                                                            "health-check",
+                                                            "health-precheck",
+                                                            "peer-status",
+                                                            "role-status",
+                                                            "context-fill",
+                                                            "preflight",
+                                                            "context-hash",
+                                                            "context-ack",
+                                                            "task-status",
+                                                            "lock-status",
+                                                            "profile-validate",
+                                                            "model-status",
+                                                            "transient-scan",
+                                                            "directive-add",
+                                                            "directive-list",
+                                                            "directive-clear",
+                                                            "feedback-list",
+                                                            "artifact-status",
+                                                            "lessons-list",
+                                                            "lesson-inject",
+                                                            "proposal-list",
+                                                            "broker-status"
+                                                        ],
+                              "phase_action_matrix":  {
+                                                          "default":  {
+                                                                          "mutating_hub_actions":  "allow",
+                                                                          "semi_governed_hub_actions":  "allow",
+                                                                          "read_only_hub_actions":  "allow",
+                                                                          "recovery_hub_actions":  "allow",
+                                                                          "unknown_actions":  "requires_classification"
+                                                                      },
+                                                          "no_code":  {
+                                                                          "mutating_hub_actions":  "block",
+                                                                          "semi_governed_hub_actions":  "requires_classification",
+                                                                          "read_only_hub_actions":  "allow",
+                                                                          "recovery_hub_actions":  "allow",
+                                                                          "unknown_actions":  "requires_classification"
+                                                                      }
+                                                      },
+                              "allow_missing_phase":  true,
+                              "missing_phase_policy":  "allow_with_warning",
+                              "force_tier0_flag":  "--force-tier0",
+                              "preflight":  {
+                                                "unknown_policy":  "requires_classification",
+                                                "shell_rules":  {
+                                                                    "powershell":  {
+                                                                                       "blocked_patterns":  [
+                                                                                                                "@{id=bash_heredoc; pattern=\u003c\u003c\\s*[\u0027\\\"]?\\w+[\u0027\\\"]?; reason=Bash heredoc is not valid PowerShell}",
+                                                                                                                "@{id=bash_export; pattern=(^|\\s)export\\s+\\w+=; reason=Use $env:NAME=\u0027value\u0027 in PowerShell}",
+                                                                                                                "@{id=dev_null; pattern=/dev/null; reason=Use $null or Out-Null in PowerShell}",
+                                                                                                                "@{id=source_activate; pattern=(^|\\s)source\\s+\\S+/bin/activate; reason=Use Windows venv activation or direct python}"
+                                                                                                            ]
+                                                                                   }
+                                                                },
+                                                "mutating_patterns":  [
+                                                                          {
+                                                                              "id":  "delete_command",
+                                                                              "pattern":  "\\b(Remove-Item|rm|del)\\b",
+                                                                              "reason":  "delete command"
+                                                                          },
+                                                                          {
+                                                                              "id":  "move_copy_command",
+                                                                              "pattern":  "\\b(Move-Item|mv|copy|Copy-Item)\\b",
+                                                                              "reason":  "file move/copy command"
+                                                                          },
+                                                                          {
+                                                                              "id":  "dependency_install",
+                                                                              "pattern":  "\\b(npm|pip|pnpm|yarn)\\s+(install|add)\\b",
+                                                                              "reason":  "dependency install"
+                                                                          },
+                                                                          {
+                                                                              "id":  "git_mutation",
+                                                                              "pattern":  "\\bgit\\s+(commit|push|reset|checkout|clean|merge|rebase)\\b",
+                                                                              "reason":  "git mutation"
+                                                                          },
+                                                                          {
+                                                                              "id":  "redirect_write",
+                                                                              "pattern":  "(^|\\s)(\u003e|\u003e\u003e)(\\s|$)",
+                                                                              "reason":  "shell redirection write"
+                                                                          }
+                                                                      ],
+                                                "read_only_patterns":  [
+                                                                           {
+                                                                               "id":  "directory_list",
+                                                                               "pattern":  "^(Get-ChildItem|dir|ls)\\b"
+                                                                           },
+                                                                           {
+                                                                               "id":  "ripgrep",
+                                                                               "pattern":  "^rg\\b"
+                                                                           },
+                                                                           {
+                                                                               "id":  "git_read",
+                                                                               "pattern":  "^git\\s+(status|diff|show|log)\\b"
+                                                                           },
+                                                                           {
+                                                                               "id":  "pytest",
+                                                                               "pattern":  "^python\\s+-m\\s+pytest\\b"
+                                                                           }
+                                                                       ]
+                                            },
+                              "context_ack":  {
+                                                  "enabled":  true,
+                                                  "hash_algorithm":  "sha256",
+                                                  "normalize_newlines":  true,
+                                                  "sources":  [
+                                                                  "state.json",
+                                                                  "sessions/{room_id}/handoff.md",
+                                                                  "../_sys/ai/protocol.json"
+                                                              ]
+                                              },
+                              "error_memory":  {
+                                                   "path":  "../_sys/data/operational_errors.jsonl",
+                                                   "quarantine_after":  3,
+                                                   "manual_recovery_only":  true
+                                               }
+                          },
+    "connector_mappings":  {
+                               "verify_health":  {
+                                                     "intent":  "verify_health",
+                                                     "connector":  "_sys/cli/msg.bat health-check",
+                                                     "operation_class":  "validate",
+                                                     "effect_class":  "declared_dry_validate",
+                                                     "action_policy":  "exempt",
+                                                     "idempotent":  true,
+                                                     "external_io":  "none",
+                                                     "cache_policy":  "none",
+                                                     "path_scope":  "_sys health files",
+                                                     "path_safety":  {
+                                                                         "portable_only":  true,
+                                                                         "allow_absolute_paths":  false,
+                                                                         "allow_unc_paths":  false
+                                                                     },
+                                                     "exit_code_mapping":  {
+                                                                               "0":  "ok",
+                                                                               "1":  "warning",
+                                                                               "2":  "blocked"
+                                                                           },
+                                                     "exempt":  true
+                                                 },
+                               "check_deps":  {
+                                                  "intent":  "check_deps",
+                                                  "connector":  "_sys/checks/check-deps.bat",
+                                                  "operation_class":  "validate",
+                                                  "effect_class":  "declared_dry_validate",
+                                                  "action_policy":  "exempt",
+                                                  "idempotent":  true,
+                                                  "external_io":  "none",
+                                                  "cache_policy":  "none",
+                                                  "path_scope":  "_sys dependency metadata",
+                                                  "path_safety":  {
+                                                                      "portable_only":  true,
+                                                                      "allow_absolute_paths":  false,
+                                                                      "allow_unc_paths":  false
+                                                                  },
+                                                  "exit_code_mapping":  {
+                                                                            "0":  "ok",
+                                                                            "1":  "warning",
+                                                                            "2":  "blocked"
+                                                                        },
+                                                  "exempt":  true
+                                              },
+                               "record_handoff":  {
+                                                      "intent":  "record_handoff",
+                                                      "connector":  "_sys/cli/msg.bat checkpoint",
+                                                      "operation_class":  "record",
+                                                      "effect_class":  "governance_write",
+                                                      "action_policy":  "requires_finalized_consensus",
+                                                      "idempotent":  true,
+                                                      "external_io":  "none",
+                                                      "cache_policy":  "writes_logs",
+                                                      "path_safety":  {
+                                                                          "portable_only":  true,
+                                                                          "allow_absolute_paths":  false,
+                                                                          "allow_unc_paths":  false
+                                                                      },
+                                                      "exit_code_mapping":  {
+                                                                                "0":  "recorded",
+                                                                                "1":  "failed"
+                                                                            },
+                                                      "note":  "Part of consensus connector; governed under consensus finalize rules"
+                                                  },
+                               "consensus_finalize":  {
+                                                          "intent":  "consensus_finalize",
+                                                          "connector":  "_sys/cli/msg.bat consensus-vote",
+                                                          "operation_class":  "decide",
+                                                          "effect_class":  "governance_write",
+                                                          "action_policy":  "requires_finalized_consensus",
+                                                          "idempotent":  true,
+                                                          "external_io":  "none",
+                                                          "cache_policy":  "writes_logs",
+                                                          "path_safety":  {
+                                                                              "portable_only":  true,
+                                                                              "allow_absolute_paths":  false,
+                                                                              "allow_unc_paths":  false
+                                                                          },
+                                                          "exit_code_mapping":  {
+                                                                                    "0":  "recorded",
+                                                                                    "1":  "failed"
+                                                                                },
+                                                          "note":  "Performs transition to finalized state and commits to handoff.md"
+                                                      }
+                           },
+    "autonomous_maintenance":  {
+                                   "_doc":  "Phase 1 of self-evolution.md: declarative schedule for self_care.py and lifecycle scripts.",
+                                   "enabled":  true,
+                                   "trigger":  "session_start",
+                                   "schedule":  {
+                                                    "on_session_start":  [
+                                                                             {
+                                                                                 "step":  "health_check",
+                                                                                 "script":  "_sys/checks/self_care.py",
+                                                                                 "args":  [
+                                                                                              "observe"
+                                                                                          ],
+                                                                                 "abort_on_fail":  false
+                                                                             },
+                                                                             {
+                                                                                 "step":  "docs_mece_fast",
+                                                                                 "script":  "_sys/checks/check_docs_mece.py",
+                                                                                 "args":  [
+                                                                                              "--checks",
+                                                                                              "CHK-01,CHK-02",
+                                                                                              "--json"
+                                                                                          ],
+                                                                                 "abort_on_fail":  false
+                                                                             }
+                                                                         ],
+                                                    "on_session_end":  [
+                                                                           {
+                                                                               "step":  "self_care_full",
+                                                                               "script":  "_sys/checks/self_care.py",
+                                                                               "args":  [
+
+                                                                                        ],
+                                                                               "abort_on_fail":  false
+                                                                           },
+                                                                           {
+                                                                               "step":  "lesson_graduation",
+                                                                               "script":  "_sys/checks/self_care.py",
+                                                                               "args":  [
+                                                                                            "--lesson-grad-only"
+                                                                                        ],
+                                                                               "abort_on_fail":  false
+                                                                           }
+                                                                       ],
+                                                    "periodic_minutes":  0
+                                                },
+                                   "health_thresholds":  {
+                                                             "_note_health":  "These measure total system maintenance/log sizes, distinct from per-peer active context limits.",
+                                                             "jsonl_warn_mb":  80,
+                                                             "jsonl_fail_mb":  150,
+                                                             "consecutive_failure_warn":  3,
+                                                             "consecutive_failure_halt":  5,
+                                                             "context_stale_hours":  2
+                                                         },
+                                   "escalation":  {
+                                                      "on_health_red":  "log_and_notify_user",
+                                                      "on_check_fail":  "log_only",
+                                                      "on_graduation_fail":  "log_only"
+                                                  }
+                               }
 }

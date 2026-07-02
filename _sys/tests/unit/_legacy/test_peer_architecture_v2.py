@@ -10,7 +10,7 @@ sys.path.insert(0, str(SYS / "core"))
 sys.path.insert(0, str(SYS / "tests"))
 import hub
 import hub_peer
-import benchmark_peer_routing
+# import benchmark_peer_routing
 
 
 def _json(rel):

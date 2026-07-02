@@ -14,9 +14,11 @@ def _mock_proc(stdout=b"ok", stderr=b"", returncode=0):
     proc.pid = 12345
     proc.returncode = returncode
     proc.communicate.return_value = (stdout, stderr)
-    proc.poll.return_value = None
+    proc.poll.return_value = returncode
     proc.stdout = MagicMock()
     proc.stderr = MagicMock()
+    proc.stdout.read.side_effect = [stdout, b""] + [b""] * 50
+    proc.stderr.read.side_effect = [stderr, b""] + [b""] * 50
     return proc
 
 

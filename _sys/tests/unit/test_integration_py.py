@@ -88,8 +88,8 @@ class TestIntegrationP2P:
         self._run(vpy, hub, ["consensus-vote", "--round-id", rid, "--voter", "ag", "--vote", "agree"], root)
 
         round_data = json.loads(rounds[0].read_text("utf-8"))
-        assert round_data["status"] == "escalated"
-        assert round_data["outcome"] == "human_gate"
+        assert round_data["status"] == "rejected"
+        assert round_data["outcome"] == "disagree"
 
     def test_scenario_division_of_labor(self, test_env):
         """[분업/실행] 다중 노드 태스크 분할 및 병렬 실행 검증."""

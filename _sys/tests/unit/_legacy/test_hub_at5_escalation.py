@@ -180,8 +180,8 @@ def _mock_popen_sequence(calls: list[dict], responses: list[dict]):
         proc.pid = 12345 + len(calls)
         proc.returncode = response.get("returncode", 0)
         proc.poll.return_value = proc.returncode
-        proc.stdout.read.return_value = _as_bytes(response.get("stdout", b""))
-        proc.stderr.read.return_value = _as_bytes(response.get("stderr", b""))
+        proc.stdout.read.side_effect = [_as_bytes(response.get("stdout", b"")), b""] + [b""] * 50
+        proc.stderr.read.side_effect = [_as_bytes(response.get("stderr", b"")), b""] + [b""] * 50
 
         def communicate(input=None, timeout=None):
             call["input"] = input
@@ -210,8 +210,8 @@ def _mock_timeout_popen(calls: list[dict]):
         proc.pid = 22222
         proc.returncode = None
         proc.poll.return_value = None
-        proc.stdout.read.return_value = b"[ESCALATE]"
-        proc.stderr.read.return_value = b""
+        proc.stdout.read.side_effect = [b"[ESCALATE]", b""] + [b""] * 50
+        proc.stderr.read.side_effect = [b"", b""] + [b""] * 50
 
         def communicate(input=None, timeout=None):
             call["input"] = input

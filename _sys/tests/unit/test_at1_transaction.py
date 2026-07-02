@@ -22,6 +22,8 @@ def test_at1_lease_closed_on_failure(tmp_path):
         mock_proc = MagicMock()
         mock_proc.pid = 12345
         mock_proc.returncode = 1
+        mock_proc.stdout.read.side_effect = [b"", b""] + [b""] * 50
+        mock_proc.stderr.read.side_effect = [b"", b""] + [b""] * 50
         mock_proc.communicate.return_value = (b"", b"Error!")
         mock_proc.poll.return_value = 1
         mock_popen.return_value = mock_proc
@@ -56,22 +58,23 @@ def test_at1_process_tree_reaped_on_timeout(tmp_path):
     ai_root.mkdir()
     hub.ensure_ai_dir(ai_root)
     
+    import subprocess
     with patch("_sys.core.hub.subprocess.Popen") as mock_popen, \
+         patch("_sys.core.hub._stream_process_output",
+               side_effect=subprocess.TimeoutExpired(cmd=["test"], timeout=1)), \
          patch("_sys.core.hub._kill_process_tree") as mock_kill, \
          patch("_sys.core.hub._record_ask_failure"), \
          patch("_sys.core.hub._append_ask_history"), \
          patch("_sys.core.hub._lease_close"):
-        
-        # Setup mock process that times out immediately
+
+        # Setup mock process that times out immediately (streaming reader raises).
         mock_proc = MagicMock()
         mock_proc.pid = 999
-        import subprocess
-        mock_proc.communicate.side_effect = subprocess.TimeoutExpired(cmd=["test"], timeout=1)
         mock_proc.poll.return_value = None
         # Still-running after timeout → returncode is None → finally MUST reap it.
         mock_proc.returncode = None
         mock_popen.return_value = mock_proc
-        
+
         with pytest.raises(SystemExit) as exc:
             hub.action_ask(
                 to="cc",
@@ -136,6 +139,7 @@ def test_at1_pty_success_not_reaped(tmp_path):
 
     with patch("_sys.core.hub._ask_with_pty") as mock_ask, \
          patch("_sys.core.hub._kill_process_tree") as mock_kill, \
+         patch("_sys.core.hub._ask_health_precheck", lambda *a, **k: None), \
          patch("_sys.core.hub._record_ask_success"), \
          patch("_sys.core.hub._append_ask_history"), \
          patch("_sys.core.hub._lease_close") as mock_lease_close, \
@@ -174,17 +178,18 @@ def test_at1_terminal_timeout_not_permanent_red(tmp_path):
     cc_dir = tmp_path / "cc"
     cc_dir.mkdir()
     
+    import subprocess
     with patch("_sys.core.hub.subprocess.Popen") as mock_popen, \
+         patch("_sys.core.hub._stream_process_output",
+               side_effect=subprocess.TimeoutExpired(cmd=["test"], timeout=1)), \
          patch("_sys.core.hub._kill_process_tree"), \
          patch("_sys.core.hub._append_ask_history"), \
          patch("_sys.core.hub._lease_close"), \
          patch("_sys.core.hub._load_orchestration", return_value={"hub_nodes": [{"type": "peer", "node_id": "cc", "enabled": True}]}), \
          patch("_sys.core.hub._peer_sys_dir", return_value=cc_dir):
-        
-        import subprocess
+
         mock_proc = MagicMock()
         mock_proc.pid = 999
-        mock_proc.communicate.side_effect = subprocess.TimeoutExpired(cmd=["test"], timeout=1)
         mock_proc.poll.return_value = None
         mock_proc.returncode = None
         mock_popen.return_value = mock_proc

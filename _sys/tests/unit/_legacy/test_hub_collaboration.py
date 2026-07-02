@@ -12,8 +12,8 @@ def _make_mock_proc(stdout=b"", stderr=b"", returncode=0):
     mock_proc.returncode = returncode
     mock_proc.communicate.return_value = (stdout, stderr)
     mock_proc.poll.return_value = returncode
-    mock_proc.stdout.read.return_value = stdout
-    mock_proc.stderr.read.return_value = stderr
+    mock_proc.stdout.read.side_effect = [stdout, b""] + [b""] * 50
+    mock_proc.stderr.read.side_effect = [stderr, b""] + [b""] * 50
     return mock_proc
 
 # 1. Test ask quiet mode and output file
@@ -31,10 +31,11 @@ def test_ask_quiet_and_output_file(ai_dir, tmp_path, capsys):
     }
     (ai_dir / "nodes.json").write_text(json.dumps(nodes_cfg), encoding="utf-8")
     
-    mock_proc = _make_mock_proc(stdout=b"mock output response")
-    out_file = tmp_path / "ask_response.txt"
+    def _popen_mock(*args, **kwargs):
+        return _make_mock_proc(stdout=b"mock output response")
 
-    with patch("subprocess.Popen", return_value=mock_proc), \
+    out_file = tmp_path / "ask_response.txt"
+    with patch("subprocess.Popen", side_effect=_popen_mock), \
          patch("hub.is_routable", return_value=True):
         # Test output file with quiet=True
         hub.action_ask("mock_peer", "test query", None, 10, ai_dir, quiet=True, output_file=str(out_file))

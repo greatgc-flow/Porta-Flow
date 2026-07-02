@@ -204,9 +204,13 @@ def _make_mock_proc(stdout=b"", stderr=b"", returncode=0):
     mock_proc.pid = 12345
     mock_proc.returncode = returncode
     mock_proc.communicate.return_value = (stdout, stderr)
-    mock_proc.poll.return_value = None
+    # Streaming reader breaks when poll() is not None AND stdout is drained;
+    # a finished process must report its exit code (not None).
+    mock_proc.poll.return_value = returncode
     mock_proc.stdout = MagicMock()
     mock_proc.stderr = MagicMock()
+    mock_proc.stdout.read.side_effect = [stdout, b""] + [b""] * 50
+    mock_proc.stderr.read.side_effect = [stderr, b""] + [b""] * 50
     return mock_proc
 
 

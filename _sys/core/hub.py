@@ -2195,7 +2195,24 @@ def _matching_peers(needs: str, effort: str = "mid") -> list[dict]:
     continuity_bonus_max = int(election_cfg.get("continuity_bonus_max", 2) or 2)
     console_bonus_max = int(election_cfg.get("console_fit_bonus_max", 1) or 1)
     cold_start_penalty_max = int(election_cfg.get("cold_start_penalty_max", 1) or 1)
+    
+    # Get telemetry for Quota Margin Bonus
+    try:
+        cli_dir = Path(__file__).resolve().parent.parent / "cli"
+        if str(cli_dir) not in sys.path:
+            sys.path.insert(0, str(cli_dir))
+        import diag
+        snapshot = diag.collect_snapshot()
+        telemetry = {p["peer"]: p for p in snapshot.get("peers", [])}
+    except Exception as e:
+        telemetry = {}
+        print(f"[HUB:WARN] Failed to load diag telemetry for quota margin: {e}", file=sys.stderr)
+
     matches: list[dict] = []
+    
+    # AP-20 penalty prep
+    history = state.get("coordinator_history", [])
+    recent_leaders = [h.get("peer") for h in history[-2:]] if len(history) >= 2 else []
     for node_id, node_info in nodes.items():
         status, h_data = _peer_effective_health(node_id)
         if status == "RED":
@@ -2240,7 +2257,34 @@ def _matching_peers(needs: str, effort: str = "mid") -> list[dict]:
         cost_penalty = int(cost_penalty_cfg.get(cost_tier, 1) or 0)
         session_count = h_data.get("session_health", {}).get("session_count_today")
         cold_start_penalty = cold_start_penalty_max if session_count == 0 else 0
-        score = capability_score + health_score + continuity_bonus + console_bonus - cost_penalty - cold_start_penalty
+        
+        # Quota Margin Bonus calculation
+        quota_margin_bonus = 0
+        peer_telem = telemetry.get(node_id, {})
+        buckets = peer_telem.get("domains", {}).get("quota", {}).get("buckets", [])
+        if buckets:
+            max_used = max(b.get("used_frac", 0.0) for b in buckets)
+            margin = 1.0 - max_used
+            if margin <= 0.0:
+                # 0% (Exhausted): HARD_CLOSED
+                continue
+            elif margin >= 0.90:
+                quota_margin_bonus = 3
+            elif margin >= 0.75:
+                quota_margin_bonus = 2
+            elif margin >= 0.50:
+                quota_margin_bonus = 1
+            elif margin >= 0.10:
+                quota_margin_bonus = -1
+            else:
+                quota_margin_bonus = -3
+                
+        # AP-20 recent use penalty
+        recent_use_penalty = 0
+        if len(recent_leaders) == 2 and recent_leaders[0] == node_id and recent_leaders[1] == node_id:
+            recent_use_penalty = 2
+            
+        score = capability_score + health_score + continuity_bonus + console_bonus + quota_margin_bonus - cost_penalty - cold_start_penalty - recent_use_penalty
         matches.append({
             "node_id": node_id,
             "status": status,
@@ -2752,6 +2796,90 @@ def _is_ephemeral_query_file(path: Path) -> bool:
          and re.fullmatch(r"[a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+)*-\d{14}-[a-z0-9]{4}\.txt", path.name, re.IGNORECASE))
         or re.fullmatch(r"hub-ask-all-[a-z0-9_.-]+-[0-9a-f]{8}\.txt", path.name, re.IGNORECASE)
     )
+
+
+def _stream_process_output(proc, cmd, input_bytes, heartbeat_sec, zombie_timeout_sec,
+                           startup_timeout_sec, timeout_sec, ai_root, to, lease_timeout_sec,
+                           _clock=time.monotonic, _sleep=time.sleep):
+    """Read a subprocess' stdout/stderr INCREMENTALLY via background threads so a
+    streaming peer (e.g. `codex exec --json`, which emits `thread.started` within
+    seconds then reasons for a long time) registers activity. This replaces the old
+    `communicate(timeout=…)` loop, which could not see partial output (exc.output was
+    None) and therefore startup-killed a working-but-slow peer.
+
+    Staged silence guard: BEFORE the first output chunk the (short) startup window
+    applies; AFTER it, the full zombie window applies. Raises subprocess.TimeoutExpired
+    on hard deadline or silence stall. Returns (raw_out: bytes, raw_err: bytes)."""
+    import threading
+
+    if input_bytes is not None and proc.stdin:
+        try:
+            proc.stdin.write(input_bytes)
+            proc.stdin.flush()
+            proc.stdin.close()
+        except Exception:
+            pass
+
+    out_buf = bytearray()
+    err_buf = bytearray()
+    lock = threading.Lock()
+
+    def _drain(stream, buf):
+        if stream is None:
+            return
+        try:
+            while True:
+                chunk = stream.read(65536)
+                if not chunk:
+                    break
+                if isinstance(chunk, str):
+                    chunk = chunk.encode("utf-8", "replace")
+                with lock:
+                    buf.extend(chunk)
+        except Exception:
+            pass
+
+    t_out = threading.Thread(target=_drain, args=(proc.stdout, out_buf), daemon=True)
+    t_err = threading.Thread(target=_drain, args=(proc.stderr, err_buf), daemon=True)
+    t_out.start()
+    t_err.start()
+
+    t0 = _clock()
+    deadline = t0 + (timeout_sec if timeout_sec > 0 else float("inf"))
+    startup_bound = min(startup_timeout_sec, zombie_timeout_sec)
+    last_activity = t0
+    last_renew = t0
+    first_output = False
+    last_len = 0
+    slice_sec = max(0.02, min(0.2, float(heartbeat_sec)))
+
+    while True:
+        now = _clock()
+        if now >= deadline:
+            _kill_process_tree(proc.pid)
+            raise subprocess.TimeoutExpired(cmd, timeout_sec)
+        with lock:
+            cur_len = len(out_buf) + len(err_buf)
+        if cur_len > last_len:
+            last_len = cur_len
+            last_activity = now
+            first_output = True
+        # process finished AND streams fully drained → done
+        if proc.poll() is not None and not t_out.is_alive() and not t_err.is_alive():
+            break
+        bound = zombie_timeout_sec if first_output else startup_bound
+        if now - last_activity >= bound:
+            _kill_process_tree(proc.pid)
+            raise subprocess.TimeoutExpired(cmd, bound)
+        if ai_root and now - last_renew >= heartbeat_sec:
+            _lease_renew(ai_root, to, lease_timeout_sec)
+            last_renew = now
+        _sleep(slice_sec)
+
+    t_out.join(timeout=1.0)
+    t_err.join(timeout=1.0)
+    with lock:
+        return bytes(out_buf), bytes(err_buf)
 
 
 def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai_root: Path | None, quiet: bool = False, output_file: str | None = None, include_context: bool = True, session_policy: str = "auto", explicit_scope: str | None = None, _depth: int = 0, _escalation_depth: int = 0, origin: str = "terminal") -> None:
@@ -3338,51 +3466,16 @@ def action_ask(to: str, query: str, query_file: str | None, timeout_sec: int, ai
         _lease_open(ai_root, to, proc.pid, lease_timeout_sec, ask_id=ask_id, ask_query_file=saved_query_file_path)
 
         input_bytes = query.encode("utf-8") if use_stdin else None
-        deadline = time.monotonic() + (timeout_sec if timeout_sec > 0 else float("inf"))
-        raw_out = b""
-        raw_err = b""
-        # Zombie-process guard: kill after this many consecutive silent heartbeats (no output, alive).
-        # Uses zombie_timeout_sec (separate from lease_timeout_sec) — see communication_policy.
-        # Staged: BEFORE first output the tighter startup window applies (fast-fail a
-        # cold/hung startup); AFTER first output the full zombie window applies.
-        _MAX_SILENT_HEARTBEATS = max(1, zombie_timeout_sec // heartbeat_sec)
-        # startup window never exceeds the zombie window (min guards tiny/test configs)
-        _MAX_STARTUP_SILENT = max(1, min(_startup_timeout_sec(), zombie_timeout_sec) // heartbeat_sec)
-        _silent_beats = 0
-        _last_out_len = 0
-
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                lease_status = "timeout"
-                raise subprocess.TimeoutExpired(cmd, timeout_sec)
-            try:
-                raw_out, raw_err = proc.communicate(input=input_bytes, timeout=min(heartbeat_sec, remaining))
-                break
-            except subprocess.TimeoutExpired as exc:
-                input_bytes = None
-                if proc.poll() is not None:
-                    raw_out = proc.stdout.read() if proc.stdout else b""
-                    raw_err = proc.stderr.read() if proc.stderr else b""
-                    break
-                
-                # BUG-02 fix: Check if the process produced new stdout output during the heartbeat.
-                # If so, reset _silent_beats.
-                current_len = len(exc.output) if exc.output else 0
-                if current_len > _last_out_len:
-                    _silent_beats = 0
-                    _last_out_len = current_len
-                else:
-                    _silent_beats += 1
-
-                _lease_renew(ai_root, to, lease_timeout_sec)
-                # Staged bound: startup window until first output, then zombie window.
-                _max_silent = _MAX_SILENT_HEARTBEATS if _last_out_len > 0 else _MAX_STARTUP_SILENT
-                if _silent_beats >= _max_silent:
-                    # Alive but silent past the applicable window — treat as a stall.
-                    lease_status = "timeout"
-                    _bound = zombie_timeout_sec if _last_out_len > 0 else min(_startup_timeout_sec(), zombie_timeout_sec)
-                    raise subprocess.TimeoutExpired(cmd, _bound)
+        # Incremental streaming read (A-fix): sees a peer's partial output so a slow-but-
+        # working peer (codex xhigh emits thread.started fast then reasons ~minutes) is
+        # NOT startup-killed. Staged silence: startup window until first output, then zombie.
+        try:
+            raw_out, raw_err = _stream_process_output(
+                proc, cmd, input_bytes, heartbeat_sec, zombie_timeout_sec,
+                _startup_timeout_sec(), timeout_sec, ai_root, to, lease_timeout_sec)
+        except subprocess.TimeoutExpired:
+            lease_status = "timeout"
+            raise
 
         elapsed = int(time.monotonic() - t0)
         lease_status = "closed"
@@ -3789,10 +3882,32 @@ def action_ask_coordinator(ai_root: Path, query: str, query_file: str | None, ti
 # ─────────────────────────────────────────────────────────────
 
 def action_consensus_propose(ai_root: Path, subject: str, voters: list[str], proposed_by: str) -> None:
-    snapshot_voters = []
-    for v in voters:
-        if _healthy_peer(v, ai_root=ai_root):
-            snapshot_voters.append(v)
+    MAX_ROUNDS = 3
+    consensus_dir = ai_root / "consensus"
+    consensus_dir.mkdir(parents=True, exist_ok=True)
+    
+    with _get_lock(ai_root, "consensus_propose"):
+        rejected_count = 0
+        for f in consensus_dir.glob("*.json"):
+            try:
+                d = _read_json(f)
+                if d.get("subject") == subject:
+                    if d.get("status") == "voting":
+                        print(f"[HUB:ERR] an active round already exists for subject '{subject}'", file=sys.stderr)
+                        sys.exit(1)
+                    if d.get("status") == "rejected":
+                        rejected_count += 1
+            except Exception:
+                pass
+                
+        if rejected_count >= MAX_ROUNDS:
+            print(f"[HUB:BLOCK] subject '{subject}' has been rejected {MAX_ROUNDS} times. [ESCALATE] to human (MAX_ROUNDS exceeded).", file=sys.stderr)
+            sys.exit(3)
+            
+        snapshot_voters = []
+        for v in voters:
+            if _healthy_peer(v, ai_root=ai_root):
+                snapshot_voters.append(v)
             
     round_id = _short_id("r-")
     data = {"round_id": round_id, "subject": subject, "proposed_by": proposed_by, "proposed_at": _now(), 
@@ -3811,7 +3926,7 @@ def action_consensus_vote(ai_root: Path, round_id: str, voter: str, vote_val: st
     if not rpath.exists(): sys.exit(1)
     with _get_lock(ai_root, f"consensus_{round_id}"):
         data = _read_json(rpath)
-        if data.get("status") in ("finalized", "escalated"):
+        if data.get("status") in ("finalized", "escalated", "rejected"):
             print(f"[HUB:ERR] round {round_id} is already closed", file=sys.stderr)
             sys.exit(1)
         if voter not in data.get("voters", []):
@@ -3825,29 +3940,36 @@ def action_consensus_vote(ai_root: Path, round_id: str, voter: str, vote_val: st
         _log_p2p("VOTE", f"ID={round_id} Vote={vote_val} ({cast}/{total})", from_node=voter)
         print(f"[HUB] VOTE {round_id} | voter={voter} {vote_val} | {cast}/{total}")
         
+        has_disagree_now = any(v is not None and v["vote"] == "disagree" for v in votes.values())
+        
         mid_round_closed = False
         quarantined_voters = []
         for v in data["voters"]:
-            if votes.get(v) is None:
-                st, _ = _peer_effective_health(v, ai_root=ai_root)
-                if st in ("RED", "STALE"):
-                    mid_round_closed = True
-                    quarantined_voters.append(v)
-        
-        if cast == total or total < 2 or mid_round_closed:
-            has_disagree = any(v is not None and v["vote"] == "disagree" for v in votes.values())
+            st, _ = _peer_effective_health(v, ai_root=ai_root)
+            if st in ("RED", "STALE"):
+                mid_round_closed = True
+                quarantined_voters.append(v)
+                
+        if has_disagree_now or cast == total or total < 2 or mid_round_closed:
+            has_disagree = has_disagree_now
             has_agree = any(v is not None and v["vote"] == "agree" for v in votes.values())
             all_agree = (cast == total) and all(v is not None and v["vote"] == "agree" for v in votes.values())
             
             proposer = data.get("proposed_by", "")
             non_proposer_agrees = sum(1 for v_name, v_dict in votes.items() if v_dict is not None and v_dict["vote"] == "agree" and v_name != proposer)
-            if total < 2:
+            
+            current_collab_rate = int(_load_protocol_cfg().get("collab_rate", {}).get("current", 0) or 0)
+            
+            if has_disagree:
+                data["status"] = "rejected"
+                data["outcome"] = "disagree"
+            elif total < 2:
                 data["status"] = "escalated"
                 data["outcome"] = "human_gate"
             elif mid_round_closed:
                 data["status"] = "escalated"
                 data["outcome"] = "human_gate"
-            elif has_disagree:
+            elif not has_agree:
                 data["status"] = "escalated"
                 data["outcome"] = "human_gate"
             elif has_agree and non_proposer_agrees == 0:
@@ -3857,8 +3979,12 @@ def action_consensus_vote(ai_root: Path, round_id: str, voter: str, vote_val: st
                 data["status"] = "finalized"
                 data["outcome"] = "unanimous"
             else:
-                data["status"] = "finalized"
-                data["outcome"] = "abstain"
+                if current_collab_rate >= 10:
+                    data["status"] = "escalated"
+                    data["outcome"] = "human_gate_unanimity_failed"
+                else:
+                    data["status"] = "finalized"
+                    data["outcome"] = "majority"
             _write_json(rpath, data)
             _log_p2p("DECISION", f"ID={round_id} Status={data['status'].upper()} Outcome={data['outcome']}", from_node="SYSTEM")
             print(f"[HUB] DECISION {round_id} {data['status'].upper()} | {data['outcome']}")
@@ -4631,6 +4757,7 @@ def _guard_action(ai_root: Path, action: str, force_tier0: bool = False, origin:
             _block(f"PRO-19: terminal/router cannot execute '{action}'. This is a governance-mutating action. "
                    f"[ESCALATE] Use --force-tier0 if you are exercising Tier-0 human authority (INV-03).")
 
+    if action not in _SYSTEM_EXEMPT_ACTIONS:
         tier_floor = cfg.get("decision_tier_floor", {})
         if tier_floor.get("enabled", False) and _is_mutating_action(action):
             _log_p2p("BLOCK", f"PRO-19/C2: tier-floor violation for action '{action}'", from_node="GUARD")
@@ -4703,6 +4830,8 @@ def _classify_command(cmd: str, shell: str | None = None) -> dict:
         "reason": preflight.get("unknown_policy", "requires_classification"),
     }
     for rule in preflight.get("shell_rules", {}).get(active_shell, {}).get("blocked_patterns", []):
+        if isinstance(rule, str):
+            rule = {"pattern": rule, "id": "blocked_str", "reason": "shell mismatch"}
         if _regex_match(rule.get("pattern", ""), command):
             result.update({
                 "classification": "blocked_shell_mismatch",
@@ -4711,6 +4840,8 @@ def _classify_command(cmd: str, shell: str | None = None) -> dict:
             })
             return result
     for rule in preflight.get("mutating_patterns", []):
+        if isinstance(rule, str):
+            rule = {"pattern": rule, "id": "mutating_str", "reason": "mutating command"}
         if _regex_match(rule.get("pattern", ""), command):
             result.update({
                 "classification": "mutating",
@@ -4719,6 +4850,8 @@ def _classify_command(cmd: str, shell: str | None = None) -> dict:
             })
             return result
     for rule in preflight.get("read_only_patterns", []):
+        if isinstance(rule, str):
+            rule = {"pattern": rule, "id": "readonly_str", "reason": "read-only allowlist"}
         if _regex_match(rule.get("pattern", ""), command):
             result.update({
                 "classification": "read_only",

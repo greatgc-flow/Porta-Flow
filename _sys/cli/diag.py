@@ -894,6 +894,11 @@ def render_dashboard(stdout=None):
             render_card(info)
 
         print("\n" + "=" * 60)
+        print(_c(" PEER PROFILES", "bold"))
+        print("=" * 60)
+        render_profiles(out)
+
+        print("\n" + "=" * 60)
         print(_c(" Note: run '_sys\\cli\\diag' (or diag.bat) anytime to view this screen.", "dim"))
         print("=" * 60)
 

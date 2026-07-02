@@ -145,8 +145,14 @@ def _mock_popen(captured: dict):
         proc.pid = 12345
         proc.returncode = 0
         proc.poll.return_value = 0
-        proc.stdout.read.return_value = b""
-        proc.stderr.read.return_value = b""
+        proc.stdout.read.side_effect = [b"ok", b""] + [b""] * 50
+        proc.stderr.read.side_effect = [b"", b""] + [b""] * 50
+
+        def _capture_stdin(data):
+            captured["input"] = data
+            return len(data)
+
+        proc.stdin.write.side_effect = _capture_stdin
 
         def communicate(input=None, timeout=None):
             captured["input"] = input

@@ -12,20 +12,21 @@ from pathlib import Path
 _ORCHESTRATION = Path(__file__).parent.parent / "ai" / "orchestration.json"
 
 
-def _standard_profile_args(peer_id: str) -> list[str]:
+def _default_profile_args(peer_id: str) -> list[str]:
     try:
         data = json.loads(_ORCHESTRATION.read_text(encoding="utf-8"))
         node = next(
             item for item in data.get("hub_nodes", [])
             if item.get("node_id") == peer_id
         )
-        return list(node.get("profiles", {}).get("standard", {}).get("profile_args", []))
+        def_prof = node.get("default_profile", "deepthink")
+        return list(node.get("profiles", {}).get(def_prof, {}).get("profile_args", []))
     except (OSError, ValueError, StopIteration, TypeError):
         return []
 
 
 def _append_profile_defaults(args: list[str], peer_id: str) -> list[str]:
-    defaults = _standard_profile_args(peer_id)
+    defaults = _default_profile_args(peer_id)
     if not defaults:
         return args
     out = list(args)

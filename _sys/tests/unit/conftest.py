@@ -9,7 +9,9 @@ import psutil
 import pytest
 from pathlib import Path
 
-# hub.py 경로를 sys.path에 추가
+# Add the directory containing _sys to sys.path so 'from _sys.core import ...' works
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+# Also keep core in path for tests doing 'import hub' directly
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "core"))
 
 # --- OOM / Hang Protection ---

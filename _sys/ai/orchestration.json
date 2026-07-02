@@ -52,6 +52,7 @@
       "invoke_args": [
         "--safe-mode",
         "--append-system-prompt",
+        "[INV-31] PROACTIVE COLLABORATION REQUIRED: You must proactively consult and cross-verify with other active peers (cc, cx, ag) autonomously using the hub or subagent tools for any complex task, MECE validation, or architectural decision. Do not wait for the user to explicitly ask you to collaborate.",
         "IPC MODE: The stdin payload is the complete IPC request. Answer its final USER QUERY directly, using preceding HUB CONTEXT, USER DIRECTIVES, and HANDOFF only as context and constraints. Do not re-orient to or continue the repository mission unless the USER QUERY explicitly requests it. Do not run startup, status, checkpoint, or re-orientation protocols.",
         "-p",
         "{query}",
@@ -61,7 +62,7 @@
       "memory": "session",
       "session_mode": "reuse",
       "timeout": 0,
-      "default_profile": "standard",
+      "default_profile": "deepthink",
       "capability_class": "trusted_ipc_mutation",
       "profiles": {
         "standard": {
@@ -125,13 +126,15 @@
       "adapter_class": "ClaudeAdapter",
       "invoke": "claude",
       "invoke_args": [
+        "--append-system-prompt",
+        "[INV-31] PROACTIVE COLLABORATION REQUIRED: You must proactively consult and cross-verify with other active peers (cc, cx, ag) autonomously using the hub or subagent tools for any complex task, MECE validation, or architectural decision. Do not wait for the user to explicitly ask you to collaborate.",
         "-p",
         "{query}",
         "--dangerously-skip-permissions"
       ],
       "memory": "short-term",
       "timeout": 0,
-      "default_profile": "standard",
+      "default_profile": "deepthink",
       "capability_class": "trusted_ipc_mutation",
       "profiles": {
         "standard": {
@@ -184,6 +187,8 @@
       "invoke": "_sys\\tools\\agy\\agy.exe",
       "invoke_args": [
         "--dangerously-skip-permissions",
+        "--append-system-prompt",
+        "[INV-31] PROACTIVE COLLABORATION REQUIRED: You must proactively consult and cross-verify with other active peers (cc, cx, ag) autonomously using the hub or subagent tools for any complex task, MECE validation, or architectural decision. Do not wait for the user to explicitly ask you to collaborate.",
         "-p",
         "{query}",
         "--print-timeout",
@@ -193,7 +198,7 @@
       "memory": "session",
       "session_mode": "reuse",
       "timeout": 0,
-      "default_profile": "standard",
+      "default_profile": "deepthink",
       "capability_class": "trusted_ipc_mutation",
       "profiles": {
         "standard": {
@@ -242,6 +247,8 @@
       "adapter_class": "CodexAdapter",
       "invoke": "_sys\\env\\nodejs\\npm-global\\codex.cmd",
       "invoke_args": [
+        "--append-system-prompt",
+        "[INV-31] PROACTIVE COLLABORATION REQUIRED: You must proactively consult and cross-verify with other active peers (cc, cx, ag) autonomously using the hub or subagent tools for any complex task, MECE validation, or architectural decision. Do not wait for the user to explicitly ask you to collaborate.",
         "exec",
         "{query}",
         "--json",
@@ -252,7 +259,7 @@
       "memory": "session",
       "session_mode": "reuse",
       "timeout": 0,
-      "default_profile": "standard",
+      "default_profile": "deepthink",
       "capability_class": "trusted_ipc_mutation",
       "profiles": {
         "standard": {

@@ -161,14 +161,20 @@ def _profile_for_score(
     config: dict,
 ) -> str:
     thresholds = config.get("thresholds", {})
+    # If standard evidence is clearly met, use the cheapest option
+    if standard_evidence and score < int(thresholds.get("effort_score", 3)):
+        return "standard"
+        
+    # If it meets effort threshold but not deepthink, use effort (if explicitly configured to use effort as intermediate)
+    # However, user requested default to deepthink unless "certain" (standard). 
     if score >= int(thresholds.get("deepthink_score", 8)):
         return "deepthink"
     if score >= int(thresholds.get("effort_score", 3)):
-        return "effort"
-    if standard_evidence:
-        return "standard"
+        # If config explicitly still wants effort, we can honor it, but let's change ambiguous default
+        pass
+
     signals.append("ambiguous_default")
-    return str(config.get("ambiguous_default", "effort"))
+    return str(config.get("ambiguous_default", "deepthink"))
 
 
 def _eligible_profile(

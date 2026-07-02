@@ -126,3 +126,4 @@
 | ID | Rule |
 |----|------|
 | INV-30 | **Peer Equality & Multi-Terminal:** the terminal/router role is a profile+origin property, not a fixed peer identity. All peers (cc, ag, cx, gc) are equal; any may assume the active human-interface terminal role. All topological enforcement, tier floors, and escalation must be peer-agnostic and symmetric; escalation prioritizes the active terminal's own worker tier or routes dynamically, never hardcoding a peer. |
+| INV-31 | **Proactive Peer Collaboration:** All active peers MUST proactively collaborate without explicit human prompting. If a task involves high complexity, architectural decisions, MECE validation, or resolving edge cases, the active peer MUST autonomously invoke/consult other peers (cc, ag, cx) to achieve cross-verified consensus before finalizing the output. |

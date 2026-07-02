@@ -24,10 +24,10 @@ No generated node list is tracked.
 Each tracked root peer owns exactly three MECE profiles:
 
 - `standard`: lowest sufficient cost/latency;
-- `effort`: default balanced profile;
-- `deepthink`: highest verified reasoning setting.
+- `effort`: balanced profile (intermediate);
+- `deepthink`: highest verified reasoning setting (DEFAULT).
 
-Runtime normalization generates `{peer}.{profile}` children. Root IDs stay stable and use the low-cost `standard` profile in direct terminals. Root asks through the hub are classified automatically. Effective enablement is recursive and fail-closed.
+Runtime normalization generates `{peer}.{profile}` children. Root IDs stay stable and use the `deepthink` profile by default in direct terminals. Root asks through the hub are classified automatically (defaulting to `deepthink` unless certain). Effective enablement is recursive and fail-closed.
 
 ## 2. Peer-Level & Model-Level Routing
 
@@ -65,13 +65,12 @@ Each peer may use multiple underlying models based on task characteristics. Mode
 explicit peer.profile -> preserve
 simple evidence       -> standard
 implementation        -> effort
+ambiguous / default   -> deepthink
 high risk             -> deepthink
-ambiguous             -> effort
-repeated failure      -> promote one tier
 blocked selection     -> same-peer downward fallback
 ```
 
-Root peer terminals start at `standard`. Root peer asks through hub.py are classified automatically. Explicit profile nodes are immutable.
+Root peer terminals start at `deepthink`. Root peer asks through hub.py are classified automatically, defaulting to `deepthink` for all requests unless simple evidence triggers `standard`. Explicit profile nodes are immutable.
 
 See `_sys/docs/history/ops/automatic-profile-routing-2026-06-20.md` (archived decision record) for signals, fallback rules, tests, and benchmark.
 
@@ -84,18 +83,19 @@ Leader is NOT a superior authority — all peers remain equal for consensus.
 
 **Terminal-Transport Invariant (GAP-1):** The human-interface terminal may frame, route, relay, and summarize worker outputs, but MUST NOT perform substantive task analysis once a worker is selected. "Coordinator"/"leader" is a task role assigned by protocol, not terminal authority (Cross-reference: `protocol.md §1.2`).
 
-**Election Score:**
+**Election Score (v2):**
+```text
+score_v2 =
+  capability_match       (0..10)
++ health_score           (GREEN=3, YELLOW=1, STALE=-5, RED=blocked)
++ continuity_bonus       (0..2)  (current task owner preferred if healthy)
++ quota_margin_bonus     (-3..+3) (Based on Quota Margin telemetry)
+- recent_use_penalty     (0..2)  (Penalty for recently used peers)
+- cost_penalty           (0..2)
 ```
-score =
-  capability_match    0..10
-+ health_score        GREEN=3, YELLOW=1, STALE=-5, RED=blocked
-+ continuity_bonus    0..2  (current task owner preferred if healthy)
-+ console_fit_bonus   0..1  (avoid forwarding if human-interface peer fits)
-- cost_penalty        low=0, mid=1, high=2
-- cold_start_penalty  0..1
-```
+*Note: `Quota Margin = 0%` completely excludes the peer (HARD_CLOSED) from routing. AP-20 acts as a Hard Guard on top of this score.*
 
-**Tiebreak order:** task checkpoint owner → healthier → lower cost (low risk) → higher capability (high risk) → ask human interface peer.
+**Tiebreak order:** task checkpoint owner → healthier → higher quota margin → lower cost (low risk) → higher capability (high risk) → ask human interface peer.
 
 **Commands:**
 ```
@@ -201,7 +201,7 @@ Each successful claim appends to `handoff.md[ACTIVE_THREADS]`:
 
 ### 4.3 AP-20: Coordinator Monopoly Guard
 
-**Source:** `hub.py:action_leader_claim` — checked on every `leader-claim` call.
+**Source:** `hub.py:_matching_peers` / `hub.py:action_leader_claim` — checked on leader evaluation.
 
 #### Rule
 

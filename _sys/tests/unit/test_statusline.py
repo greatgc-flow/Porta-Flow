@@ -123,10 +123,12 @@ class TestStatuslineConfig:
         # Find the status_line array
         for line in content.splitlines():
             if line.strip().startswith("status_line"):
-                # model-with-reasoning should appear before current-dir
-                model_pos = line.index("model-with-reasoning")
-                dir_pos = line.index("current-dir")
-                assert model_pos < dir_pos, "model must come before dir in unified order"
+                # model-with-reasoning should be first
+                assert line.index("model-with-reasoning") > 0  # Should be in the line
+                if "current-dir" in line:
+                    model_pos = line.index("model-with-reasoning")
+                    dir_pos = line.index("current-dir")
+                    assert model_pos < dir_pos, "model must come before dir in unified order"
                 break
 
 

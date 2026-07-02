@@ -23,7 +23,8 @@ def test_hub_ask_sets_deepthink_tier(tmp_path):
         proc.returncode = 0
         proc.pid = 12345
         proc.communicate.return_value = (b"answer", b"")
-        proc.stdout.read.return_value = b""
+        proc.stdout.read.side_effect = [b"answer", b""] + [b""] * 50
+        proc.stderr.read.side_effect = [b"", b""] + [b""] * 50
         proc.poll.return_value = 0
         return proc
 
@@ -31,6 +32,7 @@ def test_hub_ask_sets_deepthink_tier(tmp_path):
     with patch("hub._select_ask_profile", return_value=("cx", {"selected_profile": "deepthink"})), \
          patch("hub._ask_health_precheck"), \
          patch("hub._append_ask_history"), \
+         patch("shutil.which", return_value="dummy_path"), \
          patch("subprocess.Popen", side_effect=fake_popen) as mock_popen:
         try:
             hub.action_ask(
