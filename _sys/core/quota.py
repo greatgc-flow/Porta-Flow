@@ -39,13 +39,12 @@ def calculate_pacing(used_frac: float, remaining_seconds: float, window_hours: f
     elapsed_frac = elapsed_seconds / total_seconds
     
     # Spike prevention at the start of a window
-    if elapsed_frac < 0.05:
-        return {"ratio": 0.0, "status": "unknown", "indicator": ""}
+    smoothed_elapsed = max(0.05, elapsed_frac)
         
-    pacing_ratio = used_frac / elapsed_frac
+    pacing_ratio = used_frac / smoothed_elapsed
     
     if pacing_ratio > 1.0:
-        status, indicator = "danger", "🔥"
+        status, indicator = "danger", "🔴"
     elif pacing_ratio >= 0.8:
         status, indicator = "warn", "🟡"
     else:

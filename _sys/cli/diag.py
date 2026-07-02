@@ -442,7 +442,7 @@ def gather_peer(peer, peer_dirs):
             })
     if "rate_limits" in data and isinstance(data["rate_limits"], dict):  # cc
         rl = data["rate_limits"]
-        for key, label in (("five_hour", "5H"), ("seven_day", "7D")):
+        for key, label in (("five_hour", "5H"), ("seven_day", "7D"), ("fable_five_hour", "F-5H"), ("fable_seven_day", "F-7D")):
             q = rl.get(key)
             if not isinstance(q, dict):
                 continue
@@ -508,7 +508,7 @@ def gather_peer(peer, peer_dirs):
                 used_frac = used / 100.0
                 
                 import quota as qmgr
-                window_hours = 5.0 if label == "5H" else 168.0
+                window_hours = 5.0 if "5H" in label else 168.0
                 resets_at = q.get("resetsAt")
                 rem_sec = qmgr.get_remaining_seconds(resets_at_iso=resets_at)
                 pacing = qmgr.calculate_pacing(used_frac, rem_sec, window_hours)
@@ -885,7 +885,11 @@ def render_dashboard(stdout=None):
 
         snapshot = collect_snapshot()
         infos = [p["raw"] for p in snapshot["peers"]]
-        render_summary(infos)
+
+        print("\n" + "=" * 60)
+        print(_c(" PEER PROFILES", "bold"))
+        print("=" * 60)
+        render_profiles(out)
 
         print("\n" + "=" * 60)
         print(_c(" PEER DETAIL", "bold"))
@@ -893,10 +897,7 @@ def render_dashboard(stdout=None):
         for info in infos:
             render_card(info)
 
-        print("\n" + "=" * 60)
-        print(_c(" PEER PROFILES", "bold"))
-        print("=" * 60)
-        render_profiles(out)
+        render_summary(infos)
 
         print("\n" + "=" * 60)
         print(_c(" Note: run '_sys\\cli\\diag' (or diag.bat) anytime to view this screen.", "dim"))
@@ -949,11 +950,33 @@ def render_profiles(stdout=None):
             continue
         pid = node.get("node_id", "?")
         for pname, prof in (node.get("profiles") or {}).items():
-            model = prof.get("model_id") or prof.get("runtime_model") or "?"
-            effort = str(prof.get("reasoning_effort", "?"))
-            ctx = _short(prof.get("runtime_context_window", "?"))
-            routing = str(prof.get("routing_state", "?"))
-            out.write(f"{pid + '.' + pname:<22} {str(model):<26} {effort:<8} {str(ctx):<8} {routing}\n")
+            model = prof.get("model_id") or prof.get("runtime_model")
+            effort = prof.get("reasoning_effort")
+            ctx_val = prof.get("runtime_context_window") or prof.get("context_window")
+            routing = prof.get("routing_state")
+
+            if not ctx_val or not model or not effort:
+                try:
+                    subdir = resolve_peer_sys_dir(pid)
+                    hfile = SYS_DIR / (subdir if subdir else pid) / "health.json"
+                    if hfile.exists():
+                        hdata = json.loads(hfile.read_text(encoding="utf-8"))
+                        hprof = hdata.get("profile", {})
+                        if not model:
+                            model = hprof.get("model") or hprof.get("model_id") or hprof.get("runtime_model")
+                        if not effort:
+                            effort = hprof.get("reasoning_effort") or hprof.get("effort")
+                        if not ctx_val:
+                            ctx_val = hprof.get("context_window") or hdata.get("context_health", {}).get("context_window")
+                except Exception:
+                    pass
+
+            model_str = str(model) if model else "?"
+            effort_str = str(effort) if effort else "?"
+            ctx_str = _short(ctx_val) if ctx_val else "?"
+            routing_str = str(routing) if routing else "?"
+            
+            out.write(f"{pid + '.' + pname:<22} {model_str:<26} {effort_str:<8} {ctx_str:<8} {routing_str}\n")
 
 
 def render_accounts(stdout=None):

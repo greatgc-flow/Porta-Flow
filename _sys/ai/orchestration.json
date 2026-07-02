@@ -112,6 +112,22 @@
             "--effort",
             "high"
           ]
+        },
+        "fable": {
+          "model_id": "claude-fable-4-9",
+          "model_availability": "verified_local",
+          "runtime_context_window": 200000,
+          "validated_at": "2026-07-02",
+          "validation_method": "successful_invocation",
+          "reasoning_effort": "high",
+          "cost_tier": "mid",
+          "routing_state": "eligible",
+          "profile_args": [
+            "--model",
+            "claude-fable-4-9",
+            "--effort",
+            "high"
+          ]
         }
       },
       "pattern": "std_cli_stdio"
@@ -204,6 +220,7 @@
         "standard": {
           "runtime_model": "Gemini 3.5 Flash (Low)",
           "model_availability": "verified_local",
+          "runtime_context_window": 1000000,
           "reasoning_effort": "low",
           "cost_tier": "low",
           "routing_state": "eligible",
@@ -215,6 +232,7 @@
         "effort": {
           "runtime_model": "Gemini 3.5 Flash (High)",
           "model_availability": "verified_local",
+          "runtime_context_window": 1000000,
           "reasoning_effort": "high",
           "cost_tier": "mid",
           "routing_state": "eligible",
@@ -226,12 +244,24 @@
         "deepthink": {
           "runtime_model": "Gemini 3.1 Pro (High)",
           "model_availability": "verified_local",
+          "runtime_context_window": 2000000,
           "reasoning_effort": "high",
           "cost_tier": "high",
           "routing_state": "eligible",
           "profile_args": [
             "--model",
             "Gemini 3.1 Pro (High)"
+          ]
+        },
+        "3p": {
+          "runtime_model": "GPT-4o (3P)",
+          "model_availability": "verified_local",
+          "reasoning_effort": "high",
+          "cost_tier": "mid",
+          "routing_state": "eligible",
+          "profile_args": [
+            "--model",
+            "GPT-4o (3P)"
           ]
         }
       },
