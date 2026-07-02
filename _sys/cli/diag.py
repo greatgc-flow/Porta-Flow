@@ -442,15 +442,25 @@ def gather_peer(peer, peer_dirs):
             })
     if "rate_limits" in data and isinstance(data["rate_limits"], dict):  # cc
         rl = data["rate_limits"]
-        for key, label in (("five_hour", "C-5H"), ("seven_day", "C-7D"), ("fable_five_hour", "F-5H"), ("fable_seven_day", "F-7D")):
-            q = rl.get(key)
+        for key, q in rl.items():
             if not isinstance(q, dict):
                 continue
             used = q.get("used_percentage", 0) or 0
             used_frac = used / 100.0
             
+            # Dynamically determine the label and window
+            prefix = "F-" if "fable" in key else "C-"
+            if "five" in key or "5h" in key:
+                label = f"{prefix}5H"
+                window_hours = 5.0
+            elif "seven" in key or "weekly" in key or "7d" in key:
+                label = f"{prefix}7D"
+                window_hours = 168.0
+            else:
+                label = f"{prefix}{key}"
+                window_hours = 168.0  # safe fallback
+            
             import quota as qmgr
-            window_hours = 5.0 if label == "5H" else 168.0
             resets_at = q.get("resets_at") or q.get("reset_at")
             rem_sec = qmgr.get_remaining_seconds(resets_at_iso=resets_at)
             pacing = qmgr.calculate_pacing(used_frac, rem_sec, window_hours)
