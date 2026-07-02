@@ -275,6 +275,35 @@ def _cached_codex_rate_limits(ttl_sec=EXPENSIVE_SOURCE_TTL_SEC, clock=time.monot
     }
     return value
 
+_CLAUDE_FABLE_CACHE = {}
+
+def _claude_cli_fable_usage():
+    exe = SYS_DIR / "env" / "nodejs" / "npm-global" / "claude.cmd"
+    if not exe.exists():
+        return None
+    try:
+        res = subprocess.run([str(exe), "-p", "/cost"], capture_output=True, text=True, timeout=10)
+        import re
+        m = re.search(r"Current week \(Fable\):\s*([\d\.]+)%\s*used", res.stdout)
+        if m:
+            val = float(m.group(1))
+            return {"fable_weekly": {"used_percentage": val, "reset_in_seconds": 604800}}
+    except Exception:
+        pass
+    return None
+
+def _cached_claude_fable_usage(ttl_sec=EXPENSIVE_SOURCE_TTL_SEC, clock=time.monotonic):
+    now = clock()
+    cached = _CLAUDE_FABLE_CACHE.get("fable")
+    if cached and now < cached["expires_at"]:
+        return cached["value"]
+    value = _claude_cli_fable_usage()
+    _CLAUDE_FABLE_CACHE["fable"] = {
+        "value": value,
+        "expires_at": now + ttl_sec,
+    }
+    return value
+
 
 # --------------------------------------------------------------------------
 # Per-peer metric gathering
@@ -441,7 +470,13 @@ def gather_peer(peer, peer_dirs):
                 "pacing_ratio": pacing.get("ratio"), "pacing_status": pacing.get("status"),
             })
     if "rate_limits" in data and isinstance(data["rate_limits"], dict):  # cc
-        rl = data["rate_limits"]
+        rl = data["rate_limits"].copy()
+        
+        # Inject Fable usage from CLI if available
+        fable_rl = _cached_claude_fable_usage()
+        if fable_rl:
+            rl.update(fable_rl)
+            
         for key, q in rl.items():
             if not isinstance(q, dict):
                 continue
