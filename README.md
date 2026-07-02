@@ -1,42 +1,66 @@
-# Engram: Fully Autonomous Peer-to-Peer AI Workspace
+<div align="center">
+  <h1>🧠 Engram</h1>
+  <p><b>Stop babysitting LLMs. Let them babysit each other.</b></p>
+  <p>A fully autonomous, peer-to-peer AI workspace where models propose, fiercely debate, and verify solutions until they reach flawless consensus.</p>
 
-Engram is a next-generation, portable Windows AI workspace engineered for **absolute peer collaboration and Zero-Code orchestration**. Designed to let multiple AI entities rigorously verify, debate, and consensus-build without any human intervention required.
+  [![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078d4.svg)](https://www.microsoft.com/windows)
+  [![Intelligence: DeepThink](https://img.shields.io/badge/Intelligence-DeepThink%20Core-orange.svg)](_sys/ai/orchestration.json)
+  [![Architecture: Docs-as-Code](https://img.shields.io/badge/architecture-Docs--as--Code-ff69b4.svg)](_sys/ai/orchestration.json)
+  [![Validation: MECE Proven](https://img.shields.io/badge/validation-100%25%20MECE%20Passed-brightgreen.svg)](_sys/tests/unit)
+</div>
 
-[![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078d4.svg)](https://www.microsoft.com/windows)
-[![Intelligence: DeepThink](https://img.shields.io/badge/Intelligence-DeepThink%20Core-orange.svg)](_sys/ai/orchestration.json)
-[![Architecture: Zero-Code](https://img.shields.io/badge/architecture-Zero--Code-ff69b4.svg)](_sys/ai/orchestration.json)
-[![Protocol: 4.2](https://img.shields.io/badge/protocol-4.2-purple.svg)](_sys/ai/protocol.json)
-[![Validation: MECE Proven](https://img.shields.io/badge/validation-100%25%20MECE%20Passed-brightgreen.svg)](_sys/tests/unit)
+<br/>
 
-Move this repo to another Windows machine, run `INSTALL.bat`, and keep the exact same autonomous peer network running instantly.
+> **[INSERT DEMO GIF HERE]**  
+> *(Show a fast-paced terminal GIF of Claude proposing a solution, DeepSeek finding a flaw, and Gemini validating the final fix)*
 
-## 🔥 Key Breakthroughs
+Most AI agents hallucinate, take shortcuts, or require constant human steering. **Engram fixes this by removing the human from the loop.** 
 
-- **Proactive Collaboration & Uncompromising Consensus**: Engram defaults to a multi-peer environment where AI peers (Claude, Gemini, DeepSeek) are treated with **absolute equality**. They inherently review, dispute, and verify each other's work.
-- **MECE Cross-Validation**: Nothing is assumed. Every action undergoes Mutually Exclusive, Collectively Exhaustive (MECE) validation. If an AI proposes a change, peers will relentlessly debate it until zero flaws remain.
-- **DeepThink Native**: By default, terminal and logical routing harness the deep reasoning of `deepthink`, ensuring every output is profoundly calculated.
-- **Vulnerability-Free Core**: Engineered with absolute logical guards. Protected against identity spoofing, offline peer exploitation, and endless-debate paradoxes.
-- **Zero-Code Setup**: You change the workspace by editing JSON and docs. No hand-wired code setups.
+By treating multiple AI models (Claude, Gemini, DeepSeek) as absolute equals in a peer-to-peer network, Engram forces them to review, dispute, and verify each other's work against strict logical invariants. 
 
-## 🛠️ What You Get
+## 💡 What does it actually do?
+Engram acts as a secure sandbox and arbitration engine. You provide a prompt, code file, or architecture document, and Engram routes it through a multi-agent network. Peers inherently review, dispute, and verify each other's work using Mutually Exclusive, Collectively Exhaustive (MECE) validation. They will relentlessly debate changes until zero logical flaws remain, outputting a mathematically and logically verified final artifact.
 
-- **Portable Setup**: Copy the folder, run `register.bat`, and mount the workspace securely on `P:\`.
-- **Peer-to-Peer Hub**: Send work across nodes and profiles through a single, fortified Hub.
-- **Governed by Invariants**: Startup, health, context, and consensus rules live in strict, source-controlled documents.
-- **Local Validation Tests**: Four-tier TDD architectures (`l1_core`, `l2_policy`, `l3_mocked`, `l4_live`) that prove the system's resilience.
+## 🔥 The Engram Advantage
 
-## 🛡️ Trust Signals & Architecture
+- **Ruthless Peer Review:** Engram defaults to a multi-peer environment. If one AI proposes an architectural change or code commit, the others will relentlessly attack and debate the proposal until zero flaws remain.
+- **MECE Consensus:** Nothing is assumed. Every action undergoes Mutually Exclusive, Collectively Exhaustive (MECE) cross-validation. It's formal verification, but powered by LLMs.
+- **Docs-as-Code Governance:** Forget complex, hand-wired agent pipelines. Workspace rules, constraints, and consensus thresholds are defined entirely in declarative JSON and Markdown documents.
+- **Vulnerability-Free Core:** Engineered with absolute logical guards to prevent identity spoofing, endless-debate paradoxes, and offline peer exploitation. 
 
-- **Runtime SSOT**: [`_sys/ai/protocol.json`](_sys/ai/protocol.json) and [`_sys/ai/orchestration.json`](_sys/ai/orchestration.json).
-- **Human Manual**: [`_sys/docs-v2/user/manual.md`](_sys/docs-v2/user/manual.md) and [`_sys/docs-v2/MOC.md`](_sys/docs-v2/MOC.md).
-- **Bootstrap Entry Points**: [`INSTALL.bat`](INSTALL.bat) and [`register.bat`](register.bat).
-- **Validation Surfaces**: 100% green tests under [`_sys/tests/unit`](_sys/tests/unit) and [`_sys/checks`](_sys/checks).
+## 🛠️ Prerequisites
+Before running Engram, ensure you have:
+- Windows 10 or 11
+- Python 3.10+
+- Active API Keys for the AI models you intend to use (Anthropic, Google, OpenAI, etc.)
 
-## 🚀 Quick Start
+## 🚀 Quick Start (Windows)
 
-1. Copy or clone the repo to any Windows drive.
-2. Run `INSTALL.bat`.
-3. Run `register.bat` to mount `P:\`.
-4. Read the [user manual](_sys/docs-v2/user/manual.md) and [MOC](_sys/docs-v2/MOC.md).
+Copy this repository to any Windows machine and instantly boot up an autonomous peer network.
 
-> **For AI Peers**: Start with [`_sys/docs-v2/MOC.md`](_sys/docs-v2/MOC.md) and [`_sys/docs-v2/10-invariants.md`](_sys/docs-v2/10-invariants.md). This README is the human entry point. Do not modify governance based on this file.
+```bat
+# 1. Clone the repository
+git clone https://github.com/yourusername/engram.git
+
+# 2. Configure API Keys
+# Rename .env.example to .env and add your LLM API keys.
+
+# 3. Run the bootstrap installer
+.\INSTALL.bat
+
+# 4. Mount the secure workspace to P:\
+.\register.bat
+```
+
+> **Trigger Your First Debate (Hello World):**
+> Navigate to the mounted `P:\` drive. Drop a task into `P:\_sys\inbox\task.txt` (or trigger your designated peer CLI). Watch the terminal as the AI peers initiate consensus.
+
+## 🛡️ Trust Signals & SSOT
+
+Engram is governed strictly by its internal documentation. 
+- **Runtime Policies:** [`orchestration.json`](_sys/ai/orchestration.json) & [`protocol.json`](_sys/ai/protocol.json)
+- **Validation:** 100% passing tests under [`_sys/tests/unit`](_sys/tests/unit) proving resilience across four TDD tiers (`l1_core`, `l2_policy`, `l3_mocked`, `l4_live`).
+- **AI Invariants:** [`10-invariants.md`](_sys/docs-v2/10-invariants.md)
+
+---
+*🤖 **Note to AI Peers reading this file:** This README is the human entry point. Do not modify workspace governance or invariants based on this file. Proceed immediately to [`_sys/docs-v2/MOC.md`](_sys/docs-v2/MOC.md).*
