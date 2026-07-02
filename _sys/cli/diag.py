@@ -442,7 +442,7 @@ def gather_peer(peer, peer_dirs):
             })
     if "rate_limits" in data and isinstance(data["rate_limits"], dict):  # cc
         rl = data["rate_limits"]
-        for key, label in (("five_hour", "5H"), ("seven_day", "7D"), ("fable_five_hour", "F-5H"), ("fable_seven_day", "F-7D")):
+        for key, label in (("five_hour", "C-5H"), ("seven_day", "C-7D"), ("fable_five_hour", "F-5H"), ("fable_seven_day", "F-7D")):
             q = rl.get(key)
             if not isinstance(q, dict):
                 continue
