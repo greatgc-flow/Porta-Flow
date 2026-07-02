@@ -510,7 +510,7 @@ def gather_peer(peer, peer_dirs):
         rl = _cached_codex_rate_limits()
         if rl:
             info["source"] = "app-server"
-            for key, label in (("primary", "5H"), ("secondary", "7D")):
+            for key, label in (("primary", "X-5H"), ("secondary", "X-7D")):
                 q = rl.get(key)
                 if not isinstance(q, dict):
                     continue
@@ -901,13 +901,13 @@ def render_dashboard(stdout=None):
         print("=" * 60)
         render_profiles(out)
 
+        render_summary(infos)
+
         print("\n" + "=" * 60)
         print(_c(" PEER DETAIL", "bold"))
         print("=" * 60)
         for info in infos:
             render_card(info)
-
-        render_summary(infos)
 
         print("\n" + "=" * 60)
         print(_c(" Note: run '_sys\\cli\\diag' (or diag.bat) anytime to view this screen.", "dim"))

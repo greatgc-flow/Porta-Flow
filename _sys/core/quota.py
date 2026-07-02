@@ -31,6 +31,9 @@ def calculate_pacing(used_frac: float, remaining_seconds: float, window_hours: f
     Calculate pacing ratio.
     Returns: {"ratio": float, "status": "safe"|"warn"|"danger"|"unknown", "indicator": str}
     """
+    if used_frac <= 0.0:
+        return {"ratio": 0.0, "status": "safe", "indicator": "🟢"}
+        
     if remaining_seconds is None or remaining_seconds < 0:
         return {"ratio": 0.0, "status": "unknown", "indicator": ""}
         
