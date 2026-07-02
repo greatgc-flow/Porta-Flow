@@ -275,34 +275,6 @@ def _cached_codex_rate_limits(ttl_sec=EXPENSIVE_SOURCE_TTL_SEC, clock=time.monot
     }
     return value
 
-_CLAUDE_FABLE_CACHE = {}
-
-def _claude_cli_fable_usage():
-    exe = SYS_DIR / "env" / "nodejs" / "npm-global" / "claude.cmd"
-    if not exe.exists():
-        return None
-    try:
-        res = subprocess.run([str(exe), "-p", "/cost"], capture_output=True, text=True, timeout=10)
-        import re
-        m = re.search(r"Current week \(Fable\):\s*([\d\.]+)%\s*used", res.stdout)
-        if m:
-            val = float(m.group(1))
-            return {"fable_weekly": {"used_percentage": val, "reset_in_seconds": 604800}}
-    except Exception:
-        pass
-    return None
-
-def _cached_claude_fable_usage(ttl_sec=EXPENSIVE_SOURCE_TTL_SEC, clock=time.monotonic):
-    now = clock()
-    cached = _CLAUDE_FABLE_CACHE.get("fable")
-    if cached and now < cached["expires_at"]:
-        return cached["value"]
-    value = _claude_cli_fable_usage()
-    _CLAUDE_FABLE_CACHE["fable"] = {
-        "value": value,
-        "expires_at": now + ttl_sec,
-    }
-    return value
 
 
 # --------------------------------------------------------------------------
@@ -415,7 +387,9 @@ def gather_peer(peer, peer_dirs):
     else:
         ctx = health_data.get("context_health", {})
         profile = health_data.get("profile", {})
-        info["ctx_window"] = profile.get("context_window", "Unknown")
+        if profile:
+            info["model"] = profile.get("model", "Unknown")
+            info["ctx_window"] = profile.get("runtime_context_window", "Unknown")
         info["ctx_used"] = ctx.get("session_token_count", 0)
         info["ctx_known"] = "session_token_count" in ctx
 
@@ -470,13 +444,7 @@ def gather_peer(peer, peer_dirs):
                 "pacing_ratio": pacing.get("ratio"), "pacing_status": pacing.get("status"),
             })
     if "rate_limits" in data and isinstance(data["rate_limits"], dict):  # cc
-        rl = data["rate_limits"].copy()
-        
-        # Inject Fable usage from CLI if available
-        fable_rl = _cached_claude_fable_usage()
-        if fable_rl:
-            rl.update(fable_rl)
-            
+        rl = data["rate_limits"]
         for key, q in rl.items():
             if not isinstance(q, dict):
                 continue
@@ -497,12 +465,18 @@ def gather_peer(peer, peer_dirs):
             
             import quota as qmgr
             resets_at = q.get("resets_at") or q.get("reset_at")
-            rem_sec = qmgr.get_remaining_seconds(resets_at_iso=resets_at)
+            reset_sec = q.get("reset_in_seconds")
+            
+            if reset_sec is not None:
+                rem_sec = qmgr.get_remaining_seconds(reset_in_seconds=reset_sec)
+            else:
+                rem_sec = qmgr.get_remaining_seconds(resets_at_iso=resets_at)
+                
             pacing = qmgr.calculate_pacing(used_frac, rem_sec, window_hours)
 
             quotas.append({
                 "label": label, "used_frac": used_frac,
-                "reset": _fmt_reset(resets_at),
+                "reset": _fmt_reset(resets_at, reset_sec),
                 "metric": f"{float(used):.1f}% used{_fmt_pacing(pacing)}",
                 "pacing_ratio": pacing.get("ratio"), "pacing_status": pacing.get("status"),
             })
